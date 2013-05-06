@@ -40,22 +40,22 @@ def new_monitor(parser):
     command.add_argument('type', metavar='TYPE', type=int,
                          help='Type of monitor to create')
 
-    command.add_argument('--subtype', type=int,
+    command.add_argument('--subtype', type=int, metavar="N",
                    help='Subtype to monitor')
 
-    command.add_argument('--port', type=int,
+    command.add_argument('--port', type=int, metavar="N",
                    help='Port to monitor')
 
-    command.add_argument('--keyword-type', type=int,
+    command.add_argument('--keyword-type', type=int, metavar="N",
                    help='Type of keyword to monitor')
 
-    command.add_argument('--keyword', type=str,
+    command.add_argument('--keyword', type=str, metavar="STR",
                    help='Keyword to monitor')
 
-    command.add_argument('--username', type=str,
+    command.add_argument('--username', type=str, metavar="STR",
                    help='HTTP username to use for private site')
 
-    command.add_argument('--password', type=str,
+    command.add_argument('--password', type=str, metavar="STR",
                    help='HTTP password to use for private site')
 
     command.add_argument('--alerts', metavar="ID", type=int, nargs='+',
@@ -70,34 +70,34 @@ def edit_monitor(parser):
     command.add_argument('id', metavar='ID', type=int,
                    help='ID of monitor to edit')
 
-    command.add_argument('--name', type=str,
+    command.add_argument('--name', type=str, metavar="STR",
                    help='Friendly name of monitor')
 
-    command.add_argument('--status', type=int,
+    command.add_argument('--status', type=int, metavar="N",
                    help='Status to set the monitor to')
 
-    command.add_argument('--url', type=str,
+    command.add_argument('--url', type=str, metavar="STR",
                    help='URL to monitor')
 
-    command.add_argument('--type', type=int,
+    command.add_argument('--type', type=int, metavar="N",
                    help='Type to monitor')
 
-    command.add_argument('--subtype', type=int,
+    command.add_argument('--subtype', type=int, metavar="N",
                    help='Subtype to monitor')
 
-    command.add_argument('--port', type=int,
+    command.add_argument('--port', type=int, metavar="N",
                    help='Port to monitor')
 
-    command.add_argument('--keyword-type', type=int,
+    command.add_argument('--keyword-type', type=int, metavar="N",
                    help='Type of keyword to monitor')
 
-    command.add_argument('--keyword', type=str,
+    command.add_argument('--keyword', type=str, metavar="STR",
                    help='Keyword to monitor')
 
-    command.add_argument('--username', type=str,
+    command.add_argument('--username', type=str, metavar="STR",
                    help='HTTP username to use for private site')
 
-    command.add_argument('--password', type=str,
+    command.add_argument('--password', type=str, metavar="STR",
                    help='HTTP password to use for private site')
 
     command.add_argument('--alerts', metavar="ID", type=int, nargs='+',
