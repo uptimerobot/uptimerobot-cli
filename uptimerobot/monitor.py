@@ -39,8 +39,9 @@ class Monitor(object):
     def __init__(self, data):
         self.data = data
 
-        self.alert_contacts = [AlertContact(ac) for ac in data["alertcontact"]]
-        self.logs = [Log(log) for log in data["log"]]
+        self.alert_contacts = [AlertContact(ac) for ac in data.get("alertcontact", [])]
+        self.logs = [Log(log) for log in data.get("log", [])]
+
 
 
     id = property(lambda self: int(self.data["id"]))

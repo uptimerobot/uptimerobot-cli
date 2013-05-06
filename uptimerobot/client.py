@@ -34,7 +34,7 @@ class Client(object):
 
         payload.update(values)
 
-        response = requests.get(self.URL + action, data=json.dumps(payload))
+        response = requests.get(self.URL + action, params=payload)
         
         # Handle client/server errors with the request.
         if response.status_code != requests.codes.ok:
@@ -44,7 +44,12 @@ class Client(object):
                 raise HTTPError(ex)
 
         # Parse the json in the correct response.
-        return json.loads(response.text)
+        data = json.loads(response.text)
+
+        if data["stat"] == "fail":
+            raise APIError(data["message"])
+
+        return data
 
 
     def get_monitors(self, ids=None):
@@ -150,9 +155,9 @@ class Client(object):
 
         data = self.get("getAlertContacts", **variables)
         
-        contacts = [AlertContact(ac) for ac in data["alertcontacts"]["alertcontact"]]
+        alerts = [AlertContact(ac) for ac in data["alertcontacts"]["alertcontact"]]
 
-        return contacts
+        return alerts
 
 
     def new_alert_contact(self, type, value):

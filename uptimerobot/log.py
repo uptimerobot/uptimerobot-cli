@@ -18,7 +18,7 @@ class Log(object):
     def __init__(self, data):
         self.data = data
 
-        self.alert_contacts = [AlertContact(ac) for ac in data["alertcontact"]]
+        self.alert_contacts = [AlertContact(ac) for ac in data.get("alertcontact", [])]
 
     type = property(lambda self: int(self.data["type"]))
     datetime = property(lambda self: datetime.strptime(self.data["datetime"], self.TIMESTAMP_FORMAT))
