@@ -17,6 +17,21 @@ Installation
 Usage
 -----
 
+usage: uptimerobot.py [-h] SUBCOMMAND [OPTIONS]
+                      
+Manage monitors and alert contacts at UptimeRobot.com.
+
+optional arguments:
+  -h, --help            show this help message and exit
+
+Subcommands:
+    get-monitors        Get information about some or all monitors
+    new-monitor         Create a new monitor
+    edit-monitor        Edit an existing monitor
+    delete-monitor      Delete a monitor
+    get-alerts          Get information about some or all alert contacts
+    new-alert           Create a new alert contact
+    delete-alert        Delete an alert contact
 
 
 Specification

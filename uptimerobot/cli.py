@@ -7,14 +7,14 @@ from .client import Client
 
 def get_monitors(parser):
     command = parser.add_parser('get-monitors', 
-                                description="description",
-                                help="Get information of monitors")
-    command.add_argument('--ids', type=int, nargs='+',
+                                description="Get information about some or all monitors",
+                                help="Get information about some or all monitors")
+    command.add_argument('--ids',  metavar="ID", type=int, nargs='+',
                          help='IDs of monitors')
 
 def new_monitor(parser):
     command = parser.add_parser('new-monitor', 
-                                description="description",
+                                description="Create a new monitor",
                                 help="Create a new monitor")
 
     command.add_argument('name', metavar='NAME', type=str,
@@ -27,7 +27,7 @@ def new_monitor(parser):
 
 def edit_monitor(parser):
     command = parser.add_parser('edit-monitor', 
-                                description="description",
+                                description="Edit an existing monitor",
                                 help="Edit an existing monitor")
 
     command.add_argument('id', metavar='ID', type=int,
@@ -36,7 +36,7 @@ def edit_monitor(parser):
 
 def delete_monitor(parser):
     command = parser.add_parser('delete-monitor', 
-                                description="description",
+                                description="Delete a monitor",
                                 help="Delete a monitor")
 
     command.add_argument('id', metavar='ID', type=int,
@@ -45,25 +45,25 @@ def delete_monitor(parser):
 
 def get_alerts(parser):
     command = parser.add_parser('get-alerts',
-                                description="description",
-                                help="Get list of alert contacts")
-    command.add_argument('--ids', type=int, nargs='+',
+                                description="Get information about some or all alert contact",
+                                help="Get information about some or all alert contacts")
+    command.add_argument('--ids', metavar="ID", type=int, nargs='+',
                          help='IDs of alert contacts')
 
 
 def new_alert(parser):
     command = parser.add_parser('new-alert',
-                                description="description",
+                                description="Create a new alert contact",
                                 help="Create a new alert contact")
     command.add_argument('type', metavar='TYPE', type=int,
                          help='Type of contact to create')
-    command.add_argument('value', metavar='EMAIL', type=str,
-                         help='Email address of contact')
+    command.add_argument('value', metavar='VALUE', type=str,
+                         help='Value of contact (email address, sms number, twitter user, iOS device)')
 
 
 def delete_alert(parser):
     command = parser.add_parser('delete-alert', 
-                                description="description",
+                                description="Delete an alert contact",
                                 help="Delete an alert contact")
 
     command.add_argument('id', metavar='ID', type=int,
@@ -71,10 +71,12 @@ def delete_alert(parser):
 
 
 def create_parser():
-    parser = ArgumentParser(description='Process some integers.')
-    sub_commands = parser.add_subparsers(title='subcommands',
-                                        description='valid subcommands',
-                                        help='additional help',
+    parser = ArgumentParser(description=
+        """
+        Manage monitors and alert contacts at UptimeRobot.com.
+
+        """)
+    sub_commands = parser.add_subparsers(title='Subcommands',
                                         dest="subcommand")
 
     get_monitors(sub_commands)
