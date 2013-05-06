@@ -1,5 +1,7 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
+from math import log10
+
 from .log import Log
 from .alert_contact import AlertContact
 
@@ -36,11 +38,12 @@ class Monitor(object):
     }
 
 
-    def __init__(self, data):
+    def __init__(self, data, custom_uptime_ratio_periods=[]):
         self._data = data
 
         self.alert_contacts = [AlertContact(ac) for ac in data.get("alertcontact", [])]
         self.logs = [Log(log) for log in data.get("log", [])]
+        self.custom_uptime_ratio_periods = custom_uptime_ratio_periods
 
 
     id = property(lambda self: int(self._data["id"]))
@@ -80,7 +83,7 @@ class Monitor(object):
 
 
     def dump(self):
-        print("%s - %s (%d)" % (self.friendly_name, self.status_str.title(), self.id))
+        print("%s [%s] #%d" % (self.friendly_name, self.status_str.title(), self.id))
         print("URL: %s" % self.url)
 
         if self.port:
@@ -90,26 +93,28 @@ class Monitor(object):
             print("User: %s (%s)" % self.http_username, self.http_password)
 
         print("Type: %s" % self.type_str)
-        print("All Time Uptime Ratio: %.2f%%" % self.all_time_uptime_ratio)
+        print("All Time Uptime Ratio:         %.2f%%" % self.all_time_uptime_ratio)
 
         if self.custom_uptime_ratio:
-            for i, ratio in enumerate(self.custom_uptime_ratio):
-                print("Custom Uptime Ratio %d: %.2f%%" % (i, ratio))
+            for period, ratio in zip(self.custom_uptime_ratio_periods, self.custom_uptime_ratio):
+                str = "Uptime Ratio over %d hour%s:" % (period, "" if period == 1 else "s")
+                print("%-30s %.2f%%" % (str, ratio))
 
         if self.subtype:
             print("Subtype: %s" % self.subtype_str)
 
         if self.keyword_type:
-            print("Keyword: %s %s" % (self.keyword_type_str, self.keyword_value))
+            print("Keyword: %s %s" % (self.keyword_value, self.keyword_type_str))
 
         if self.alert_contacts:
+            print()
             print("Alert contacts:")
             for alert in self.alert_contacts:
-                alert.dump(indent="  ")
+                alert.dump()
 
         if self.logs:
-            print("Logs:")
+            print()
+            print("Log:")
             for log in self.logs:
                 log.dump()
-
-        print()
+                print()

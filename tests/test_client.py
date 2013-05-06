@@ -49,6 +49,14 @@ class TestGetMonitors(TestClient):
         assert all(isinstance(monitor, Monitor) for monitor in monitors)
         assert [monitor.id for monitor in monitors] == [128795, 128796]
 
+    def test_get_all_monitors_all_options(self):
+        flexmock(self.client).should_receive("get").with_args("getMonitors", customUptimeRatio="1-2-3", logs="1", alertContacts="1", showMonitorAlertContacts="1", showTimezone="1").and_return(self.response("get_monitors"))
+        monitors = self.client.get_monitors(show_logs=True, show_alert_contacts=True, show_log_alert_contacts=True, show_log_timezone=True, custom_uptime_ratio=[1, 2, 3])
+
+        assert len(monitors) == 2
+        assert all(isinstance(monitor, Monitor) for monitor in monitors)
+        assert [monitor.id for monitor in monitors] == [128795, 128796]
+
 
 class TestNewMonitor(TestClient):
     def test_new_monitor(self):

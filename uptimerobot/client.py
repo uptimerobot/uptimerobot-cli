@@ -35,7 +35,7 @@ class Client(object):
         payload.update(values)
 
         response = requests.get(self.URL + action, params=payload)
-        
+
         # Handle client/server errors with the request.
         if response.status_code != requests.codes.ok:
             try:
@@ -46,17 +46,32 @@ class Client(object):
         # Parse the json in the correct response.
         data = json.loads(response.text)
 
+        # Request went through, but was bad in some way.
         if data["stat"] == "fail":
             raise APIError(data["message"])
 
         return data
 
 
-    def get_monitors(self, ids=None):
+    def get_monitors(self, ids=None, show_logs=False,
+                     show_log_alert_contacts=False,
+                     show_alert_contacts=False,
+                     custom_uptime_ratio=False,
+                     show_log_timezone=False):
         """
         Args
             ids
-                IDs of the monitors to list. If None, then get all contacts.
+                IDs of the monitors to list. If None, then get all contacts. [list<int>]
+            logs
+                Show logs [Boolean]
+            alert_contacts
+                Show alert contacts [Boolean]
+            show_monitor_alert_contacts
+                Show monitors alert contacts [Boolean]
+            custom_uptime_ratio
+                Number of days to calculate uptime over [list<int>]
+            show_log_timezone
+                Show the timezone for the log times [Boolean]
 
         Returns
             List of Monitor detail objects.
@@ -65,12 +80,28 @@ class Client(object):
 
         variables = {}
 
-        if ids is not None:
+        if ids:
             variables["monitors"] = self.LIST_SEPARATOR.join(str(id) for id in ids)
+
+        if show_logs:
+            variables["logs"] = "1"
+
+            if show_log_timezone:
+                variables["showTimezone"] = "1"
+
+            if show_log_alert_contacts:
+                variables["alertContacts"] = "1"
+
+        if show_alert_contacts:
+            variables["showMonitorAlertContacts"] = "1"
+
+        if custom_uptime_ratio:
+            variables["customUptimeRatio"] = self.LIST_SEPARATOR.join(str(up) for up in custom_uptime_ratio)
+        
 
         data = self.get("getMonitors", **variables)
 
-        monitors = [Monitor(mon) for mon in data["monitors"]["monitor"]]
+        monitors = [Monitor(mon, custom_uptime_ratio) for mon in data["monitors"]["monitor"]]
 
         return monitors
 

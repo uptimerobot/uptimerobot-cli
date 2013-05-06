@@ -18,7 +18,7 @@ class AlertContact(object):
     def __init__(self, data):
         self.data = data
 
-    id = property(lambda self: int(self.data["id"]))
+    id = property(lambda self: int(self.data["id"]) if self.data.get("id", None) else 0)
     value = property(lambda self: self.data["value"])
 
     type = property(lambda self: int(self.data["type"]))
@@ -28,5 +28,9 @@ class AlertContact(object):
     status_str = property(lambda self: self.STATUS[self.status])
 
 
-    def dump(self, indent=""):
-        print("%s[%s] %s - %s (%d)" % (indent, self.type_str, self.value, self.status_str.title(), self.id))
+    def dump(self):
+        # No id/type if inside a log.
+        if self.id:
+            print("  %s: %s [%s] #%d" % (self.type_str, self.value, self.status_str.title(), self.id))
+        else:
+             print("  %s [%s]" % (self.value, self.status_str.title()))

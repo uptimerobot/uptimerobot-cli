@@ -12,6 +12,22 @@ def get_monitors(parser):
     command.add_argument('--ids',  metavar="ID", type=int, nargs='+',
                          help='IDs of monitors')
 
+    command.add_argument('--uptime',  metavar="NUM-HOURS", type=int, nargs='+',
+                         help='Show custom uptime ratios, for one or more periods (in hours)')
+
+    command.add_argument('--logs', action='store_const', const=True, default=False,
+                         help="Show logs associated with this monitor")
+
+    command.add_argument('--log-alerts', action='store_const', const=True, default=False,
+                         help="Show logs with their associated alert contacts (ignored without --logs)")
+
+    command.add_argument('--alerts', action='store_const', const=True, default=False,
+                         help="shows alert contacts associated with this monitor")
+
+    command.add_argument('--log-timezone', action='store_const', const=True, default=False,
+                         help="shows timezone for the logs  (ignored without --logs)")
+
+
 def new_monitor(parser):
     command = parser.add_parser('new-monitor', 
                                 description="Create a new monitor",
@@ -102,9 +118,16 @@ def parse_cli_args(args):
     client = Client()
 
     if opts.subcommand == "get-monitors":
-        monitors = client.get_monitors(ids=opts.ids)
+        monitors = client.get_monitors(ids=opts.ids,
+                                       show_logs=opts.logs,
+                                       show_alert_contacts=opts.alerts, 
+                                       show_log_alert_contacts=opts.log_alerts, 
+                                       show_log_timezone=opts.log_timezone, 
+                                       custom_uptime_ratio=opts.uptime)
         for m in monitors:
             m.dump()
+            print("-" * 20)
+            print()
 
     elif opts.subcommand == "new-monitor":
         id = client.new_monitor(friendly_name=opts.name,

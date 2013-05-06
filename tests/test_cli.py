@@ -20,16 +20,18 @@ class TestCli(object):
 
 class TestGetMonitor(TestCli):
     def test_get_monitors(self, capsys):
-        self.client.should_receive("get_monitors").with_args(ids=None).and_return([flexmock(dump=lambda: print("monitor"))])
+        result = [flexmock(dump=lambda: print("monitor"))] * 3
+        self.client.should_receive("get_monitors").with_args(show_logs=False, show_alert_contacts=False, ids=None, show_log_timezone=False, show_log_alert_contacts=False, custom_uptime_ratio=None).and_return(result)
         parse_cli_args("get-monitors".split(" "))
         out, err = capsys.readouterr()
-        assert out == "monitor\n"
+        assert out == "monitor\n--------------------\n\n" * 3
 
     def test_get_monitors_list(self, capsys):
-        self.client.should_receive("get_monitors").with_args(ids=[15830, 32696, 83920]).and_return([flexmock(dump=lambda: print("monitor"))])
+        result = [flexmock(dump=lambda: print("monitor"))] * 3
+        self.client.should_receive("get_monitors").with_args(show_logs=False, show_alert_contacts=False, ids=[15830, 32696, 83920], show_log_timezone=False, show_log_alert_contacts=False, custom_uptime_ratio=None).and_return(result)
         parse_cli_args("get-monitors --ids 15830 32696 83920".split(" "))
         out, err = capsys.readouterr()
-        assert out == "monitor\n"
+        assert out == "monitor\n--------------------\n\n" * 3
 
     def test_get_monitors_bad_id(self):
         with raises(SystemExit):

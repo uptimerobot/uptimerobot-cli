@@ -6,11 +6,12 @@ from .alert_contact import AlertContact
 
 class Log(object):
     TIMESTAMP_FORMAT = "%m/%d/%Y %H:%M:%S"
+    TIMESTAMP_FORMAT_ALT = "%m/%d/%Y %H:%M:%S %p"
 
 
     TYPE = {
         1: "down",
-        1: "up",
+        2: "up",
         98: "started",
         99: "paused",
     }
@@ -22,14 +23,18 @@ class Log(object):
 
     type = property(lambda self: int(self.data["type"]))
     type_str = property(lambda self: self.TYPE[self.type])
-    datetime = property(lambda self: datetime.strptime(self.data["datetime"], self.TIMESTAMP_FORMAT))
+
+    @property
+    def datetime(self):
+        try:
+            return datetime.strptime(self.data["datetime"], self.TIMESTAMP_FORMAT_ALT)
+        except ValueError as ex:
+            return datetime.strptime(self.data["datetime"], self.TIMESTAMP_FORMAT)
 
 
     def dump(self):
-        print()
-        print("  %s %s" % (self.type_str, self.datetime))
+        print("  %s [%s]" % (self.datetime.strftime(self.TIMESTAMP_FORMAT), self.type_str.title()))
 
         if self.alert_contacts:
-            print ("  Alert contacts:")
-            for alert in alert_contacts:
-                alert.dump(4)
+            for alert in self.alert_contacts:
+                alert.dump()
