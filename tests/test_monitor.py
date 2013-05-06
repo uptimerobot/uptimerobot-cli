@@ -22,7 +22,7 @@ class TestMonitor(object):
 
     def test_init(self):
         assert self.subject.id == 128795
-        assert self.subject.friendly_name == "Yahoo"
+        assert self.subject.name == "Yahoo"
         assert self.subject.url == "http://www.yahoo.com/"
 
         assert self.subject.all_time_uptime_ratio == 99.98

@@ -42,7 +42,7 @@ class Monitor(object):
         self.custom_uptime_ratio_periods = custom_uptime_ratio_periods
 
         self.id = int(data["id"])
-        self.friendly_name = data["friendlyname"]
+        self.name = data["friendlyname"]
         self.url = data["url"]
         self.type = int(data["type"])
         self.subtype = int(data["subtype"]) if data["subtype"] else None
@@ -76,7 +76,7 @@ class Monitor(object):
 
 
     def dump(self):
-        print("%s [%s] #%d" % (self.friendly_name, self.status_str.title(), self.id))
+        print("%s [%s] #%d" % (self.name, self.status_str.title(), self.id))
         print("URL: %s" % self.url)
 
         if self.port:
