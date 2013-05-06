@@ -100,28 +100,38 @@ def parse_cli_args(args):
     client = Client()
 
     if opts.subcommand == "get-monitors":
-        client.get_monitors(ids=opts.ids)
+        monitors = client.get_monitors(ids=opts.ids)
+        print("Monitors:")
+        [print(m) for m in monitors]
 
     elif opts.subcommand == "new-monitor":
-        client.new_monitor(name=opts.name,
-                           url=opts.url,
-                           type=opts.type)
+        id = client.new_monitor(name=opts.name,
+                                url=opts.url,
+                                type=opts.type)
+        print("Created monitor with id: %d" % id)
 
     elif opts.subcommand == "edit-monitor":
         client.edit_monitor(id=opts.id)
 
     elif opts.subcommand == "delete-monitor":
-        client.delete_monitor(id=opts.id)
+        id = client.delete_monitor(id=opts.id)
+        print("Deleted monitor with id: %d" % id)
 
     elif opts.subcommand == "get-alerts":
-        client.get_alert_contacts(ids=opts.ids)
+        alerts = client.get_alert_contacts(ids=opts.ids)
+        print("Alert contacts:")
+        [print(a) for a in alerts]
 
     elif opts.subcommand == "new-alert":
-        client.new_alert_contact(type=opts.type,
-                                 value=opts.value)
+        id = client.new_alert_contact(type=opts.type,
+                                      value=opts.value)
+
+        print("Created alert contact with id: %d" % id)
 
     elif opts.subcommand == "delete-alert":
-        client.delete_alert_contact(id=opts.id)
+        id = client.delete_alert_contact(id=opts.id)
+
+        print("Deleted alert contact with id: %d" % id)
 
     else:
         raise Exception("Bad subcommand %s" % opts.subcommand)

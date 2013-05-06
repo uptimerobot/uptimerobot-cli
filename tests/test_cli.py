@@ -19,15 +19,17 @@ class TestCli(object):
 # Monitors
 
 class TestGetMonitor(TestCli):
-    def test_get_monitors(self):
-        self.client.should_receive("get_monitors").with_args(ids=None)
+    def test_get_monitors(self, capsys):
+        self.client.should_receive("get_monitors").with_args(ids=None).and_return([])
         parse_cli_args("get-monitors".split(" "))
+        out, err = capsys.readouterr()
+        assert out == "Monitors:\n"
 
-
-    def test_get_monitors_list(self):
-        self.client.should_receive("get_monitors").with_args(ids=[15830, 32696, 83920])
+    def test_get_monitors_list(self, capsys):
+        self.client.should_receive("get_monitors").with_args(ids=[15830, 32696, 83920]).and_return([])
         parse_cli_args("get-monitors --ids 15830 32696 83920".split(" "))
-
+        out, err = capsys.readouterr()
+        assert out == "Monitors:\n"
 
     def test_get_monitors_bad_id(self):
         with raises(SystemExit):
@@ -35,9 +37,11 @@ class TestGetMonitor(TestCli):
 
 
 class TestNewMonitor(TestCli):
-    def test_new_monitor(self):
-        self.client.should_receive("new_monitor").with_args(name="fishy", url="http://fish.com", type=2)
+    def test_new_monitor(self, capsys):
+        self.client.should_receive("new_monitor").with_args(name="fishy", url="http://fish.com", type=2).and_return(999)
         parse_cli_args("new-monitor fishy http://fish.com 2".split(" "))
+        out, err = capsys.readouterr()
+        assert out == "Created monitor with id: 999\n"
 
 
     def test_new_monitor_no_args(self):
@@ -46,10 +50,11 @@ class TestNewMonitor(TestCli):
 
 
 class TestEditMonitor(TestCli):
-    def test_edit_monitor(self):
-        self.client.should_receive("edit_monitor").with_args(id=1234)
+    def test_edit_monitor(self, capsys):
+        self.client.should_receive("edit_monitor").with_args(id=1234).and_return()
         parse_cli_args("edit-monitor 1234".split(" "))
-
+        out, err = capsys.readouterr()
+        assert out == ""
 
     def test_edit_monitor_no_args(self):
         with raises(SystemExit):
@@ -57,10 +62,11 @@ class TestEditMonitor(TestCli):
 
 
 class TestDeleteMonitor(TestCli):
-    def test_delete_monitor(self):
-        self.client.should_receive("delete_monitor").with_args(id=1234)
+    def test_delete_monitor(self, capsys):
+        self.client.should_receive("delete_monitor").with_args(id=1234).and_return(1234)
         parse_cli_args("delete-monitor 1234".split(" "))
-
+        out, err = capsys.readouterr()
+        assert out == "Deleted monitor with id: 1234\n"
 
     def test_delete_monitor_bad_id(self):
         with raises(SystemExit):
@@ -77,14 +83,18 @@ class TestDeleteMonitor(TestCli):
 # Alerts
 
 class TestGetAlerts(TestCli):
-    def test_get_alerts(self):
-        self.client.should_receive("get_alert_contacts").with_args(ids=None)
+    def test_get_alerts(self, capsys):
+        self.client.should_receive("get_alert_contacts").with_args(ids=None).and_return([])
         parse_cli_args("get-alerts".split(" "))
+        out, err = capsys.readouterr()
+        assert out == "Alert contacts:\n"
 
 
-    def test_get_alerts_list(self):
-        self.client.should_receive("get_alert_contacts").with_args(ids=[236, 1782, 4790])
+    def test_get_alerts_list(self, capsys):
+        self.client.should_receive("get_alert_contacts").with_args(ids=[236, 1782, 4790]).and_return([])
         parse_cli_args("get-alerts --ids 236 1782 4790".split(" "))
+        out, err = capsys.readouterr()
+        assert out == "Alert contacts:\n"
 
 
     def test_get_alerts_bad_contacts(self):
@@ -94,10 +104,11 @@ class TestGetAlerts(TestCli):
 
 
 class TestNewAlert(TestCli):
-    def test_delete_alert(self):
-        self.client.should_receive("new_alert_contact").with_args(type=2,value="uptime@webresourcesdepot.com")
+    def test_delete_alert(self, capsys):
+        self.client.should_receive("new_alert_contact").with_args(type=2,value="uptime@webresourcesdepot.com").and_return(1234)
         parse_cli_args("new-alert 2 uptime@webresourcesdepot.com".split(" "))
-
+        out, err = capsys.readouterr()
+        assert out == "Created alert contact with id: 1234\n"
 
     def test_delete_alert_bad(self):
         with raises(SystemExit):
@@ -110,9 +121,11 @@ class TestNewAlert(TestCli):
 
 
 class TestDeleteAlert(TestCli):
-    def test_delete_alert(self):
-        self.client.should_receive("delete_alert_contact").with_args(id=1234)
+    def test_delete_alert(self, capsys):
+        self.client.should_receive("delete_alert_contact").with_args(id=1234).and_return(1234)
         parse_cli_args("delete-alert 1234".split(" "))
+        out, err = capsys.readouterr()
+        assert out == "Deleted alert contact with id: 1234\n"
 
 
     def test_delete_alert_bad_id(self):
