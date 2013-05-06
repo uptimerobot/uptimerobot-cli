@@ -6,7 +6,7 @@ from .alert_contact import AlertContact
 
 class Monitor(object):
     TYPES = {
-        1: "http",
+        1: "http(s)",
         2: "keyword",
         3: "ping",
         4: "port",
@@ -69,6 +69,7 @@ class Monitor(object):
     status = property(lambda self: int(self._data["status"]))
     status_str = property(lambda self: self.STATUS[self.status])
 
+
     all_time_uptime_ratio = property(lambda self: float(self._data["alltimeuptimeratio"]))
     @property
     def custom_uptime_ratio(self):
@@ -76,7 +77,6 @@ class Monitor(object):
             return [float(n) for n in self._data["customuptimeratio"].split("-")]
         else:
             return []
-
 
 
     def dump(self):
@@ -105,7 +105,7 @@ class Monitor(object):
         if self.alert_contacts:
             print("Alert contacts:")
             for alert in self.alert_contacts:
-                alert.dump()
+                alert.dump(indent="  ")
 
         if self.logs:
             print("Logs:")

@@ -21,8 +21,15 @@ class Log(object):
         self.alert_contacts = [AlertContact(ac) for ac in data.get("alertcontact", [])]
 
     type = property(lambda self: int(self.data["type"]))
+    type_str = property(lambda self: int(self.data["type"]))
     datetime = property(lambda self: datetime.strptime(self.data["datetime"], self.TIMESTAMP_FORMAT))
 
 
     def dump(self):
-        pass
+        print()
+        print("  %s %s" % (self.type_str, self.datetime))
+
+        if self.alert_contacts:
+            print ("  Alert contacts:")
+            for alert in alert_contacts:
+                alert.dump(4)

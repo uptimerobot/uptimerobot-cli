@@ -20,8 +20,13 @@ class AlertContact(object):
 
     id = property(lambda self: int(self.data["id"]))
     value = property(lambda self: self.data["value"])
+
     type = property(lambda self: int(self.data["type"]))
+    type_str = property(lambda self: self.TYPE[self.type])
+
+    status = property(lambda self: int(self.data["type"]))
+    status_str = property(lambda self: self.STATUS[self.status])
 
 
-    def dump(self):
-        print("%6d %d %s" % (self.id, self.type, self.value))
+    def dump(self, indent=""):
+        print("%s[%s] %s - %s (%d)" % (indent, self.type_str, self.value, self.status_str.title(), self.id))
