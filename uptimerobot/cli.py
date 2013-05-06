@@ -40,6 +40,27 @@ def new_monitor(parser):
     command.add_argument('type', metavar='TYPE', type=int,
                          help='Type of monitor to create')
 
+    command.add_argument('--subtype', type=int,
+                   help='Subtype to monitor')
+
+    command.add_argument('--port', type=int,
+                   help='Port to monitor')
+
+    command.add_argument('--keyword-type', type=int,
+                   help='Type of keyword to monitor')
+
+    command.add_argument('--keyword', type=str,
+                   help='Keyword to monitor')
+
+    command.add_argument('--username', type=str,
+                   help='HTTP username to use for private site')
+
+    command.add_argument('--password', type=str,
+                   help='HTTP password to use for private site')
+
+    command.add_argument('--alerts', metavar="ID", type=int, nargs='+',
+                   help='IDs of alert contacts to use')
+
 
 def edit_monitor(parser):
     command = parser.add_parser('edit-monitor', 
@@ -49,6 +70,38 @@ def edit_monitor(parser):
     command.add_argument('id', metavar='ID', type=int,
                    help='ID of monitor to edit')
 
+    command.add_argument('--name', type=str,
+                   help='Friendly name of monitor')
+
+    command.add_argument('--status', type=int,
+                   help='Status to set the monitor to')
+
+    command.add_argument('--url', type=str,
+                   help='URL to monitor')
+
+    command.add_argument('--type', type=int,
+                   help='Type to monitor')
+
+    command.add_argument('--subtype', type=int,
+                   help='Subtype to monitor')
+
+    command.add_argument('--port', type=int,
+                   help='Port to monitor')
+
+    command.add_argument('--keyword-type', type=int,
+                   help='Type of keyword to monitor')
+
+    command.add_argument('--keyword', type=str,
+                   help='Keyword to monitor')
+
+    command.add_argument('--username', type=str,
+                   help='HTTP username to use for private site')
+
+    command.add_argument('--password', type=str,
+                   help='HTTP password to use for private site')
+
+    command.add_argument('--alerts', metavar="ID", type=int, nargs='+',
+                   help='IDs of alert contacts to use')
 
 def delete_monitor(parser):
     command = parser.add_parser('delete-monitor', 
@@ -130,13 +183,33 @@ def parse_cli_args(args):
             print()
 
     elif opts.subcommand == "new-monitor":
-        id = client.new_monitor(friendly_name=opts.name,
+        id = client.new_monitor(name=opts.name,
                                 url=opts.url,
-                                type=opts.type)
+                                type=opts.type,
+                                subtype=opts.subtype,
+                                port=opts.port,
+                                keyword_type=opts.keyword_type,
+                                keyword=opts.keyword,
+                                username=opts.username,
+                                password=opts.password,
+                                alert_contacts=opts.alerts)
+
         print("Created monitor with id: %d" % id)
 
     elif opts.subcommand == "edit-monitor":
-        id = client.edit_monitor(id=opts.id)
+        id = client.edit_monitor(id=opts.id,
+                                status=opts.status,
+                                name=opts.name,
+                                url=opts.url,
+                                type=opts.type,
+                                subtype=opts.subtype,
+                                port=opts.port,
+                                keyword_type=opts.keyword_type,
+                                keyword=opts.keyword,
+                                username=opts.username,
+                                password=opts.password,
+                                alert_contacts=opts.alerts)
+
         print("Edited monitor with id: %d" % id)
 
     elif opts.subcommand == "delete-monitor":

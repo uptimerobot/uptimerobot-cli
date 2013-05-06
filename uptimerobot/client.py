@@ -25,6 +25,10 @@ class Client(object):
             self.api_key = api_key
 
 
+    def int_list(self, ints):
+        return self.LIST_SEPARATOR.join(str(n) for n in ints)
+
+
     def get(self, action, **values):
         payload = {
             "apiKey": self.api_key,
@@ -81,7 +85,7 @@ class Client(object):
         variables = {}
 
         if ids:
-            variables["monitors"] = self.LIST_SEPARATOR.join(str(id) for id in ids)
+            variables["monitors"] = self.int_list(ids)
 
         if show_logs:
             variables["logs"] = "1"
@@ -96,7 +100,7 @@ class Client(object):
             variables["showMonitorAlertContacts"] = "1"
 
         if custom_uptime_ratio:
-            variables["customUptimeRatio"] = self.LIST_SEPARATOR.join(str(up) for up in custom_uptime_ratio)
+            variables["customUptimeRatio"] = self.int_list(custom_uptime_ratio)
         
 
         data = self.get("getMonitors", **variables)
@@ -106,15 +110,34 @@ class Client(object):
         return monitors
 
 
-    def new_monitor(self, friendly_name, url, type):
+    def new_monitor(self, name, url, type,
+                    subtype=None,
+                    port=None,
+                    keyword_type=None,
+                    keyword=None,
+                    username=None,
+                    password=None,
+                    alert_contacts=None):
         """
         Args
-            friendly_name
+            name
                 Human-readable name to assign to the monitor.
             url
                 URL
             type
-                Monitor type
+                Monitor type [int]
+            subtype
+                subtype of the monitor [int]
+            keyword_type
+                Type of keyword to use (requires keyword_value be set) [int]
+            keyword_value
+                Keyword to use (requires keyword_type be set)
+            http_username
+                Username to use for private site (requires http_password be set)
+            http_password
+                Password to use for private site (requires http_username be set)
+            alert_contacts
+                Alert contacts to give the monitor [list<int>]
 
         Returns
             ID of monitor created.
@@ -122,21 +145,69 @@ class Client(object):
         """
 
         variables = {
-            "monitorFriendlyName": friendly_name,
+            "monitorFriendlyName": name,
             "monitorURL": url,
             "monitorType": str(type),
         }
+
+        if subtype:
+            variables["monitorSubType"] = str(subtype)
+
+        if port:
+            variables["monitorPort"] = str(port)
+
+        if keyword_type and keyword_value:
+            variables["monitorKeywordType"] = str(keyword_type)
+            variables["monitorKeywordValue"] = keyword
+
+        if username and password:
+            variables["monitorHTTPUsername"] = username
+            variables["monitorHTTPPassword"] = password
+
+        if alert_contacts:
+            variables["monitorAlertContacts"] = self.int_list(alert_contacts)
 
         data = self.get("newMonitor", **variables)
 
         return int(data["monitor"]["id"])
 
 
-    def edit_monitor(self, id):
+    def edit_monitor(self, id,
+                    status=None,
+                    name=None,
+                    url=None,
+                    type=None,
+                    subtype=None,
+                    port=None,
+                    keyword_type=None,
+                    keyword=None,
+                    username=None,
+                    password=None,
+                    alert_contacts=None):
         """
         Args
             id
                 ID number of the monitor to edit
+            status
+                Status to set [int]
+            name
+                Human-readable name to assign to the monitor.
+            url
+                URL to monitor
+            type
+                Monitor type [int]
+            subtype
+                subtype of the monitor [int]
+            keyword_type
+                Type of keyword to use (requires keyword be set) [int]
+            keyword
+                Keyword to use (requires keyword_type be set)
+            username
+                Username to use for private site (requires http_password be set)
+            password
+                Password to use for private site (requires http_username be set)
+            alert_contacts
+                Alert contacts to give the monitor [list<int>]
 
         Returns
             ID of monitor edited.
@@ -146,6 +217,36 @@ class Client(object):
         variables = {
             "monitorID": str(id),
         }
+
+        if status:
+            variables["monitorStatus"] = str(status)
+
+        if name:
+            variables["monitorFriendlyName"] = name
+
+        if url:
+            variables["monitorURL"] = url
+
+        if type:
+            variables["monitorType"] = str(type)
+
+        if subtype:
+            variables["monitorSubType"] = str(subtype)
+
+        if port:
+            variables["monitorPort"] = str(port)
+
+        if keyword_type and keyword:
+            variables["monitorKeywordType"] = str(keyword_type)
+            variables["monitorKeywordValue"] = keyword
+
+        if username and password:
+            variables["monitorHTTPUsername"] = username
+            variables["monitorHTTPPassword"] = password
+
+        if alert_contacts:
+            variables["monitorAlertContacts"] = self.int_list(alert_contacts)
+
 
         data = self.get("editMonitor", **variables)
 
