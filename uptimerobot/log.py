@@ -21,7 +21,7 @@ class Log(object):
         self.alert_contacts = [AlertContact(ac) for ac in data.get("alertcontact", [])]
 
     type = property(lambda self: int(self.data["type"]))
-    type_str = property(lambda self: int(self.data["type"]))
+    type_str = property(lambda self: self.TYPE[self.type])
     datetime = property(lambda self: datetime.strptime(self.data["datetime"], self.TIMESTAMP_FORMAT))
 
 
