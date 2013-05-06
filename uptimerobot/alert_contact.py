@@ -16,15 +16,12 @@ class AlertContact(object):
 
 
     def __init__(self, data):
-        self.data = data
+        self.id = int(data["id"]) if data.get("id", None) else 0
+        self.type =  int(data["type"])
+        self.value = data["value"]
+        self.status = int(data["type"])
 
-    id = property(lambda self: int(self.data["id"]) if self.data.get("id", None) else 0)
-    value = property(lambda self: self.data["value"])
-
-    type = property(lambda self: int(self.data["type"]))
     type_str = property(lambda self: self.TYPE[self.type])
-
-    status = property(lambda self: int(self.data["type"]))
     status_str = property(lambda self: self.STATUS[self.status])
 
 

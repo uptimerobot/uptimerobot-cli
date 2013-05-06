@@ -39,47 +39,42 @@ class Monitor(object):
 
 
     def __init__(self, data, custom_uptime_ratio_periods=[]):
-        self._data = data
-
         self.alert_contacts = [AlertContact(ac) for ac in data.get("alertcontact", [])]
         self.logs = [Log(log) for log in data.get("log", [])]
         self.custom_uptime_ratio_periods = custom_uptime_ratio_periods
 
+        self.id = int(data["id"])
+        self.friendly_name = data["friendlyname"]
+        self.url = data["url"]
+        self.type = int(data["type"])
+        self.subtype = int(data["subtype"]) if data["subtype"] else None
 
-    id = property(lambda self: int(self._data["id"]))
-    friendly_name = property(lambda self: self._data["friendlyname"])
-    url = property(lambda self: self._data["url"])
+        self.keyword_type = int(data["keywordtype"]) if data["keywordtype"] else None
+        self.keyword_value = data["keywordvalue"]
 
-    type = property(lambda self: int(self._data["type"]))
-    type_str = property(lambda self: self.TYPES[self.type])
+        self.http_username = data["httpusername"]
+        self.http_password = data["httppassword"]
+        self.port = int(data["port"]) if data["port"] else None
 
-    subtype = property(lambda self: int(self._data["subtype"]) if self._data["subtype"] else None)
+        self.status = int(data["status"])
+        self.all_time_uptime_ratio = float(data["alltimeuptimeratio"])
+
+        if "customuptimeratio" in data:
+            self.custom_uptime_ratio = [float(n) for n in data["customuptimeratio"].split("-")]
+        else:
+            self.custom_uptime_ratio = []
+
+
     @property
     def subtype_str(self):
-        if self._data["subtype"]:
-            return self.SUBTYPES[int(self._data["subtype"])]
+        if self.subtype:
+            return self.SUBTYPES[self.subtype]
         else:
             return None
 
-    keyword_type = property(lambda self: int(self._data["keywordtype"]) if self._data["keywordtype"] else None)
     keyword_type_str = property(lambda self: self.KEYWORD_TYPE[self.keyword_type])
-    keyword_value = property(lambda self: self._data["keywordvalue"])
-
-    http_username = property(lambda self: self._data["httpusername"])
-    http_password = property(lambda self: self._data["httppassword"])
-    port = property(lambda self: int(self._data["port"]) if self._data["port"] else None)
-
-    status = property(lambda self: int(self._data["status"]))
+    type_str = property(lambda self: self.TYPES[self.type])
     status_str = property(lambda self: self.STATUS[self.status])
-
-
-    all_time_uptime_ratio = property(lambda self: float(self._data["alltimeuptimeratio"]))
-    @property
-    def custom_uptime_ratio(self):
-        if "customuptimeratio" in self._data:
-            return [float(n) for n in self._data["customuptimeratio"].split("-")]
-        else:
-            return []
 
 
     def dump(self):

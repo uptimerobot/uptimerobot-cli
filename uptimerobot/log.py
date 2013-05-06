@@ -17,19 +17,17 @@ class Log(object):
     }
 
     def __init__(self, data):
-        self.data = data
-
         self.alert_contacts = [AlertContact(ac) for ac in data.get("alertcontact", [])]
 
-    type = property(lambda self: int(self.data["type"]))
-    type_str = property(lambda self: self.TYPE[self.type])
-
-    @property
-    def datetime(self):
         try:
-            return datetime.strptime(self.data["datetime"], self.TIMESTAMP_FORMAT_ALT)
+            self.datetime = datetime.strptime(data["datetime"], self.TIMESTAMP_FORMAT_ALT)
         except ValueError as ex:
-            return datetime.strptime(self.data["datetime"], self.TIMESTAMP_FORMAT)
+            self.datetime = datetime.strptime(data["datetime"], self.TIMESTAMP_FORMAT)
+
+        self.type = int(data["type"])
+
+
+    type_str = property(lambda self: self.TYPE[self.type])
 
 
     def dump(self):
