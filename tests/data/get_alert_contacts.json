@@ -1,0 +1,19 @@
+{
+    "stat": "ok",
+    "alertcontacts": {
+        "alertcontact": [
+            {
+                "id": "236",
+                "value": "uptime@webresourcesdepot.com",
+                "type": "2",
+                "status": "2"
+            },
+            {
+                "id": "237",
+                "value": "uptime@webresourcesdepot.com",
+                "type": "3",
+                "status": "2"
+            }
+        ]
+    }
+}

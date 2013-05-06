@@ -6,3 +6,4 @@ pyyaml==3.10
 
 # Testing
 pytest==2.3.4
+flexmock==0.9.6

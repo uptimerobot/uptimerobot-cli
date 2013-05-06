@@ -1,0 +1,57 @@
+{
+    "id": "128795",
+    "friendlyname": "Yahoo",
+    "url": "http://www.yahoo.com/",
+    "type": "1",
+    "subtype": "",
+    "keywordtype": "0",
+    "keywordvalue": "",
+    "httpusername": "",
+    "httppassword": "",
+    "port": "",
+    "status": "2",
+    "alltimeuptimeratio": "99.98",
+    "customuptimeratio": "100.00",
+    "alertcontact": [
+        {
+            "id": "4631",
+            "type": "2",
+            "value": "uptime@webresourcesdepot.com"
+        },
+        {
+            "id": "2420",
+            "type": "3",
+            "value": "umutm"
+        }
+    ],
+    "log": [
+        {
+            "type": "2",
+            "datetime": "09/25/2011 16:12:44",
+            "alertcontact": [
+                {
+                    "type": "0",
+                    "value": "uptime@webresourcesdepot.com"
+                },
+                {
+                    "type": "3",
+                    "value": "umutm"
+                }
+            ]
+        },
+        {
+            "type": "1",
+            "datetime": "09/25/2011 16:11:44",
+            "alertcontact": [
+                {
+                    "type": "0",
+                    "value": "uptime@webresourcesdepot.com"
+                },
+                {
+                    "type": "3",
+                    "value": "umutm"
+                }
+            ]
+        }
+    ]
+}
