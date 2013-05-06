@@ -37,28 +37,79 @@ class Monitor(object):
 
 
     def __init__(self, data):
-        self.data = data
+        self._data = data
 
         self.alert_contacts = [AlertContact(ac) for ac in data.get("alertcontact", [])]
         self.logs = [Log(log) for log in data.get("log", [])]
 
 
+    id = property(lambda self: int(self._data["id"]))
+    friendly_name = property(lambda self: self._data["friendlyname"])
+    url = property(lambda self: self._data["url"])
 
-    id = property(lambda self: int(self.data["id"]))
-    friendly_name = property(lambda self: self.data["friendlyname"])
-    url = property(lambda self: self.data["url"])
+    type = property(lambda self: int(self._data["type"]))
+    type_str = property(lambda self: self.TYPES[self.type])
 
-    type = property(lambda self: int(self.data["type"]))
-    subtype = property(lambda self: int(self.data["subtype"]))
+    subtype = property(lambda self: int(self._data["subtype"]) if self._data["subtype"] else None)
+    @property
+    def subtype_str(self):
+        if self._data["subtype"]:
+            return self.SUBTYPES[int(self._data["subtype"])]
+        else:
+            return None
 
-    keyword_type = property(lambda self: self.data["keywordtype"])
-    keyword_value = property(lambda self: self.data["keywordvalue"])
+    keyword_type = property(lambda self: int(self._data["keywordtype"]) if self._data["keywordtype"] else None)
+    keyword_type_str = property(lambda self: self.KEYWORD_TYPE[self.keyword_type])
+    keyword_value = property(lambda self: self._data["keywordvalue"])
 
-    http_username = property(lambda self: self.data["httpusername"])
-    http_password = property(lambda self: self.data["httppassword"])
-    port = property(lambda self: int(self.data["port"]))
+    http_username = property(lambda self: self._data["httpusername"])
+    http_password = property(lambda self: self._data["httppassword"])
+    port = property(lambda self: int(self._data["port"]) if self._data["port"] else None)
 
-    status = property(lambda self: int(self.data["status"]))
+    status = property(lambda self: int(self._data["status"]))
+    status_str = property(lambda self: self.STATUS[self.status])
 
-    all_time_uptime_ratio = property(lambda self: float(self.data["alltimeuptimeratio"]))
-    custom_uptime_ratio = property(lambda self: [float(n) for n in self.data["customuptimeratio"].split("-")])
+    all_time_uptime_ratio = property(lambda self: float(self._data["alltimeuptimeratio"]))
+    @property
+    def custom_uptime_ratio(self):
+        if "customuptimeratio" in self._data:
+            return [float(n) for n in self._data["customuptimeratio"].split("-")]
+        else:
+            return []
+
+
+
+    def dump(self):
+        print("%s - %s (%d)" % (self.friendly_name, self.status_str.title(), self.id))
+        print("URL: %s" % self.url)
+
+        if self.port:
+            print("Port: %d", self.port)
+
+        if self.http_username:
+            print("User: %s (%s)" % self.http_username, self.http_password)
+
+        print("Type: %s" % self.type_str)
+        print("All Time Uptime Ratio: %.2f%%" % self.all_time_uptime_ratio)
+
+        if self.custom_uptime_ratio:
+            for i, ratio in enumerate(self.custom_uptime_ratio):
+                print("Custom Uptime Ratio %d: %.2f%%" % (i, ratio))
+
+        if self.subtype:
+            print("Subtype: %s" % self.subtype_str)
+
+        if self.keyword_type:
+            print("Keyword: %s %s" % (self.keyword_type_str, self.keyword_value))
+
+        if self.alert_contacts:
+            print("Alert contacts:")
+            for alert in self.alert_contacts:
+                alert.dump()
+
+        if self.logs:
+            print("Logs:")
+            for log in self.logs:
+                log.dump()
+
+        print()

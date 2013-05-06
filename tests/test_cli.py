@@ -20,16 +20,16 @@ class TestCli(object):
 
 class TestGetMonitor(TestCli):
     def test_get_monitors(self, capsys):
-        self.client.should_receive("get_monitors").with_args(ids=None).and_return([])
+        self.client.should_receive("get_monitors").with_args(ids=None).and_return([flexmock(dump=lambda: print("monitor"))])
         parse_cli_args("get-monitors".split(" "))
         out, err = capsys.readouterr()
-        assert out == "Monitors:\n"
+        assert out == "monitor\n"
 
     def test_get_monitors_list(self, capsys):
-        self.client.should_receive("get_monitors").with_args(ids=[15830, 32696, 83920]).and_return([])
+        self.client.should_receive("get_monitors").with_args(ids=[15830, 32696, 83920]).and_return([flexmock(dump=lambda: print("monitor"))])
         parse_cli_args("get-monitors --ids 15830 32696 83920".split(" "))
         out, err = capsys.readouterr()
-        assert out == "Monitors:\n"
+        assert out == "monitor\n"
 
     def test_get_monitors_bad_id(self):
         with raises(SystemExit):
@@ -84,17 +84,17 @@ class TestDeleteMonitor(TestCli):
 
 class TestGetAlerts(TestCli):
     def test_get_alerts(self, capsys):
-        self.client.should_receive("get_alert_contacts").with_args(ids=None).and_return([])
+        self.client.should_receive("get_alert_contacts").with_args(ids=None).and_return([flexmock(dump=lambda: print("alert"))])
         parse_cli_args("get-alerts".split(" "))
         out, err = capsys.readouterr()
-        assert out == "Alert contacts:\n"
+        assert out == "alert\n"
 
 
     def test_get_alerts_list(self, capsys):
-        self.client.should_receive("get_alert_contacts").with_args(ids=[236, 1782, 4790]).and_return([])
+        self.client.should_receive("get_alert_contacts").with_args(ids=[236, 1782, 4790]).and_return([flexmock(dump=lambda: print("alert"))])
         parse_cli_args("get-alerts --ids 236 1782 4790".split(" "))
         out, err = capsys.readouterr()
-        assert out == "Alert contacts:\n"
+        assert out == "alert\n"
 
 
     def test_get_alerts_bad_contacts(self):

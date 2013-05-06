@@ -22,5 +22,6 @@ class AlertContact(object):
     value = property(lambda self: self.data["value"])
     type = property(lambda self: int(self.data["type"]))
 
-    def __str__(self):
-        return "AlertContact: %6d %d %s" % (self.id, self.type, self.value)
+
+    def dump(self):
+        print("%6d %d %s" % (self.id, self.type, self.value))

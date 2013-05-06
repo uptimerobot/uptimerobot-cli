@@ -101,8 +101,8 @@ def parse_cli_args(args):
 
     if opts.subcommand == "get-monitors":
         monitors = client.get_monitors(ids=opts.ids)
-        print("Monitors:")
-        [print(m) for m in monitors]
+        for m in monitors:
+            m.dump()
 
     elif opts.subcommand == "new-monitor":
         id = client.new_monitor(friendly_name=opts.name,
@@ -120,8 +120,8 @@ def parse_cli_args(args):
 
     elif opts.subcommand == "get-alerts":
         alerts = client.get_alert_contacts(ids=opts.ids)
-        print("Alert contacts:")
-        [print(a) for a in alerts]
+        for a in alerts:
+            a.dump()
 
     elif opts.subcommand == "new-alert":
         id = client.new_alert_contact(type=opts.type,

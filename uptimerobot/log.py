@@ -22,3 +22,7 @@ class Log(object):
 
     type = property(lambda self: int(self.data["type"]))
     datetime = property(lambda self: datetime.strptime(self.data["datetime"], self.TIMESTAMP_FORMAT))
+
+
+    def dump(self):
+        pass
