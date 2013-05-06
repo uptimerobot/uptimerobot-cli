@@ -5,6 +5,37 @@ from .alert_contact import AlertContact
 
 
 class Monitor(object):
+    TYPES = {
+        1: "http",
+        2: "keyword",
+        3: "ping",
+        4: "port",
+    }
+
+    SUBTYPES = {
+        1: "http",
+        2: "https",
+        3: "ftp",
+        4: "smtp",
+        5: "pop3",
+        6: "imap",
+        99: "custom",
+    }
+
+    KEYWORD_TYPE = {
+        1: "exists",
+        2: "not exists",
+    }
+
+    STATUS = {
+        0: "paused",
+        1: "not checked yet",
+        2: "up",
+        8: "seems down",
+        9: "down",
+    }
+
+
     def __init__(self, data):
         self.data = data
 
@@ -29,4 +60,4 @@ class Monitor(object):
     status = property(lambda self: int(self.data["status"]))
 
     all_time_uptime_ratio = property(lambda self: float(self.data["alltimeuptimeratio"]))
-    custom_uptime_ratio = property(lambda self: float(self.data["customuptimeratio"]))
+    custom_uptime_ratio = property(lambda self: [float(n) for n in self.data["customuptimeratio"].split("-")])

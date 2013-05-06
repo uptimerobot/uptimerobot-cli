@@ -7,6 +7,14 @@ from .alert_contact import AlertContact
 class Log(object):
     TIMESTAMP_FORMAT = "%m/%d/%Y %H:%M:%S"
 
+
+    TYPE = {
+        1: "down",
+        1: "up",
+        98: "started",
+        99: "paused",
+    }
+
     def __init__(self, data):
         self.data = data
 

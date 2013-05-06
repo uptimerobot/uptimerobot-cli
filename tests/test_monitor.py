@@ -26,10 +26,10 @@ class TestMonitor(object):
         assert self.subject.url == "http://www.yahoo.com/"
 
         assert self.subject.all_time_uptime_ratio == 99.98
-        assert self.subject.custom_uptime_ratio == 100.0
+        assert self.subject.custom_uptime_ratio == [100.0, 99.0]
 
         assert len(self.subject.alert_contacts) == 2
-        
+
         assert self.subject.alert_contacts[0].id == 4631
         assert self.subject.alert_contacts[0].type == 2
         assert self.subject.alert_contacts[0].value == "uptime@webresourcesdepot.com"
