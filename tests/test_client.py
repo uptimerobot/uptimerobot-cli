@@ -50,6 +50,20 @@ class TestGetMonitors(TestClient):
         assert [monitor.id for monitor in monitors] == [128795, 128796]
 
 
+class TestNewMonitor(TestClient):
+    def test_new_monitor(self):
+        flexmock(self.client).should_receive("get").with_args("newMonitor", monitorFriendlyName="fred", monitorURL="http://x.y", monitorType="2").and_return(self.response("new_monitor"))
+        new_id = self.client.new_monitor(friendly_name="fred", url="http://x.y", type=2)
+        assert new_id == 128798
+
+
+class TestEditMonitor(TestClient):
+    def test_edit_monitor(self):
+        flexmock(self.client).should_receive("get").with_args("editMonitor", monitorID="128798").and_return(self.response("edit_monitor"))
+        edited_id = self.client.edit_monitor(id=128798)
+        assert edited_id == 128798
+
+
 class TestDeleteMonitor(TestClient):
     def test_delete_monitor(self):
         flexmock(self.client).should_receive("get").with_args("deleteMonitor", monitorID="128798").and_return(self.response("delete_monitor"))

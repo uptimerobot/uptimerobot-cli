@@ -66,12 +66,50 @@ class Client(object):
         return monitors
 
 
-    def new_monitor(self, name, url, type):
-        pass
+    def new_monitor(self, friendly_name, url, type):
+        """
+        Args
+            friendly_name
+                Human-readable name to assign to the monitor.
+            url
+                URL
+            type
+                Monitor type
+
+        Returns
+            ID of monitor created.
+
+        """
+
+        variables = {
+            "monitorFriendlyName": friendly_name,
+            "monitorURL": url,
+            "monitorType": str(type),
+        }
+
+        data = self.get("newMonitor", **variables)
+
+        return int(data["monitor"]["id"])
 
 
     def edit_monitor(self, id):
-        pass
+        """
+        Args
+            id
+                ID number of the monitor to edit
+
+        Returns
+            ID of monitor edited.
+
+        """
+
+        variables = {
+            "monitorID": str(id),
+        }
+
+        data = self.get("editMonitor", **variables)
+
+        return int(data["monitor"]["id"])
 
 
     def delete_monitor(self, id):
@@ -87,9 +125,7 @@ class Client(object):
 
         data = self.get("deleteMonitor", monitorID=str(id))
 
-        contact = AlertContact(data["monitor"])
-
-        return contact.id
+        return int(data["monitor"]["id"])
 
 
     def get_alert_contacts(self, ids=None):

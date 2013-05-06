@@ -105,13 +105,14 @@ def parse_cli_args(args):
         [print(m) for m in monitors]
 
     elif opts.subcommand == "new-monitor":
-        id = client.new_monitor(name=opts.name,
+        id = client.new_monitor(friendly_name=opts.name,
                                 url=opts.url,
                                 type=opts.type)
         print("Created monitor with id: %d" % id)
 
     elif opts.subcommand == "edit-monitor":
-        client.edit_monitor(id=opts.id)
+        id = client.edit_monitor(id=opts.id)
+        print("Edited monitor with id: %d" % id)
 
     elif opts.subcommand == "delete-monitor":
         id = client.delete_monitor(id=opts.id)

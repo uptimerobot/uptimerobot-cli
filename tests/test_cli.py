@@ -38,7 +38,7 @@ class TestGetMonitor(TestCli):
 
 class TestNewMonitor(TestCli):
     def test_new_monitor(self, capsys):
-        self.client.should_receive("new_monitor").with_args(name="fishy", url="http://fish.com", type=2).and_return(999)
+        self.client.should_receive("new_monitor").with_args(friendly_name="fishy", url="http://fish.com", type=2).and_return(999)
         parse_cli_args("new-monitor fishy http://fish.com 2".split(" "))
         out, err = capsys.readouterr()
         assert out == "Created monitor with id: 999\n"
@@ -51,10 +51,10 @@ class TestNewMonitor(TestCli):
 
 class TestEditMonitor(TestCli):
     def test_edit_monitor(self, capsys):
-        self.client.should_receive("edit_monitor").with_args(id=1234).and_return()
+        self.client.should_receive("edit_monitor").with_args(id=1234).and_return(1234)
         parse_cli_args("edit-monitor 1234".split(" "))
         out, err = capsys.readouterr()
-        assert out == ""
+        assert out == "Edited monitor with id: 1234\n"
 
     def test_edit_monitor_no_args(self):
         with raises(SystemExit):
