@@ -77,24 +77,27 @@ class Monitor(object):
 
     def dump(self):
         print("%s [%s] #%d" % (self.name, self.status_str.title(), self.id))
-        print("URL: %s" % self.url)
 
         if self.port:
-            print("Port: %d", self.port)
+            print("URL: %s:%d" % (self.url, self.port))
+        else:
+            print("URL: %s" % self.url)
+
 
         if self.http_username:
             print("User: %s (%s)" % self.http_username, self.http_password)
 
         print("Type: %s" % self.type_str)
+
+        if self.subtype:
+            print("Subtype: %s" % self.subtype_str)
+
         print("All Time Uptime Ratio:         %.2f%%" % self.all_time_uptime_ratio)
 
         if self.custom_uptime_ratio:
             for period, ratio in zip(self.custom_uptime_ratio_periods, self.custom_uptime_ratio):
                 str = "Uptime Ratio over %d hour%s:" % (period, "" if period == 1 else "s")
                 print("%-30s %.2f%%" % (str, ratio))
-
-        if self.subtype:
-            print("Subtype: %s" % self.subtype_str)
 
         if self.keyword_type:
             print("Keyword: %s (%s)" % (self.keyword, self.keyword_type_str))
