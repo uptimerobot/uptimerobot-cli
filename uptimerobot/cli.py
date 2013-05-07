@@ -1,8 +1,18 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 from argparse import ArgumentParser
+from argparse import RawTextHelpFormatter
 
 from .client import Client
+from .monitor import Monitor
+from .alert_contact import AlertContact
+
+
+def dict_str(dict):
+    str = ""
+    for key, value in dict.items():
+        str += "  %2d: %s\n" % (key, value)
+    return str
 
 
 def get_monitors(parser):
@@ -29,9 +39,23 @@ def get_monitors(parser):
 
 
 def new_monitor(parser):
-    command = parser.add_parser('new-monitor', 
-                                description="Create a new monitor",
-                                help="Create a new monitor")
+    description = """
+Create a new monitor
+
+Type:
+%s
+
+Subtype:
+%s
+
+Keyword Type:
+%s
+""" % (dict_str(Monitor.TYPES), dict_str(Monitor.SUBTYPES), dict_str(Monitor.KEYWORD_TYPES))
+
+    command = parser.add_parser('new-monitor',
+                                formatter_class=RawTextHelpFormatter, 
+                                help="Create a new monitor",
+                                description=description)
 
     command.add_argument('name', metavar='NAME', type=str,
                          help='Friendly name for new monitor')
@@ -63,8 +87,25 @@ def new_monitor(parser):
 
 
 def edit_monitor(parser):
+    description = """
+Edit an existing monitor
+
+Type:
+%s
+
+Subtype:
+%s
+
+Keyword Type:
+%s
+
+Status:
+%s
+""" % (dict_str(Monitor.TYPES), dict_str(Monitor.SUBTYPES), dict_str(Monitor.KEYWORD_TYPES), dict_str(Monitor.STATUS))
+
     command = parser.add_parser('edit-monitor', 
-                                description="Edit an existing monitor",
+                                formatter_class=RawTextHelpFormatter,
+                                description=description,
                                 help="Edit an existing monitor")
 
     command.add_argument('id', metavar='ID', type=int,
@@ -121,8 +162,17 @@ def get_alerts(parser):
 
 
 def new_alert(parser):
+    description = """
+Create a new alert contact
+
+Type:
+%s
+""" % dict_str(AlertContact.TYPES)
+
+
     command = parser.add_parser('new-alert',
-                                description="Create a new alert contact",
+                                formatter_class=RawTextHelpFormatter,
+                                description=description,
                                 help="Create a new alert contact")
     command.add_argument('type', metavar='TYPE', type=int,
                          help='Type of contact to create')

@@ -1,11 +1,11 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 class AlertContact(object):
-    TYPE = {
+    TYPES = {
         1: "sms",
         2: "email",
         3: "twitter",
-        4: "boxcar",
+        4: "boxcar (iOS)",
     }
 
     STATUS = {
@@ -21,7 +21,7 @@ class AlertContact(object):
         self.value = data["value"]
         self.status = int(data["type"])
 
-    type_str = property(lambda self: self.TYPE[self.type])
+    type_str = property(lambda self: self.TYPES[self.type])
     status_str = property(lambda self: self.STATUS[self.status])
 
 

@@ -22,7 +22,7 @@ class Monitor(object):
         99: "custom",
     }
 
-    KEYWORD_TYPE = {
+    KEYWORD_TYPES = {
         1: "exists",
         2: "not exists",
     }
@@ -70,7 +70,7 @@ class Monitor(object):
         else:
             return None
 
-    keyword_type_str = property(lambda self: self.KEYWORD_TYPE[self.keyword_type])
+    keyword_type_str = property(lambda self: self.KEYWORD_TYPES[self.keyword_type])
     type_str = property(lambda self: self.TYPES[self.type])
     status_str = property(lambda self: self.STATUS[self.status])
 
