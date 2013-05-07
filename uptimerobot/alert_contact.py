@@ -28,8 +28,11 @@ class AlertContact(object):
     def dump(self):
         # No id/type if inside a log.
         if self.id and self.status:
+            # List of alerts
             print("  %s: %s [%s] #%d" % (self.type_str, self.value, self.status_str.title(), self.id))
         elif self.id and not self.status:
+            # In monitor.
             print("  %s: %s #%d" % (self.type_str, self.value, self.id))
         else:
-            print("  - %s" % self.value)
+            # In log.
+            print("  %s: %s" % (self.type_str, self.value))
