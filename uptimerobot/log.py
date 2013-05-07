@@ -17,7 +17,11 @@ class Log(object):
     }
 
     def __init__(self, data):
-        self.alert_contacts = [AlertContact(ac) for ac in data.get("alertcontact", [])]
+        # Sometimes the alert data has no 'value'!
+        print(alert_data)
+        alert_data = filter(lambda ac: ac.get("value"), data.get("alertcontact", []))
+
+        self.alert_contacts = [AlertContact(ac) for ac in alert_data]
 
         try:
             self.datetime = datetime.strptime(data["datetime"], self.TIMESTAMP_FORMAT_ALT)

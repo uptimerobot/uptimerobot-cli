@@ -2,6 +2,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 from argparse import ArgumentParser
 from argparse import RawTextHelpFormatter
+from termcolor import colored
 
 from .client import Client
 from .monitor import Monitor
@@ -229,7 +230,7 @@ def parse_cli_args(args):
                                        custom_uptime_ratio=opts.uptime)
         for m in monitors:
             m.dump()
-            print("-" * 20)
+            print(colored("-" * 20, "blue"))
             print()
 
     elif opts.subcommand == "new-monitor":

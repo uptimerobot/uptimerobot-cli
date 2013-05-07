@@ -2,6 +2,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 from .log import Log
 from .alert_contact import AlertContact
+from termcolor import colored
 
 
 class Monitor(object):
@@ -76,7 +77,15 @@ class Monitor(object):
 
 
     def dump(self):
-        print("%s [%s] #%d" % (self.name, self.status_str.title(), self.id))
+        if self.status in [2]:
+            color = "green"
+        elif self.status in [8, 9]:
+            color = "red"
+        else:
+            color = "yellow"
+
+        status = colored(self.status_str.title(), color)
+        print("%s [%s] #%d" % (self.name, status, self.id))
 
         if self.port:
             print("URL: %s:%d" % (self.url, self.port))

@@ -28,8 +28,17 @@ class AlertContact(object):
     def dump(self):
         # No id/type if inside a log.
         if self.id and self.status:
+            if self.status == 2:
+                color = "green"
+            elif self.status == 0:
+                color = "red"
+            else:
+                color = "yellow"
+
+            status = colored(self.status_str.title(), color)
+
             # List of alerts
-            print("  %s: %s [%s] #%d" % (self.type_str, self.value, self.status_str.title(), self.id))
+            print("  %s: %s [%s] #%d" % (self.type_str, self.value, status, self.id))
         elif self.id and not self.status:
             # In monitor.
             print("  %s: %s #%d" % (self.type_str, self.value, self.id))
