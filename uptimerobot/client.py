@@ -129,8 +129,8 @@ class Client(object):
             subtype
                 subtype of the monitor [int]
             keyword_type
-                Type of keyword to use (requires keyword_value be set) [int]
-            keyword_value
+                Type of keyword to use (requires keyword be set) [int]
+            keyword
                 Keyword to use (requires keyword_type be set)
             http_username
                 Username to use for private site (requires http_password be set)
@@ -156,7 +156,7 @@ class Client(object):
         if port:
             variables["monitorPort"] = str(port)
 
-        if keyword_type and keyword_value:
+        if keyword_type and keyword:
             variables["monitorKeywordType"] = str(keyword_type)
             variables["monitorKeywordValue"] = keyword
 

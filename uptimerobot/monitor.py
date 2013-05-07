@@ -48,7 +48,7 @@ class Monitor(object):
         self.subtype = int(data["subtype"]) if data["subtype"] else None
 
         self.keyword_type = int(data["keywordtype"]) if data["keywordtype"] else None
-        self.keyword_value = data["keywordvalue"]
+        self.keyword = data["keywordvalue"]
 
         self.http_username = data["httpusername"]
         self.http_password = data["httppassword"]
@@ -97,7 +97,7 @@ class Monitor(object):
             print("Subtype: %s" % self.subtype_str)
 
         if self.keyword_type:
-            print("Keyword: %s %s" % (self.keyword_value, self.keyword_type_str))
+            print("Keyword: %s (%s)" % (self.keyword, self.keyword_type_str))
 
         if self.alert_contacts:
             print()
