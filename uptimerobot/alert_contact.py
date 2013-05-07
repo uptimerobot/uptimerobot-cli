@@ -16,10 +16,10 @@ class AlertContact(object):
 
 
     def __init__(self, data):
-        self.id = int(data["id"]) if data.get("id", None) else 0
+        self.id = int(data["id"]) if "id" in data else None
         self.type =  int(data["type"])
         self.value = data["value"]
-        self.status = int(data["type"])
+        self.status = int(data["status"]) if "status" in data else None
 
     type_str = property(lambda self: self.TYPES[self.type])
     status_str = property(lambda self: self.STATUS[self.status])
@@ -30,4 +30,4 @@ class AlertContact(object):
         if self.id:
             print("  %s: %s [%s] #%d" % (self.type_str, self.value, self.status_str.title(), self.id))
         else:
-             print("  %s [%s]" % (self.value, self.status_str.title()))
+            print("  - %s" % self.value)
