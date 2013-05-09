@@ -83,7 +83,7 @@ class Client(object):
 
         if ids:
             if any(not re.match("^\d+$", id) for id in ids):
-                raise APIError("IDs must be numeric")
+                raise ValueError("IDs must be numeric")
 
             variables["monitors"] = self.LIST_SEPARATOR.join(ids)
 
@@ -166,7 +166,7 @@ class Client(object):
 
         if alert_contacts:
             if any(not re.match("^\d+$", id) for id in alert_contacts):
-                raise APIError("alert_contacts must be numeric")
+                raise ValueError("alert_contacts must be numeric")
 
             variables["monitorAlertContacts"] = self.LIST_SEPARATOR.join(alert_contacts)
 
@@ -268,7 +268,7 @@ class Client(object):
         """
 
         if not re.match("^\d+$", id):
-            raise APIError("ID must be numeric")
+            raise ValueError("ID must be numeric")
 
         data = self.get("deleteMonitor", monitorID=id)
 
@@ -290,7 +290,7 @@ class Client(object):
 
         if ids is not None:
             if any(not re.match("^\d+$", id) for id in ids):
-                raise APIError("IDs must be numeric")
+                raise ValueError("IDs must be numeric")
 
             variables["alertcontacts"] = self.LIST_SEPARATOR.join(ids)
 
@@ -331,7 +331,7 @@ class Client(object):
         """
 
         if not re.match("^\d+$", id):
-            raise APIError("ID must be numeric")
+            raise ValueError("ID must be numeric")
 
         data = self.get("deleteAlertContact", alertContactID=id)
 

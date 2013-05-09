@@ -8,7 +8,7 @@ from termcolor import colored
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from uptimerobot import Client, APIError
+from uptimerobot import Client
 from uptimerobot.cli import parse_cli_args
 
 class TestCli(object):
@@ -39,7 +39,7 @@ class TestGetMonitor(TestCli):
         assert out == ("monitor\n%s\n\n" % self.LINE) * 3
 
     def test_get_monitors_bad_id(self):
-        with raises(APIError):
+        with raises(ValueError):
             parse_cli_args("get-monitors --ids fred".split(" "))
 
 
@@ -89,7 +89,7 @@ class TestDeleteMonitor(TestCli):
         assert out == "Deleted monitor with id: 1234\n"
 
     def test_delete_monitor_bad_id(self):
-        with raises(APIError):
+        with raises(ValueError):
             parse_cli_args("delete-monitor fred".split(" "))
 
 
@@ -118,7 +118,7 @@ class TestGetAlerts(TestCli):
 
 
     def test_get_alerts_bad_contacts(self):
-        with raises(APIError):
+        with raises(ValueError):
             parse_cli_args("get-alerts --ids fred".split(" "))
 
 
@@ -149,7 +149,7 @@ class TestDeleteAlert(TestCli):
 
 
     def test_delete_alert_bad_id(self):
-        with raises(APIError):
+        with raises(ValueError):
             parse_cli_args("delete-alert fred".split(" "))
 
 
