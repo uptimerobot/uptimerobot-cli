@@ -7,6 +7,8 @@ Author: Bil Bas (bil.bas.dev@gmail.com)
 
 License: GPLv3
 
+Tested on Python 2.7 and 3.2.
+
 
 Installation
 ------------
@@ -36,6 +38,28 @@ General usage, via the CLI::
         get-alerts          Get information about some or all alert contacts
         new-alert           Create a new alert contact
         delete-alert        Delete an alert contact
+
+
+Using the module directly::
+
+    from uptimerobot import Client
+
+    client = Client("my_api_key")
+
+    monitors = client.get_monitors(ids=[123123, 775643],
+                                   show_logs=True,
+                                   show_alert_contacts=True)
+
+    for monitor in monitors:
+        print(monitor.name)
+        print(monitor.status_str)
+
+        for alert_contact in monitor.alert_contacts:
+            print(alert_contact.type_str)
+            print(alert_contact.value)
+
+        for log in monitor.logs:
+            print(log.datetime)
 
 
 Specification
