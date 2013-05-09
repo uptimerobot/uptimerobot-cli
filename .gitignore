@@ -1,3 +1,6 @@
 dist/
+build/
 *.pyc
 __pycache__
+uptimerobot.egg-info
+doc/

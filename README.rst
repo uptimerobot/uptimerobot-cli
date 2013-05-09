@@ -1,37 +1,41 @@
 UptimeRobot client
 ==================
 
-A command line application to access uptimetobot
+A module (with command line application) to access uptimetobot.com API.
 
 Author: Bil Bas (bil.bas.dev@gmail.com)
 
-License: Copyright (c) 1013 Bil Bas
+License: GPLv3
 
 
 Installation
 ------------
 
-    $ pip install -r requirements.txt
+    $ pip install uptimerobot
 
 
 Usage
 -----
 
-usage: uptimerobot.py [-h] SUBCOMMAND [OPTIONS]
-                      
-Manage monitors and alert contacts at UptimeRobot.com.
+General usage, via the CLI::
 
-optional arguments:
-  -h, --help            show this help message and exit
+    $ uptimerobot -h
 
-Subcommands:
-    get-monitors        Get information about some or all monitors
-    new-monitor         Create a new monitor
-    edit-monitor        Edit an existing monitor
-    delete-monitor      Delete a monitor
-    get-alerts          Get information about some or all alert contacts
-    new-alert           Create a new alert contact
-    delete-alert        Delete an alert contact
+    usage: uptimerobot [-h] SUBCOMMAND [OPTION, ...]
+                          
+    Manage monitors and alert contacts at UptimeRobot.com
+
+    optional arguments:
+      -h, --help            show this help message and exit
+
+    Subcommands:
+        get-monitors        Get information about some or all monitors
+        new-monitor         Create a new monitor
+        edit-monitor        Edit an existing monitor
+        delete-monitor      Delete a monitor
+        get-alerts          Get information about some or all alert contacts
+        new-alert           Create a new alert contact
+        delete-alert        Delete an alert contact
 
 
 Specification

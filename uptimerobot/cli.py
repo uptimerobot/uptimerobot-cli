@@ -1,9 +1,12 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
+from sys import argv
+
 from argparse import ArgumentParser
 from argparse import RawTextHelpFormatter
 from termcolor import colored
 
+from . import UptimeRobotError
 from .client import Client
 from .monitor import Monitor
 from .alert_contact import AlertContact
@@ -191,11 +194,8 @@ def delete_alert(parser):
 
 
 def create_parser():
-    parser = ArgumentParser(description=
-        """
-        Manage monitors and alert contacts at UptimeRobot.com.
-
-        """)
+    parser = ArgumentParser(description="Manage monitors and alert contacts at UptimeRobot.com",
+                            usage="uptimerobot [-h] SUBCOMMAND [OPTION, ...]")
     sub_commands = parser.add_subparsers(title='Subcommands',
                                         dest="subcommand")
 
@@ -285,3 +285,13 @@ def parse_cli_args(args):
 
     else:
         raise Exception("Bad subcommand %s" % opts.subcommand)
+
+
+
+def main():
+    """Command line access to the API (accessed directly from "uptimerobot" command)."""
+    try:
+        parse_cli_args(argv[1:])
+    except UptimeRobotError as ex:
+        print("%s: %s" % (type(ex).__name__, ex), file=stderr)
+        exit(1)
