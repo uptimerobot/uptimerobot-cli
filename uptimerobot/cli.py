@@ -23,7 +23,7 @@ def get_monitors(parser):
     command = parser.add_parser('get-monitors', 
                                 description="Get information about some or all monitors",
                                 help="Get information about some or all monitors")
-    command.add_argument('--ids',  metavar="ID", type=int, nargs='+',
+    command.add_argument('--ids',  metavar="ID", type=str, nargs='+',
                          help='IDs of monitors')
 
     command.add_argument('--uptime',  metavar="NUM-HOURS", type=int, nargs='+',
@@ -112,7 +112,7 @@ Status:
                                 description=description,
                                 help="Edit an existing monitor")
 
-    command.add_argument('id', metavar='ID', type=int,
+    command.add_argument('id', metavar='ID', type=str,
                    help='ID of monitor to edit')
 
     command.add_argument('--name', type=str, metavar="STR",
@@ -145,7 +145,7 @@ Status:
     command.add_argument('--password', type=str, metavar="STR",
                    help='HTTP password to use for private site')
 
-    command.add_argument('--alerts', metavar="ID", type=int, nargs='+',
+    command.add_argument('--alerts', metavar="ID", type=str, nargs='+',
                    help='IDs of alert contacts to use')
 
 def delete_monitor(parser):
@@ -153,7 +153,7 @@ def delete_monitor(parser):
                                 description="Delete a monitor",
                                 help="Delete a monitor")
 
-    command.add_argument('id', metavar='ID', type=int,
+    command.add_argument('id', metavar='ID', type=str,
                    help='ID of monitor to delete')
 
 
@@ -161,7 +161,7 @@ def get_alerts(parser):
     command = parser.add_parser('get-alerts',
                                 description="Get information about some or all alert contact",
                                 help="Get information about some or all alert contacts")
-    command.add_argument('--ids', metavar="ID", type=int, nargs='+',
+    command.add_argument('--ids', metavar="ID", type=str, nargs='+',
                          help='IDs of alert contacts')
 
 
@@ -189,7 +189,7 @@ def delete_alert(parser):
                                 description="Delete an alert contact",
                                 help="Delete an alert contact")
 
-    command.add_argument('id', metavar='ID', type=int,
+    command.add_argument('id', metavar='ID', type=str,
                    help='ID of alert contact to delete')
 
 
@@ -245,7 +245,7 @@ def parse_cli_args(args):
                                 password=opts.password,
                                 alert_contacts=opts.alerts)
 
-        print("Created monitor with id: %d" % id)
+        print("Created monitor with id: %s" % id)
 
     elif opts.subcommand == "edit-monitor":
         id = client.edit_monitor(id=opts.id,
@@ -261,11 +261,11 @@ def parse_cli_args(args):
                                 password=opts.password,
                                 alert_contacts=opts.alerts)
 
-        print("Edited monitor with id: %d" % id)
+        print("Edited monitor with id: %s" % id)
 
     elif opts.subcommand == "delete-monitor":
         id = client.delete_monitor(id=opts.id)
-        print("Deleted monitor with id: %d" % id)
+        print("Deleted monitor with id: %s" % id)
 
     elif opts.subcommand == "get-alerts":
         alerts = client.get_alert_contacts(ids=opts.ids)
@@ -276,12 +276,12 @@ def parse_cli_args(args):
         id = client.new_alert_contact(type=opts.type,
                                       value=opts.value)
 
-        print("Created alert contact with id: %d" % id)
+        print("Created alert contact with id: %s" % id)
 
     elif opts.subcommand == "delete-alert":
         id = client.delete_alert_contact(id=opts.id)
 
-        print("Deleted alert contact with id: %d" % id)
+        print("Deleted alert contact with id: %s" % id)
 
     else:
         raise Exception("Bad subcommand %s" % opts.subcommand)

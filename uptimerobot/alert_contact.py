@@ -40,7 +40,7 @@ class AlertContact(object):
             status = colored(self.status_str.title(), color)
 
             # List of alerts
-            print("  %s: %s [%s] #%d" % (self.type_str, self.value, status, self.id))
+            print("  %s: %s [%s] #%s" % (self.type_str, self.value, status, self.id))
         elif self.id is not None and self.status is None:
             # In monitor.
             print("  %s: %s #%s" % (self.type_str, self.value, self.id))

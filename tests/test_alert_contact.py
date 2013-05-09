@@ -18,6 +18,6 @@ class TestAlertContact(object):
             self.subject = AlertContact(json.load(f))
 
     def test_init(self):
-        assert self.subject.id == 236
+        assert self.subject.id == "236"
         assert self.subject.value == "uptime@webresourcesdepot.com"
         assert self.subject.type == 2

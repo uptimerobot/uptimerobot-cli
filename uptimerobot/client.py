@@ -3,6 +3,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import requests
 import yaml
 import json
+import re
 
 from . import APIError, HTTPError
 from .monitor import Monitor
@@ -81,6 +82,9 @@ class Client(object):
         variables = {}
 
         if ids:
+            if any(not re.match("^\d+$", id) for id in ids):
+                raise APIError("IDs must be numeric")
+
             variables["monitors"] = self.LIST_SEPARATOR.join(ids)
 
         if show_logs:
@@ -161,11 +165,14 @@ class Client(object):
             variables["monitorHTTPPassword"] = password
 
         if alert_contacts:
+            if any(not re.match("^\d+$", id) for id in alert_contacts):
+                raise APIError("alert_contacts must be numeric")
+
             variables["monitorAlertContacts"] = self.LIST_SEPARATOR.join(alert_contacts)
 
         data = self.get("newMonitor", **variables)
 
-        return int(data["monitor"]["id"])
+        return data["monitor"]["id"]
 
 
     def edit_monitor(self, id,
@@ -260,6 +267,9 @@ class Client(object):
 
         """
 
+        if not re.match("^\d+$", id):
+            raise APIError("ID must be numeric")
+
         data = self.get("deleteMonitor", monitorID=id)
 
         return data["monitor"]["id"]
@@ -279,6 +289,9 @@ class Client(object):
         variables = {}
 
         if ids is not None:
+            if any(not re.match("^\d+$", id) for id in ids):
+                raise APIError("IDs must be numeric")
+
             variables["alertcontacts"] = self.LIST_SEPARATOR.join(ids)
 
         data = self.get("getAlertContacts", **variables)
@@ -317,6 +330,9 @@ class Client(object):
 
         """
 
-        data = self.get("deleteAlertContact", alertContactID=str(id))
+        if not re.match("^\d+$", id):
+            raise APIError("ID must be numeric")
+
+        data = self.get("deleteAlertContact", alertContactID=id)
 
         return data["alertcontact"]["id"]

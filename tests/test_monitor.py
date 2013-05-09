@@ -21,7 +21,7 @@ class TestMonitor(object):
             self.subject = Monitor(json.load(f))
 
     def test_init(self):
-        assert self.subject.id == 128795
+        assert self.subject.id == "128795"
         assert self.subject.name == "Yahoo"
         assert self.subject.url == "http://www.yahoo.com/"
 
@@ -30,11 +30,11 @@ class TestMonitor(object):
 
         assert len(self.subject.alert_contacts) == 2
 
-        assert self.subject.alert_contacts[0].id == 4631
+        assert self.subject.alert_contacts[0].id == "4631"
         assert self.subject.alert_contacts[0].type == 2
         assert self.subject.alert_contacts[0].value == "uptime@webresourcesdepot.com"
 
-        assert self.subject.alert_contacts[1].id == 2420
+        assert self.subject.alert_contacts[1].id == "2420"
         assert self.subject.alert_contacts[1].type == 3
         assert self.subject.alert_contacts[1].value == "umutm"
 
