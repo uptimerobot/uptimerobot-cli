@@ -1,5 +1,7 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
+from termcolor import colored
+
 class AlertContact(object):
     TYPES = {
         1: "sms",
@@ -27,7 +29,7 @@ class AlertContact(object):
 
     def dump(self):
         # No id/type if inside a log.
-        if self.id and self.status:
+        if self.id and self.status is not None:
             if self.status == 2:
                 color = "green"
             elif self.status == 0:
@@ -39,7 +41,7 @@ class AlertContact(object):
 
             # List of alerts
             print("  %s: %s [%s] #%d" % (self.type_str, self.value, status, self.id))
-        elif self.id and not self.status:
+        elif self.id and not self.status is not None:
             # In monitor.
             print("  %s: %s #%d" % (self.type_str, self.value, self.id))
         else:
