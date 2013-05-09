@@ -18,7 +18,7 @@ class AlertContact(object):
 
 
     def __init__(self, data):
-        self.id = int(data["id"]) if "id" in data else None
+        self.id = data.get("id", None)
         self.type =  int(data["type"])
         self.value = data["value"]
         self.status = int(data["status"]) if "status" in data else None
@@ -29,7 +29,7 @@ class AlertContact(object):
 
     def dump(self):
         # No id/type if inside a log.
-        if self.id and self.status is not None:
+        if self.id is not None and self.status is not None:
             if self.status == 2:
                 color = "green"
             elif self.status == 0:
@@ -41,9 +41,9 @@ class AlertContact(object):
 
             # List of alerts
             print("  %s: %s [%s] #%d" % (self.type_str, self.value, status, self.id))
-        elif self.id and not self.status is not None:
+        elif self.id is not None and self.status is None:
             # In monitor.
-            print("  %s: %s #%d" % (self.type_str, self.value, self.id))
+            print("  %s: %s #%s" % (self.type_str, self.value, self.id))
         else:
             # In log.
             print("  %s: %s" % (self.type_str, self.value))

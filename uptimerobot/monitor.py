@@ -42,7 +42,7 @@ class Monitor(object):
         self.logs = [Log(log) for log in data.get("log", [])]
         self.custom_uptime_ratio_periods = custom_uptime_ratio_periods
 
-        self.id = int(data["id"])
+        self.id = data["id"]
         self.name = data["friendlyname"]
         self.url = data["url"]
         self.type = int(data["type"])
@@ -85,7 +85,7 @@ class Monitor(object):
             color = "yellow"
 
         status = colored(self.status_str.title(), color)
-        print("%s [%s] #%d" % (self.name, status, self.id))
+        print("%s [%s] #%s" % (self.name, status, self.id))
 
         if self.port:
             print("URL: %s:%d" % (self.url, self.port))

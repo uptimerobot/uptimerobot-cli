@@ -25,10 +25,6 @@ class Client(object):
             self.api_key = api_key
 
 
-    def int_list(self, ints):
-        return self.LIST_SEPARATOR.join(str(n) for n in ints)
-
-
     def get(self, action, **values):
         payload = {
             "apiKey": self.api_key,
@@ -85,7 +81,7 @@ class Client(object):
         variables = {}
 
         if ids:
-            variables["monitors"] = self.int_list(ids)
+            variables["monitors"] = self.LIST_SEPARATOR.join(ids)
 
         if show_logs:
             variables["logs"] = "1"
@@ -100,7 +96,7 @@ class Client(object):
             variables["showMonitorAlertContacts"] = "1"
 
         if custom_uptime_ratio:
-            variables["customUptimeRatio"] = self.int_list(custom_uptime_ratio)
+            variables["customUptimeRatio"] = self.LIST_SEPARATOR.join(str(n) for n in custom_uptime_ratio)
         
 
         data = self.get("getMonitors", **variables)
@@ -165,7 +161,7 @@ class Client(object):
             variables["monitorHTTPPassword"] = password
 
         if alert_contacts:
-            variables["monitorAlertContacts"] = self.int_list(alert_contacts)
+            variables["monitorAlertContacts"] = self.LIST_SEPARATOR.join(alert_contacts)
 
         data = self.get("newMonitor", **variables)
 
@@ -187,7 +183,7 @@ class Client(object):
         """
         Args
             id
-                ID number of the monitor to edit
+                ID number of the monitor to edit [str]
             status
                 Status to set [int]
             name
@@ -215,7 +211,7 @@ class Client(object):
         """
 
         variables = {
-            "monitorID": str(id),
+            "monitorID": id,
         }
 
         if status:
@@ -245,35 +241,35 @@ class Client(object):
             variables["monitorHTTPPassword"] = password
 
         if alert_contacts:
-            variables["monitorAlertContacts"] = self.int_list(alert_contacts)
+            variables["monitorAlertContacts"] = self.LIST_SEPARATOR.join(alert_contacts)
 
 
         data = self.get("editMonitor", **variables)
 
-        return int(data["monitor"]["id"])
+        return data["monitor"]["id"]
 
 
     def delete_monitor(self, id):
         """
         Args
             id
-                ID of the monitor to delete
+                ID of the monitor to delete [str]
 
         Returns
-            ID of monitor deleted.
+            ID of monitor deleted [str]
 
         """
 
-        data = self.get("deleteMonitor", monitorID=str(id))
+        data = self.get("deleteMonitor", monitorID=id)
 
-        return int(data["monitor"]["id"])
+        return data["monitor"]["id"]
 
 
     def get_alert_contacts(self, ids=None):
         """
         Args
             ids
-                IDs of the alert contacts to list. If None, then get all contacts.
+                IDs of the alert contacts to list. If None, then get all contacts [list.
 
         Returns
             List of AlertContact detail objects.
@@ -283,7 +279,7 @@ class Client(object):
         variables = {}
 
         if ids is not None:
-            variables["alertcontacts"] = self.LIST_SEPARATOR.join(str(id) for id in ids)
+            variables["alertcontacts"] = self.LIST_SEPARATOR.join(ids)
 
         data = self.get("getAlertContacts", **variables)
         
@@ -307,7 +303,7 @@ class Client(object):
 
         data = self.get("newAlertContact", alertContactType=str(type), alertContactValue=value)
 
-        return int(data["alertcontact"]["id"])
+        return data["alertcontact"]["id"]
 
 
     def delete_alert_contact(self, id):
@@ -323,4 +319,4 @@ class Client(object):
 
         data = self.get("deleteAlertContact", alertContactID=str(id))
 
-        return int(data["alertcontact"]["id"])
+        return data["alertcontact"]["id"]

@@ -2,6 +2,8 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 from datetime import datetime
 
+from termcolor import colored
+
 from .alert_contact import AlertContact
 
 class Log(object):
@@ -18,7 +20,6 @@ class Log(object):
 
     def __init__(self, data):
         # Sometimes the alert data has no 'value'!
-        print(alert_data)
         alert_data = filter(lambda ac: ac.get("value"), data.get("alertcontact", []))
 
         self.alert_contacts = [AlertContact(ac) for ac in alert_data]
@@ -35,7 +36,15 @@ class Log(object):
 
 
     def dump(self):
-        print("  %s [%s]" % (self.datetime.strftime(self.TIMESTAMP_FORMAT), self.type_str.title()))
+        if self.type == 2:
+            color = "green"
+        elif self.type == 1:
+            color = "red"
+        else:
+            color = "yellow"
+
+        status = colored(self.type_str.title(), color)
+        print("  %s [%s]" % (self.datetime.strftime(self.TIMESTAMP_FORMAT), status))
 
         if self.alert_contacts:
             for alert in self.alert_contacts:
