@@ -1,6 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-from sys import argv
+from sys import argv, stderr
 
 from argparse import ArgumentParser
 from argparse import RawTextHelpFormatter
@@ -86,7 +86,7 @@ Keyword Type:
     command.add_argument('--password', type=str, metavar="STR",
                    help='HTTP password to use for private site')
 
-    command.add_argument('--alerts', metavar="ID", type=int, nargs='+',
+    command.add_argument('--alerts', metavar="ID", type=str, nargs='+',
                    help='IDs of alert contacts to use')
 
 
@@ -294,4 +294,7 @@ def main():
         parse_cli_args(argv[1:])
     except UptimeRobotError as ex:
         print("%s: %s" % (type(ex).__name__, ex), file=stderr)
+        exit(1)
+    except ValueError as ex:
+        print("Error in parameter value: %s" % ex, file=stderr)
         exit(1)

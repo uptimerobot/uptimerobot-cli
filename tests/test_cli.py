@@ -52,7 +52,7 @@ class TestNewMonitor(TestCli):
 
 
     def test_new_monitor_all_args(self, capsys):
-        self.client.should_receive("new_monitor").with_args(name="fishy", url="http://fish.com", type=2, alert_contacts=[1,2], subtype=1, port=80, keyword="fish", keyword_type=3, username="user", password="pass").and_return(999)
+        self.client.should_receive("new_monitor").with_args(name="fishy", url="http://fish.com", type=2, alert_contacts=["1","2"], subtype=1, port=80, keyword="fish", keyword_type=3, username="user", password="pass").and_return(999)
         parse_cli_args("new-monitor fishy http://fish.com 2 --alerts 1 2 --subtype 1 --port 80 --keyword fish --keyword-type 3 --username user --password pass".split(" "))
         out, err = capsys.readouterr()
         assert out == "Created monitor with id: 999\n"
