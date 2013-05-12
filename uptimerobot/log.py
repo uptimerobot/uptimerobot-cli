@@ -38,13 +38,13 @@ class Log(object):
         self.type = int(data["type"])
 
 
-    type_str = property(lambda self: self.TYPE[self.type])
+    type_str = property(lambda self: self.TYPES[self.type])
 
 
     def dump(self):
         if self.type == self.Type.UP:
             color = "green"
-        elif self.type == self.Type.Down:
+        elif self.type == self.Type.DOWN:
             color = "red"
         else:
             color = "yellow"

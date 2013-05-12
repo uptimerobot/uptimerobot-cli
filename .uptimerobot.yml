@@ -10,7 +10,7 @@ api_key: u83441-30844a47d712331872e6ee18
 get_monitors:
     monitors: null # e.g ['012', 'my monitor', '1451']
     show_alerts: False
-    show_logs: False
+    show_log: False
     log_alerts: False
     log_timezone: False
     uptime: null # e.g [1, 5, 10]

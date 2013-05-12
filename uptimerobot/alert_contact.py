@@ -41,9 +41,9 @@ class AlertContact(object):
     def dump(self):
         # No id/type if inside a log.
         if self.id is not None and self.status is not None:
-            if self.status == self.Status.UP:
+            if self.status == self.Status.ACTIVE:
                 color = "green"
-            elif self.status == self.Status.DOWN:
+            elif self.status == self.Status.NOT_ACTIVATED:
                 color = "red"
             else:
                 color = "yellow"

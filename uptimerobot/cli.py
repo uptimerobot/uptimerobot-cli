@@ -39,13 +39,13 @@ def parse_get_monitors(parser, defaults):
                          default=defaults["uptime"],
                          help='Show custom uptime ratios, for one or more periods (in hours)')
 
-    command.add_argument('--show-logs', action='store_true',
-                         default=defaults["show_logs"], 
+    command.add_argument('--show-log', action='store_true',
+                         default=defaults["show_log"], 
                          help="Show logs associated with this monitor")
 
     command.add_argument('--log-alerts', action='store_true',
                          default=defaults["log_alerts"], 
-                         help="Show logs with their associated alert contacts (ignored without --logs)")
+                         help="Show logs with their associated alert contacts (ignored without --show-log)")
 
     command.add_argument('--show-alerts', action='store_true',
                          default=defaults["show_alerts"], 
@@ -53,7 +53,7 @@ def parse_get_monitors(parser, defaults):
 
     command.add_argument('--log-timezone', action='store_true',
                          default=defaults["log_timezone"], 
-                         help="shows timezone for the logs  (ignored without --logs)")
+                         help="shows timezone for the logs  (ignored without --show-log)")
 
 
 def parse_new_monitor(parser, defaults):
@@ -313,7 +313,7 @@ def get_monitors(client, options):
         raise APIError("Alert contact not found with value: %s" % options.monitors)
 
     monitors = client.get_monitors(ids=monitors,
-                                   show_logs=options.show_logs,
+                                   show_logs=options.show_log,
                                    show_alert_contacts=options.show_alerts, 
                                    show_log_alert_contacts=options.log_alerts, 
                                    show_log_timezone=options.log_timezone, 
