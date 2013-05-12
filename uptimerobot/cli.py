@@ -2,7 +2,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 from sys import argv, stderr, modules
 from argparse import ArgumentParser, RawTextHelpFormatter
-import re
+import re, os
 
 import yaml
 from termcolor import colored
@@ -11,6 +11,11 @@ from . import UptimeRobotError, APIError
 from .client import Client
 from .monitor import Monitor
 from .alert_contact import AlertContact
+
+
+LOCAL_CONFIG_FILE = ".uptimerobot.yml"
+USER_CONFIG_FILE = os.path.expanduser(os.path.join("~", LOCAL_CONFIG_FILE))
+DEFAULT_CONFIG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', LOCAL_CONFIG_FILE))
 
 
 def dict_str(dict):
@@ -239,7 +244,16 @@ def parse_delete_alert(parser):
 
 
 def create_parser(config):
-    parser = ArgumentParser(description="Manage monitors and alert contacts at UptimeRobot.com",
+    description = """
+Manage monitors and alert contacts at UptimeRobot.com
+
+If file exists, application will take defaults from:
+    ./.uptimerobot.yml
+    ~/.uptimerobot.yml
+    """
+
+    parser = ArgumentParser(description=description,
+                            formatter_class=RawTextHelpFormatter,
                             usage="uptimerobot [-h] SUBCOMMAND [OPTION, ...]")
     sub_commands = parser.add_subparsers(title='Subcommands',
                                          dest="subcommand")
@@ -388,8 +402,19 @@ def parse_cli_args(args):
     Parse arguments given to CLI applicationa and run client accordingly
     """
 
-    with open("uptimerobot.yml") as f:
-        config = yaml.load(f)
+    try:
+        # uptimerobot.yml
+        with open(LOCAL_CONFIG_FILE) as f:
+            config = yaml.load(f)
+    except IOError:
+        try:
+            # ~/.uptimerobot.yml
+            with open(USER_CONFIG_FILE) as f:
+                config = yaml.load(f)
+        except IOError:
+            # Defaults.
+            with open(DEFAULT_CONFIG_FILE) as f:
+                config = yaml.load(f)
 
     parser = create_parser(config)
     options = parser.parse_args(args)

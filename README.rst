@@ -40,6 +40,11 @@ General usage, via the CLI::
         delete-alert        Delete an alert contact
 
 
+If files exist, application will take defaults from:
+    ./.uptimerobot.yml
+    ~/.uptimerobot.yml
+
+
 Using the module directly::
 
     from uptimerobot import Client
