@@ -9,7 +9,6 @@ setup(
     author = "Bil Bas",
     author_email = "bil.bas.dev@gmail.com",
     install_requires = [
-        "argparse>=1.2.1",
         "requests>=1.2.0",
         "pyyaml>=3.10",
         "termcolor>=1.1.0",

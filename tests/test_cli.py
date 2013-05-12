@@ -52,8 +52,8 @@ class TestNewMonitor(TestCli):
 
 
     def test_new_monitor_all_args(self, capsys):
-        self.client.should_receive("new_monitor").with_args(name="fishy", url="http://fish.com", type=2, alert_contacts=["1","2"], subtype=1, port=80, keyword="fish", keyword_type=3, username="user", password="pass").and_return(999)
-        parse_cli_args("new-monitor fishy http://fish.com 2 --alerts 1 2 --subtype 1 --port 80 --keyword fish --keyword-type 3 --username user --password pass".split(" "))
+        self.client.should_receive("new_monitor").with_args(name="fishy", url="http://fish.com", type=2, alert_contacts=["1","2"], subtype=1, port=80, keyword="fish", keyword_type=1, username="user", password="pass").and_return(999)
+        parse_cli_args("new-monitor fishy http://fish.com 2 --alerts 1 2 --subtype 1 --port 80 --keyword fish --keyword-type 1 --username user --password pass".split(" "))
         out, err = capsys.readouterr()
         assert out == "Created monitor with id: 999\n"
 
@@ -71,8 +71,8 @@ class TestEditMonitor(TestCli):
         assert out == "Edited monitor with id: 1234\n"
 
     def test_edit_monitor_all_args(self, capsys):
-        self.client.should_receive("edit_monitor").with_args(id="1234", status=1, name="fishy", url="http://fish.com", alert_contacts=["1", "2"], type=2, subtype=1, port=80, keyword="fish", keyword_type=3, username="user", password="pass").and_return(1234)
-        parse_cli_args("edit-monitor 1234 --name fishy --url http://fish.com --type 2 --status 1 --alerts 1 2 --subtype 1 --port 80 --keyword fish --keyword-type 3 --username user --password pass".split(" "))
+        self.client.should_receive("edit_monitor").with_args(id="1234", status=1, name="fishy", url="http://fish.com", alert_contacts=["1", "2"], type=2, subtype=1, port=80, keyword="fish", keyword_type=1, username="user", password="pass").and_return(1234)
+        parse_cli_args("edit-monitor 1234 --name fishy --url http://fish.com --type 2 --status 1 --alerts 1 2 --subtype 1 --port 80 --keyword fish --keyword-type 1 --username user --password pass".split(" "))
         out, err = capsys.readouterr()
         assert out == "Edited monitor with id: 1234\n"
 
@@ -124,24 +124,24 @@ class TestGetAlerts(TestCli):
 
 
 class TestNewAlert(TestCli):
-    def test_delete_alert(self, capsys):
+    def test_new_alert(self, capsys):
         self.client.should_receive("new_alert_contact").with_args(type=2,value="uptime@webresourcesdepot.com").and_return("1234")
         parse_cli_args("new-alert 2 uptime@webresourcesdepot.com".split(" "))
         out, err = capsys.readouterr()
         assert out == "Created alert contact with id: 1234\n"
 
-    def test_delete_alert_bad(self):
+    def test_new_alert_bad(self):
         with raises(SystemExit):
-            parse_cli_args("new-alert uptime@webresourcesdepot.com 2".split(" "))
+            parse_cli_args("new-alert uptime@webresourcesdepot.com fred".split(" "))
 
 
-    def test_delete_alert_no_args(self):
+    def test_new_alert_no_args(self):
         with raises(SystemExit):
             parse_cli_args("new-alert".split(" "))
 
 
 class TestDeleteAlert(TestCli):
-    def test_delete_alert(self, capsys):
+    def test_delete_alert_with_id(self, capsys):
         self.client.should_receive("delete_alert_contact").with_args(id="1234").and_return("1234")
         parse_cli_args("delete-alert 1234".split(" "))
         out, err = capsys.readouterr()
@@ -153,6 +153,6 @@ class TestDeleteAlert(TestCli):
             parse_cli_args("delete-alert fred".split(" "))
 
 
-    def test_delete_alert_no_id(self):
+    def test_delete_alert_no_args(self):
         with raises(SystemExit):
             parse_cli_args("delete-alert".split(" "))

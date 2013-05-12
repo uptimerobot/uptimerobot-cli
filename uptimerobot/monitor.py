@@ -28,7 +28,7 @@ class Monitor(object):
         2: "not exists",
     }
 
-    STATUS = {
+    STATUSES = {
         0: "paused",
         1: "not checked yet",
         2: "up",
@@ -73,7 +73,7 @@ class Monitor(object):
 
     keyword_type_str = property(lambda self: self.KEYWORD_TYPES[self.keyword_type])
     type_str = property(lambda self: self.TYPES[self.type])
-    status_str = property(lambda self: self.STATUS[self.status])
+    status_str = property(lambda self: self.STATUSES[self.status])
 
 
     def dump(self):

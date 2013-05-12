@@ -7,10 +7,10 @@ class AlertContact(object):
         1: "sms",
         2: "email",
         3: "twitter",
-        4: "boxcar (iOS)",
+        4: "boxcar",
     }
 
-    STATUS = {
+    STATUSES = {
         0: "not activated",
         1: "paused",
         2: "active",
@@ -24,7 +24,7 @@ class AlertContact(object):
         self.status = int(data["status"]) if "status" in data else None
 
     type_str = property(lambda self: self.TYPES[self.type])
-    status_str = property(lambda self: self.STATUS[self.status])
+    status_str = property(lambda self: self.STATUSES[self.status])
 
 
     def dump(self):

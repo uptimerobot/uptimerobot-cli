@@ -30,7 +30,7 @@
             "datetime": "09/25/2011 16:12:44",
             "alertcontact": [
                 {
-                    "type": "0",
+                    "type": "2",
                     "value": "uptime@webresourcesdepot.com"
                 },
                 {
@@ -44,7 +44,7 @@
             "datetime": "09/25/2011 16:11:44",
             "alertcontact": [
                 {
-                    "type": "0",
+                    "type": "2",
                     "value": "uptime@webresourcesdepot.com"
                 },
                 {

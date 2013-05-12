@@ -26,19 +26,19 @@ def get_monitors(parser):
     command.add_argument('--ids',  metavar="ID", type=str, nargs='+',
                          help='IDs of monitors')
 
-    command.add_argument('--uptime',  metavar="NUM-HOURS", type=int, nargs='+',
+    command.add_argument('--uptime', metavar="NUM-HOURS", type=int, nargs='+',
                          help='Show custom uptime ratios, for one or more periods (in hours)')
 
-    command.add_argument('--logs', action='store_const', const=True, default=False,
+    command.add_argument('--logs', action='store_true', default=False,
                          help="Show logs associated with this monitor")
 
-    command.add_argument('--log-alerts', action='store_const', const=True, default=False,
+    command.add_argument('--log-alerts', action='store_true', default=False,
                          help="Show logs with their associated alert contacts (ignored without --logs)")
 
-    command.add_argument('--alerts', action='store_const', const=True, default=False,
+    command.add_argument('--alerts', action='store_true', default=False,
                          help="shows alert contacts associated with this monitor")
 
-    command.add_argument('--log-timezone', action='store_const', const=True, default=False,
+    command.add_argument('--log-timezone', action='store_true', default=False,
                          help="shows timezone for the logs  (ignored without --logs)")
 
 
@@ -61,33 +61,40 @@ Keyword Type:
                                 help="Create a new monitor",
                                 description=description)
 
+    # Required:
     command.add_argument('name', metavar='NAME', type=str,
                          help='Friendly name for new monitor')
+
     command.add_argument('url', metavar='URL', type=str,
                          help='URL for new monitor')
+
     command.add_argument('type', metavar='TYPE', type=int,
+                         choices=Monitor.TYPES.keys(),
                          help='Type of monitor to create')
 
+    # Options:
     command.add_argument('--subtype', type=int, metavar="N",
-                   help='Subtype to monitor')
+                         choices=Monitor.SUBTYPES.keys(),
+                         help='Subtype to monitor')
 
     command.add_argument('--port', type=int, metavar="N",
-                   help='Port to monitor')
+                         help='Port to monitor')
 
     command.add_argument('--keyword-type', type=int, metavar="N",
-                   help='Type of keyword to monitor')
+                         choices=Monitor.KEYWORD_TYPES.keys(),
+                         help='Type of keyword to monitor')
 
     command.add_argument('--keyword', type=str, metavar="STR",
-                   help='Keyword to monitor')
+                         help='Keyword to monitor')
 
     command.add_argument('--username', type=str, metavar="STR",
-                   help='HTTP username to use for private site')
+                         help='HTTP username to use for private site')
 
     command.add_argument('--password', type=str, metavar="STR",
-                   help='HTTP password to use for private site')
+                         help='HTTP password to use for private site')
 
     command.add_argument('--alerts', metavar="ID", type=str, nargs='+',
-                   help='IDs of alert contacts to use')
+                         help='IDs of alert contacts to use')
 
 
 def edit_monitor(parser):
@@ -105,7 +112,7 @@ Keyword Type:
 
 Status:
 %s
-""" % (dict_str(Monitor.TYPES), dict_str(Monitor.SUBTYPES), dict_str(Monitor.KEYWORD_TYPES), dict_str(Monitor.STATUS))
+""" % (dict_str(Monitor.TYPES), dict_str(Monitor.SUBTYPES), dict_str(Monitor.KEYWORD_TYPES), dict_str(Monitor.STATUSES))
 
     command = parser.add_parser('edit-monitor', 
                                 formatter_class=RawTextHelpFormatter,
@@ -113,40 +120,44 @@ Status:
                                 help="Edit an existing monitor")
 
     command.add_argument('id', metavar='ID', type=str,
-                   help='ID of monitor to edit')
+                         help='ID of monitor to edit')
 
     command.add_argument('--name', type=str, metavar="STR",
-                   help='Friendly name of monitor')
+                         help='Friendly name of monitor')
 
     command.add_argument('--status', type=int, metavar="N",
-                   help='Status to set the monitor to')
+                         choices=Monitor.STATUSES.keys(),
+                         help='Status to set the monitor to')
 
     command.add_argument('--url', type=str, metavar="STR",
-                   help='URL to monitor')
+                         help='URL to monitor')
 
     command.add_argument('--type', type=int, metavar="N",
-                   help='Type to monitor')
+                         choices=Monitor.TYPES.keys(),
+                         help='Type to monitor')
 
     command.add_argument('--subtype', type=int, metavar="N",
-                   help='Subtype to monitor')
+                         choices=Monitor.SUBTYPES.keys(),
+                         help='Subtype to monitor')
 
     command.add_argument('--port', type=int, metavar="N",
-                   help='Port to monitor')
+                         help='Port to monitor')
 
     command.add_argument('--keyword-type', type=int, metavar="N",
-                   help='Type of keyword to monitor')
+                         choices=Monitor.KEYWORD_TYPES.keys(),
+                         help='Type of keyword to monitor')
 
     command.add_argument('--keyword', type=str, metavar="STR",
-                   help='Keyword to monitor')
+                         help='Keyword to monitor')
 
     command.add_argument('--username', type=str, metavar="STR",
-                   help='HTTP username to use for private site')
+                         help='HTTP username to use for private site')
 
     command.add_argument('--password', type=str, metavar="STR",
-                   help='HTTP password to use for private site')
+                         help='HTTP password to use for private site')
 
     command.add_argument('--alerts', metavar="ID", type=str, nargs='+',
-                   help='IDs of alert contacts to use')
+                         help='IDs of alert contacts to use')
 
 def delete_monitor(parser):
     command = parser.add_parser('delete-monitor', 
@@ -154,7 +165,7 @@ def delete_monitor(parser):
                                 help="Delete a monitor")
 
     command.add_argument('id', metavar='ID', type=str,
-                   help='ID of monitor to delete')
+                         help='ID of monitor to delete')
 
 
 def get_alerts(parser):
@@ -178,9 +189,10 @@ Type:
                                 formatter_class=RawTextHelpFormatter,
                                 description=description,
                                 help="Create a new alert contact")
-    command.add_argument('type', metavar='TYPE', type=int,
+    command.add_argument('type', metavar='STR', type=int,
+                         choices=AlertContact.TYPES.keys(),
                          help='Type of contact to create')
-    command.add_argument('value', metavar='VALUE', type=str,
+    command.add_argument('value', metavar='STR', type=str,
                          help='Value of contact (email address, sms number, twitter user, iOS device)')
 
 
@@ -190,14 +202,14 @@ def delete_alert(parser):
                                 help="Delete an alert contact")
 
     command.add_argument('id', metavar='ID', type=str,
-                   help='ID of alert contact to delete')
+                         help='ID of alert contact to delete')
 
 
 def create_parser():
     parser = ArgumentParser(description="Manage monitors and alert contacts at UptimeRobot.com",
                             usage="uptimerobot [-h] SUBCOMMAND [OPTION, ...]")
     sub_commands = parser.add_subparsers(title='Subcommands',
-                                        dest="subcommand")
+                                         dest="subcommand")
 
     get_monitors(sub_commands)
     new_monitor(sub_commands)
