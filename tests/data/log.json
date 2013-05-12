@@ -3,7 +3,7 @@
     "datetime": "08/30/2011 16:11:15",
     "alertcontact": [
         {
-            "type": "0",
+            "type": "2",
             "value": "uptime@webresourcesdepot.com"
         },
         {
