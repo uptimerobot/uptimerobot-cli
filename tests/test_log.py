@@ -25,7 +25,7 @@ class TestLog(object):
 
         assert len(self.subject.alert_contacts) == 2
         
-        assert self.subject.alert_contacts[0].type == 0
+        assert self.subject.alert_contacts[0].type == 2
         assert self.subject.alert_contacts[0].value == "uptime@webresourcesdepot.com"
 
         assert self.subject.alert_contacts[1].type == 3

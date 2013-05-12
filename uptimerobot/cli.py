@@ -1,9 +1,9 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 from sys import argv, stderr
+from argparse import ArgumentParser, RawTextHelpFormatter
 
-from argparse import ArgumentParser
-from argparse import RawTextHelpFormatter
+import yaml
 from termcolor import colored
 
 from . import UptimeRobotError
@@ -19,30 +19,36 @@ def dict_str(dict):
     return str
 
 
-def get_monitors(parser):
+def get_monitors(parser, defaults):
     command = parser.add_parser('get-monitors', 
                                 description="Get information about some or all monitors",
                                 help="Get information about some or all monitors")
+
     command.add_argument('--ids',  metavar="ID", type=str, nargs='+',
                          help='IDs of monitors')
 
     command.add_argument('--uptime', metavar="NUM-HOURS", type=int, nargs='+',
+                         default=defaults["uptime"],
                          help='Show custom uptime ratios, for one or more periods (in hours)')
 
-    command.add_argument('--logs', action='store_true', default=False,
+    command.add_argument('--logs', action='store_true',
+                         default=defaults["logs"], 
                          help="Show logs associated with this monitor")
 
-    command.add_argument('--log-alerts', action='store_true', default=False,
+    command.add_argument('--log-alerts', action='store_true',
+                         default=defaults["log_alerts"], 
                          help="Show logs with their associated alert contacts (ignored without --logs)")
 
-    command.add_argument('--alerts', action='store_true', default=False,
+    command.add_argument('--alerts', action='store_true',
+                         default=defaults["alerts"], 
                          help="shows alert contacts associated with this monitor")
 
-    command.add_argument('--log-timezone', action='store_true', default=False,
+    command.add_argument('--log-timezone', action='store_true',
+                         default=defaults["log_timezone"], 
                          help="shows timezone for the logs  (ignored without --logs)")
 
 
-def new_monitor(parser):
+def new_monitor(parser, defaults):
     description = """
 Create a new monitor
 
@@ -68,36 +74,44 @@ Keyword Type:
     command.add_argument('url', metavar='URL', type=str,
                          help='URL for new monitor')
 
-    command.add_argument('type', metavar='TYPE', type=int,
+    # Options:
+    command.add_argument('--type', metavar='N', type=int,
                          choices=Monitor.TYPES.keys(),
+                         default=defaults["type"],
                          help='Type of monitor to create')
 
-    # Options:
     command.add_argument('--subtype', type=int, metavar="N",
                          choices=Monitor.SUBTYPES.keys(),
+                         default=defaults["subtype"],
                          help='Subtype to monitor')
 
     command.add_argument('--port', type=int, metavar="N",
+                         default=defaults["port"],
                          help='Port to monitor')
 
     command.add_argument('--keyword-type', type=int, metavar="N",
                          choices=Monitor.KEYWORD_TYPES.keys(),
+                         default=defaults["keyword_type"],
                          help='Type of keyword to monitor')
 
     command.add_argument('--keyword', type=str, metavar="STR",
+                         default=defaults["keyword"],
                          help='Keyword to monitor')
 
     command.add_argument('--username', type=str, metavar="STR",
+                         default=defaults["username"],
                          help='HTTP username to use for private site')
 
     command.add_argument('--password', type=str, metavar="STR",
+                         default=defaults["password"],
                          help='HTTP password to use for private site')
 
     command.add_argument('--alerts', metavar="ID", type=str, nargs='+',
+                         default=defaults["alerts"],
                          help='IDs of alert contacts to use')
 
 
-def edit_monitor(parser):
+def edit_monitor(parser, defaults):
     description = """
 Edit an existing monitor
 
@@ -123,41 +137,53 @@ Status:
                          help='ID of monitor to edit')
 
     command.add_argument('--name', type=str, metavar="STR",
+                         default=defaults["name"],
                          help='Friendly name of monitor')
 
     command.add_argument('--status', type=int, metavar="N",
+                         default=defaults["status"],
                          choices=Monitor.STATUSES.keys(),
                          help='Status to set the monitor to')
 
     command.add_argument('--url', type=str, metavar="STR",
+                         default=defaults["url"],
                          help='URL to monitor')
 
     command.add_argument('--type', type=int, metavar="N",
+                         default=defaults["type"],
                          choices=Monitor.TYPES.keys(),
                          help='Type to monitor')
 
     command.add_argument('--subtype', type=int, metavar="N",
+                         default=defaults["subtype"],
                          choices=Monitor.SUBTYPES.keys(),
                          help='Subtype to monitor')
 
     command.add_argument('--port', type=int, metavar="N",
+                         default=defaults["port"],
                          help='Port to monitor')
 
     command.add_argument('--keyword-type', type=int, metavar="N",
+                         default=defaults["keyword_type"],
                          choices=Monitor.KEYWORD_TYPES.keys(),
                          help='Type of keyword to monitor')
 
     command.add_argument('--keyword', type=str, metavar="STR",
+                         default=defaults["keyword"],
                          help='Keyword to monitor')
 
     command.add_argument('--username', type=str, metavar="STR",
+                         default=defaults["username"],
                          help='HTTP username to use for private site')
 
     command.add_argument('--password', type=str, metavar="STR",
+                         default=defaults["password"],
                          help='HTTP password to use for private site')
 
     command.add_argument('--alerts', metavar="ID", type=str, nargs='+',
+                         default=defaults["alerts"],
                          help='IDs of alert contacts to use')
+
 
 def delete_monitor(parser):
     command = parser.add_parser('delete-monitor', 
@@ -168,15 +194,17 @@ def delete_monitor(parser):
                          help='ID of monitor to delete')
 
 
-def get_alerts(parser):
+def get_alerts(parser, defaults):
     command = parser.add_parser('get-alerts',
                                 description="Get information about some or all alert contact",
                                 help="Get information about some or all alert contacts")
+    
     command.add_argument('--ids', metavar="ID", type=str, nargs='+',
+                         default=defaults["ids"],
                          help='IDs of alert contacts')
 
 
-def new_alert(parser):
+def new_alert(parser, defaults):
     description = """
 Create a new alert contact
 
@@ -189,11 +217,13 @@ Type:
                                 formatter_class=RawTextHelpFormatter,
                                 description=description,
                                 help="Create a new alert contact")
-    command.add_argument('type', metavar='STR', type=int,
-                         choices=AlertContact.TYPES.keys(),
-                         help='Type of contact to create')
-    command.add_argument('value', metavar='STR', type=str,
+    command.add_argument('value', metavar='VALUE', type=str,
                          help='Value of contact (email address, sms number, twitter user, iOS device)')
+
+    command.add_argument('--type', metavar='STR', type=int,
+                         choices=AlertContact.TYPES.keys(),
+                         default=defaults["type"],
+                         help='Type of contact to create')
 
 
 def delete_alert(parser):
@@ -205,19 +235,19 @@ def delete_alert(parser):
                          help='ID of alert contact to delete')
 
 
-def create_parser():
+def create_parser(config):
     parser = ArgumentParser(description="Manage monitors and alert contacts at UptimeRobot.com",
                             usage="uptimerobot [-h] SUBCOMMAND [OPTION, ...]")
     sub_commands = parser.add_subparsers(title='Subcommands',
                                          dest="subcommand")
 
-    get_monitors(sub_commands)
-    new_monitor(sub_commands)
-    edit_monitor(sub_commands)
+    get_monitors(sub_commands, config["get_monitors"])
+    new_monitor(sub_commands, config["new_monitor"])
+    edit_monitor(sub_commands, config["edit_monitor"])
     delete_monitor(sub_commands)
 
-    get_alerts(sub_commands)
-    new_alert(sub_commands)
+    get_alerts(sub_commands, config["get_alerts"])
+    new_alert(sub_commands, config["new_alert"])
     delete_alert(sub_commands)
 
     return parser
@@ -228,10 +258,13 @@ def parse_cli_args(args):
     Parse arguments given to CLI applicationa and run client accordingly
     """
 
-    parser = create_parser()
+    with open("uptimerobot.yml") as f:
+        config = yaml.load(f)
+
+    parser = create_parser(config)
     opts = parser.parse_args(args)
 
-    client = Client()
+    client = Client(config["api_key"])
 
     if opts.subcommand == "get-monitors":
         monitors = client.get_monitors(ids=opts.ids,

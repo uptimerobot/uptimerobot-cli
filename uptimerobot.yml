@@ -1,3 +1,46 @@
 ---
 
 api_key: u83441-30844a47d712331872e6ee18
+
+# Only optional parameters are defaulted here.
+
+get_monitors:
+    ids: null # e.g [12, 314, 1451]
+    alerts: False
+    logs: False
+    log_alerts: False
+    log_timezone: False
+    uptime: null # e.g [1, 5, 10]
+
+new_monitor:
+    type: 1 # http(s)
+    subtype: null
+    port: null
+    keyword_type: null
+    keyword: null
+    username: null
+    password: null
+    alerts: null
+
+edit_monitor:
+    # Probably not a good idea to default any of these.
+    name: null
+    status: null
+    url: null
+    type: null
+    subtype: null
+    port: null
+    keyword_type: null
+    keyword: null
+    username: null
+    password: null
+    alerts: null
+
+get_alerts:
+    ids: null
+
+new_alert:
+    type: 2 # Default to email
+
+
+

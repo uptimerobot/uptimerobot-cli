@@ -45,15 +45,15 @@ class TestGetMonitor(TestCli):
 
 class TestNewMonitor(TestCli):
     def test_new_monitor(self, capsys):
-        self.client.should_receive("new_monitor").with_args(name="fishy", url="http://fish.com", type=2, alert_contacts=None, subtype=None, port=None, keyword=None, keyword_type=None, username=None, password=None).and_return(999)
-        parse_cli_args("new-monitor fishy http://fish.com 2".split(" "))
+        self.client.should_receive("new_monitor").with_args(name="fishy", url="http://fish.com", type=1, alert_contacts=None, subtype=None, port=None, keyword=None, keyword_type=None, username=None, password=None).and_return(999)
+        parse_cli_args("new-monitor fishy http://fish.com".split(" "))
         out, err = capsys.readouterr()
         assert out == "Created monitor with id: 999\n"
 
 
     def test_new_monitor_all_args(self, capsys):
         self.client.should_receive("new_monitor").with_args(name="fishy", url="http://fish.com", type=2, alert_contacts=["1","2"], subtype=1, port=80, keyword="fish", keyword_type=1, username="user", password="pass").and_return(999)
-        parse_cli_args("new-monitor fishy http://fish.com 2 --alerts 1 2 --subtype 1 --port 80 --keyword fish --keyword-type 1 --username user --password pass".split(" "))
+        parse_cli_args("new-monitor fishy http://fish.com --type 2 --alerts 1 2 --subtype 1 --port 80 --keyword fish --keyword-type 1 --username user --password pass".split(" "))
         out, err = capsys.readouterr()
         assert out == "Created monitor with id: 999\n"
 
@@ -125,14 +125,20 @@ class TestGetAlerts(TestCli):
 
 class TestNewAlert(TestCli):
     def test_new_alert(self, capsys):
-        self.client.should_receive("new_alert_contact").with_args(type=2,value="uptime@webresourcesdepot.com").and_return("1234")
-        parse_cli_args("new-alert 2 uptime@webresourcesdepot.com".split(" "))
+        self.client.should_receive("new_alert_contact").with_args(type=1, value="uptime@webresourcesdepot.com").and_return("1234")
+        parse_cli_args("new-alert uptime@webresourcesdepot.com --type 1".split(" "))
         out, err = capsys.readouterr()
         assert out == "Created alert contact with id: 1234\n"
 
-    def test_new_alert_bad(self):
+    def test_new_alert_default_type(self, capsys):
+        self.client.should_receive("new_alert_contact").with_args(type=2,value="uptime@webresourcesdepot.com").and_return("1234")
+        parse_cli_args("new-alert uptime@webresourcesdepot.com".split(" "))
+        out, err = capsys.readouterr()
+        assert out == "Created alert contact with id: 1234\n"
+
+    def test_new_alert_bad_type(self):
         with raises(SystemExit):
-            parse_cli_args("new-alert uptime@webresourcesdepot.com fred".split(" "))
+            parse_cli_args("new-alert uptime@webresourcesdepot.com --type fred".split(" "))
 
 
     def test_new_alert_no_args(self):

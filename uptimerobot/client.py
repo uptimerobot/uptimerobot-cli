@@ -1,7 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import requests
-import yaml
 import json
 import re
 
@@ -18,12 +17,8 @@ class Client(object):
     LIST_SEPARATOR = "-"
 
 
-    def __init__(self, api_key=None):
-        if api_key is None:
-            with open("uptimerobot.yml") as f:
-                self.api_key = yaml.load(f)['api_key']
-        else:
-            self.api_key = api_key
+    def __init__(self, api_key):
+        self.api_key = api_key
 
 
     def get(self, action, **values):
