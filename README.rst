@@ -27,6 +27,10 @@ General usage, via the CLI::
                           
     Manage monitors and alert contacts at UptimeRobot.com
 
+    If files exist, application will take defaults from:
+        ./.uptimerobot.yml
+        ~/.uptimerobot.yml
+
     optional arguments:
       -h, --help            show this help message and exit
 
@@ -38,11 +42,6 @@ General usage, via the CLI::
         get-alerts          Get information about some or all alert contacts
         new-alert           Create a new alert contact
         delete-alert        Delete an alert contact
-
-
-If files exist, application will take defaults from:
-    ./.uptimerobot.yml
-    ~/.uptimerobot.yml
 
 
 Using the module directly::

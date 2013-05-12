@@ -6,7 +6,7 @@ from pytest import raises
 from flexmock import flexmock
 from termcolor import colored
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from uptimerobot import Client, APIError
 from uptimerobot.cli import parse_cli_args
