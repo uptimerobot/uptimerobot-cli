@@ -3,17 +3,28 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 from termcolor import colored
 
 class AlertContact(object):
+    class Type:
+        SMS = 1
+        EMAIL = 2
+        TWITTER = 3
+        BOXCAR = 4
+
     TYPES = {
-        1: "sms",
-        2: "email",
-        3: "twitter",
-        4: "boxcar",
+        Type.SMS: "sms",
+        Type.EMAIL: "email",
+        Type.TWITTER: "twitter",
+        Type.BOXCAR: "boxcar",
     }
 
+    class Status:
+        NOT_ACTIVATED = 0
+        PAUSED = 1
+        ACTIVE = 2
+
     STATUSES = {
-        0: "not activated",
-        1: "paused",
-        2: "active",
+        Status.NOT_ACTIVATED: "not activated",
+        Status.PAUSED: "paused",
+        Status.ACTIVE: "active",
     }
 
 
@@ -30,9 +41,9 @@ class AlertContact(object):
     def dump(self):
         # No id/type if inside a log.
         if self.id is not None and self.status is not None:
-            if self.status == 2:
+            if self.status == self.Status.UP:
                 color = "green"
-            elif self.status == 0:
+            elif self.status == self.Status.DOWN:
                 color = "red"
             else:
                 color = "yellow"

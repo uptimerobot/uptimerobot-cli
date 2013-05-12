@@ -11,11 +11,17 @@ class Log(object):
     TIMESTAMP_FORMAT_ALT = "%m/%d/%Y %H:%M:%S %p"
 
 
-    TYPE = {
-        1: "down",
-        2: "up",
-        98: "started",
-        99: "paused",
+    class Type:
+        DOWN = 1
+        UP = 2
+        STARTED = 98
+        PAUSED = 99
+
+    TYPES = {
+        Type.DOWN: "down",
+        Type.UP: "up",
+        Type.STARTED: "started",
+        Type.PAUSED: "paused",
     }
 
     def __init__(self, data):
@@ -36,9 +42,9 @@ class Log(object):
 
 
     def dump(self):
-        if self.type == 2:
+        if self.type == self.Type.UP:
             color = "green"
-        elif self.type == 1:
+        elif self.type == self.Type.Down:
             color = "red"
         else:
             color = "yellow"

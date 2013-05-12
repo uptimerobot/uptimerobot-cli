@@ -6,36 +6,62 @@ from termcolor import colored
 
 
 class Monitor(object):
+    class Type:
+        HTTP = 1
+        KEYWORD = 2
+        PING = 3
+        PORT = 4
+
     TYPES = {
-        1: "http(s)",
-        2: "keyword",
-        3: "ping",
-        4: "port",
+        Type.HTTP: "http(s)",
+        Type.KEYWORD: "keyword",
+        Type.PING: "ping",
+        Type.PORT: "port",
     }
+
+    class Subtype:
+        HTTP = 1
+        HTTPS = 2
+        FTP = 3
+        SMTP = 4
+        POP3 = 5
+        IMAP = 6
+        CUSTOM = 99
+
 
     SUBTYPES = {
-        1: "http",
-        2: "https",
-        3: "ftp",
-        4: "smtp",
-        5: "pop3",
-        6: "imap",
-        99: "custom",
+        Subtype.HTTP: "http",
+        Subtype.HTTPS: "https",
+        Subtype.FTP: "ftp",
+        Subtype.SMTP: "smtp",
+        Subtype.POP3: "pop3",
+        Subtype.IMAP: "imap",
+        Subtype.CUSTOM: "custom",
     }
+
+    class KeywordType:
+        EXISTS = 1
+        NOT_EXISTS = 2
 
     KEYWORD_TYPES = {
-        1: "exists",
-        2: "not exists",
+        KeywordType.EXISTS: "exists",
+        KeywordType.NOT_EXISTS: "not exists",
     }
+
+    class Status:
+        PAUSED = 0
+        NOT_CHECKED_YET = 1
+        UP = 2
+        SEEMS_DOWN = 8
+        DOWN = 9
 
     STATUSES = {
-        0: "paused",
-        1: "not checked yet",
-        2: "up",
-        8: "seems down",
-        9: "down",
+        Status.PAUSED: "paused",
+        Status.NOT_CHECKED_YET: "not checked yet",
+        Status.UP: "up",
+        Status.SEEMS_DOWN: "seems down",
+        Status.DOWN: "down",
     }
-
 
     def __init__(self, data, custom_uptime_ratio_periods=[]):
         self.alert_contacts = [AlertContact(ac) for ac in data.get("alertcontact", [])]
@@ -77,9 +103,9 @@ class Monitor(object):
 
 
     def dump(self):
-        if self.status in [2]:
+        if self.status in [self.Status.UP]:
             color = "green"
-        elif self.status in [8, 9]:
+        elif self.status in [self.Status.SEEMS_DOWN, self.Status.DOWN]:
             color = "red"
         else:
             color = "yellow"
