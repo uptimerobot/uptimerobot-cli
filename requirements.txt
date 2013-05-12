@@ -1,6 +1,5 @@
 # pip install -r requirements.txt
 
-argparse==1.2.1
 requests==1.2.0
 pyyaml==3.10
 termcolor==1.1.0
