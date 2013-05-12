@@ -5,11 +5,12 @@
 api_key: u83441-30844a47d712331872e6ee18
 
 # Only optional parameters are defaulted here.
+# Remember that alerts and monitors are STRINGS, not numbers.
 
 get_monitors:
-    ids: null # e.g [12, 314, 1451]
-    alerts: False
-    logs: False
+    monitors: null # e.g ['012', 'my monitor', '1451']
+    show_alerts: False
+    show_logs: False
     log_alerts: False
     log_timezone: False
     uptime: null # e.g [1, 5, 10]
@@ -22,7 +23,7 @@ new_monitor:
     keyword: null
     username: null
     password: null
-    alerts: null
+    alerts: null # e.g. ['12315', 'my alert']
 
 edit_monitor:
     # Probably not a good idea to default any of these.
@@ -36,10 +37,10 @@ edit_monitor:
     keyword: null
     username: null
     password: null
-    alerts: null
+    alerts: null # e.g. ['12315', 'my alert']
 
 get_alerts:
-    ids: null
+    alerts: null # e.g. ['12315', 'my alert']
 
 new_alert:
     type: 2 # Default to email

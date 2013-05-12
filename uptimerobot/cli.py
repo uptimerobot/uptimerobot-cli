@@ -1,46 +1,49 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-from sys import argv, stderr
+from sys import argv, stderr, modules
 from argparse import ArgumentParser, RawTextHelpFormatter
+import re
 
 import yaml
 from termcolor import colored
 
-from . import UptimeRobotError
+from . import UptimeRobotError, APIError
 from .client import Client
 from .monitor import Monitor
 from .alert_contact import AlertContact
 
 
 def dict_str(dict):
+    """Layout a list of keys and values for the help text"""
+
     str = ""
     for key, value in dict.items():
         str += "  %2d: %s\n" % (key, value)
     return str
 
 
-def get_monitors(parser, defaults):
+def parse_get_monitors(parser, defaults):
     command = parser.add_parser('get-monitors', 
                                 description="Get information about some or all monitors",
                                 help="Get information about some or all monitors")
 
-    command.add_argument('--ids',  metavar="ID", type=str, nargs='+',
-                         help='IDs of monitors')
+    command.add_argument('--monitors',  metavar="MONITOR", type=str, nargs='+',
+                         help='IDs or names of monitors')
 
     command.add_argument('--uptime', metavar="NUM-HOURS", type=int, nargs='+',
                          default=defaults["uptime"],
                          help='Show custom uptime ratios, for one or more periods (in hours)')
 
-    command.add_argument('--logs', action='store_true',
-                         default=defaults["logs"], 
+    command.add_argument('--show-logs', action='store_true',
+                         default=defaults["show_logs"], 
                          help="Show logs associated with this monitor")
 
     command.add_argument('--log-alerts', action='store_true',
                          default=defaults["log_alerts"], 
                          help="Show logs with their associated alert contacts (ignored without --logs)")
 
-    command.add_argument('--alerts', action='store_true',
-                         default=defaults["alerts"], 
+    command.add_argument('--show-alerts', action='store_true',
+                         default=defaults["show_alerts"], 
                          help="shows alert contacts associated with this monitor")
 
     command.add_argument('--log-timezone', action='store_true',
@@ -48,7 +51,7 @@ def get_monitors(parser, defaults):
                          help="shows timezone for the logs  (ignored without --logs)")
 
 
-def new_monitor(parser, defaults):
+def parse_new_monitor(parser, defaults):
     description = """
 Create a new monitor
 
@@ -106,12 +109,12 @@ Keyword Type:
                          default=defaults["password"],
                          help='HTTP password to use for private site')
 
-    command.add_argument('--alerts', metavar="ID", type=str, nargs='+',
+    command.add_argument('--alerts', metavar="ALERT", type=str, nargs='+',
                          default=defaults["alerts"],
-                         help='IDs of alert contacts to use')
+                         help='IDs / values of alert contacts to use')
 
 
-def edit_monitor(parser, defaults):
+def parse_edit_monitor(parser, defaults):
     description = """
 Edit an existing monitor
 
@@ -185,26 +188,26 @@ Status:
                          help='IDs of alert contacts to use')
 
 
-def delete_monitor(parser):
+def parse_delete_monitor(parser):
     command = parser.add_parser('delete-monitor', 
                                 description="Delete a monitor",
                                 help="Delete a monitor")
 
-    command.add_argument('id', metavar='ID', type=str,
-                         help='ID of monitor to delete')
+    command.add_argument('monitor', metavar='MONITOR', type=str,
+                         help='ID/name of monitor to delete')
 
 
-def get_alerts(parser, defaults):
+def parse_get_alerts(parser, defaults):
     command = parser.add_parser('get-alerts',
                                 description="Get information about some or all alert contact",
                                 help="Get information about some or all alert contacts")
     
-    command.add_argument('--ids', metavar="ID", type=str, nargs='+',
-                         default=defaults["ids"],
-                         help='IDs of alert contacts')
+    command.add_argument('--alerts', metavar="ALERT", type=str, nargs='+',
+                         default=defaults["alerts"],
+                         help='IDs/values of alert contacts')
 
 
-def new_alert(parser, defaults):
+def parse_new_alert(parser, defaults):
     description = """
 Create a new alert contact
 
@@ -226,13 +229,13 @@ Type:
                          help='Type of contact to create')
 
 
-def delete_alert(parser):
+def parse_delete_alert(parser):
     command = parser.add_parser('delete-alert', 
                                 description="Delete an alert contact",
                                 help="Delete an alert contact")
 
-    command.add_argument('id', metavar='ID', type=str,
-                         help='ID of alert contact to delete')
+    command.add_argument('alert', metavar='ALERT', type=str,
+                         help='ID/value of alert contact to delete')
 
 
 def create_parser(config):
@@ -241,16 +244,143 @@ def create_parser(config):
     sub_commands = parser.add_subparsers(title='Subcommands',
                                          dest="subcommand")
 
-    get_monitors(sub_commands, config["get_monitors"])
-    new_monitor(sub_commands, config["new_monitor"])
-    edit_monitor(sub_commands, config["edit_monitor"])
-    delete_monitor(sub_commands)
+    parse_get_monitors(sub_commands, config["get_monitors"])
+    parse_new_monitor(sub_commands, config["new_monitor"])
+    parse_edit_monitor(sub_commands, config["edit_monitor"])
+    parse_delete_monitor(sub_commands)
 
-    get_alerts(sub_commands, config["get_alerts"])
-    new_alert(sub_commands, config["new_alert"])
-    delete_alert(sub_commands)
+    parse_get_alerts(sub_commands, config["get_alerts"])
+    parse_new_alert(sub_commands, config["new_alert"])
+    parse_delete_alert(sub_commands)
 
     return parser
+
+
+def get_monitor_ids(client, ids_and_names):
+    """Get monitor ids from a list of ids and names"""
+
+    if ids_and_names:
+        # Split ids and values.
+        ids = list(filter(lambda m: re.match(client.ID_PATTERN, m), ids_and_names))
+        names = list(filter(lambda m: not re.match(client.ID_PATTERN, m), ids_and_names))
+
+        # Look up the ids of any values given.
+        if names:
+            monitors = filter(lambda m: (m.name in names), client.get_monitors())
+            ids += [m.id for m in monitors]
+    else:
+        ids = None
+
+    return ids
+
+
+def get_alert_contact_ids(client, ids_and_values):
+    """Get alert contact ids from a list of ids and values"""
+
+    if ids_and_values:
+        # Split ids and values.
+        ids = list(filter(lambda a: re.match(client.ID_PATTERN, a), ids_and_values))
+        values = list(filter(lambda a: not re.match(client.ID_PATTERN, a), ids_and_values))
+
+        # Look up the ids of any values given.
+        if values:
+            alerts = filter(lambda a: (a.value in values), client.get_alert_contacts())
+            ids += [a.id for a in alerts]
+    else:
+        ids = None
+
+    return ids
+
+
+def get_monitors(client, options):
+    monitors = get_monitor_ids(client, options.monitors)
+
+    if monitors is not None and len(monitors) == 0:
+        raise APIError("Alert contact not found with value: %s" % options.monitors)
+
+    monitors = client.get_monitors(ids=monitors,
+                                   show_logs=options.show_logs,
+                                   show_alert_contacts=options.show_alerts, 
+                                   show_log_alert_contacts=options.log_alerts, 
+                                   show_log_timezone=options.log_timezone, 
+                                   custom_uptime_ratio=options.uptime)
+    for m in monitors:
+        m.dump()
+        print(colored("-" * 20, "blue"))
+        print()
+
+
+def new_monitor(client, options):
+    alert_contacts = get_alert_contact_ids(client, options.alerts)
+
+    id = client.new_monitor(name=options.name,
+                            url=options.url,
+                            type=options.type,
+                            subtype=options.subtype,
+                            port=options.port,
+                            keyword_type=options.keyword_type,
+                            keyword=options.keyword,
+                            username=options.username,
+                            password=options.password,
+                            alert_contacts=alert_contacts)
+
+    print("Created monitor with id: %s" % id)
+
+
+def edit_monitor(client, options):
+    alert_contacts = get_alert_contact_ids(client, options.alerts)
+
+    id = client.edit_monitor(id=options.id,
+                            status=options.status,
+                            name=options.name,
+                            url=options.url,
+                            type=options.type,
+                            subtype=options.subtype,
+                            port=options.port,
+                            keyword_type=options.keyword_type,
+                            keyword=options.keyword,
+                            username=options.username,
+                            password=options.password,
+                            alert_contacts=alert_contacts)
+
+    print("Edited monitor with id: %s" % id)
+
+
+def delete_monitor(client, options):
+    monitors = get_monitor_ids(client, [options.monitor])
+
+    if len(monitors) != 1:
+        raise APIError("Monitor not found with name: %s" % options.monitor)
+        
+    id = client.delete_monitor(id=monitors[0])
+    print("Deleted monitor with id: %s" % id)
+
+
+def get_alerts(client, options):
+    alerts = get_alert_contact_ids(client, options.alerts)
+
+    if alerts is not None and len(alerts) == 0:
+        raise APIError("No alerts found:: %s" % options.alerts)
+
+    for alert in client.get_alert_contacts(ids=alerts):
+        alert.dump()
+
+
+def new_alert(client, options):
+    id = client.new_alert_contact(type=options.type,
+                                  value=options.value)
+
+    print("Created alert contact with id: %s" % id)
+
+
+def delete_alert(client, options):
+    alerts = get_alert_contact_ids(client, [options.alert])
+
+    if len(alerts) != 1:
+        raise APIError("Alert contact not found with value: %s" % options.alert)
+
+    id = client.delete_alert_contact(id=alerts[0])
+    print("Deleted alert contact with id: %s" % id)  
 
 
 def parse_cli_args(args):
@@ -262,75 +392,12 @@ def parse_cli_args(args):
         config = yaml.load(f)
 
     parser = create_parser(config)
-    opts = parser.parse_args(args)
+    options = parser.parse_args(args)
 
     client = Client(config["api_key"])
 
-    if opts.subcommand == "get-monitors":
-        monitors = client.get_monitors(ids=opts.ids,
-                                       show_logs=opts.logs,
-                                       show_alert_contacts=opts.alerts, 
-                                       show_log_alert_contacts=opts.log_alerts, 
-                                       show_log_timezone=opts.log_timezone, 
-                                       custom_uptime_ratio=opts.uptime)
-        for m in monitors:
-            m.dump()
-            print(colored("-" * 20, "blue"))
-            print()
-
-    elif opts.subcommand == "new-monitor":
-        id = client.new_monitor(name=opts.name,
-                                url=opts.url,
-                                type=opts.type,
-                                subtype=opts.subtype,
-                                port=opts.port,
-                                keyword_type=opts.keyword_type,
-                                keyword=opts.keyword,
-                                username=opts.username,
-                                password=opts.password,
-                                alert_contacts=opts.alerts)
-
-        print("Created monitor with id: %s" % id)
-
-    elif opts.subcommand == "edit-monitor":
-        id = client.edit_monitor(id=opts.id,
-                                status=opts.status,
-                                name=opts.name,
-                                url=opts.url,
-                                type=opts.type,
-                                subtype=opts.subtype,
-                                port=opts.port,
-                                keyword_type=opts.keyword_type,
-                                keyword=opts.keyword,
-                                username=opts.username,
-                                password=opts.password,
-                                alert_contacts=opts.alerts)
-
-        print("Edited monitor with id: %s" % id)
-
-    elif opts.subcommand == "delete-monitor":
-        id = client.delete_monitor(id=opts.id)
-        print("Deleted monitor with id: %s" % id)
-
-    elif opts.subcommand == "get-alerts":
-        alerts = client.get_alert_contacts(ids=opts.ids)
-        for a in alerts:
-            a.dump()
-
-    elif opts.subcommand == "new-alert":
-        id = client.new_alert_contact(type=opts.type,
-                                      value=opts.value)
-
-        print("Created alert contact with id: %s" % id)
-
-    elif opts.subcommand == "delete-alert":
-        id = client.delete_alert_contact(id=opts.id)
-
-        print("Deleted alert contact with id: %s" % id)
-
-    else:
-        raise Exception("Bad subcommand %s" % opts.subcommand)
-
+    # Call the handler function dynamically.
+    getattr(modules[__name__], options.subcommand.replace("-", "_"))(client, options)
 
 
 def main():

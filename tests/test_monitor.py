@@ -7,7 +7,7 @@ import requests
 from pytest import raises
 from flexmock import flexmock
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from uptimerobot.monitor import Monitor
 from uptimerobot.log import Log

@@ -8,13 +8,13 @@ from . import APIError, HTTPError
 from .monitor import Monitor
 from .alert_contact import AlertContact
 
-
 class Client(object):
     """An uptimerobot API client"""
 
 
     URL = "http://api.uptimerobot.com/"
     LIST_SEPARATOR = "-"
+    ID_PATTERN = "^\d+$"
 
 
     def __init__(self, api_key):
@@ -77,7 +77,7 @@ class Client(object):
         variables = {}
 
         if ids:
-            if any(not re.match("^\d+$", id) for id in ids):
+            if any(not re.match(self.ID_PATTERN, id) for id in ids):
                 raise ValueError("IDs must be numeric")
 
             variables["monitors"] = self.LIST_SEPARATOR.join(ids)
@@ -160,7 +160,7 @@ class Client(object):
             variables["monitorHTTPPassword"] = password
 
         if alert_contacts:
-            if any(not re.match("^\d+$", id) for id in alert_contacts):
+            if any(not re.match(self.ID_PATTERN, id) for id in alert_contacts):
                 raise ValueError("alert_contacts must be numeric")
 
             variables["monitorAlertContacts"] = self.LIST_SEPARATOR.join(alert_contacts)
@@ -262,7 +262,7 @@ class Client(object):
 
         """
 
-        if not re.match("^\d+$", id):
+        if not re.match(self.ID_PATTERN, id):
             raise ValueError("ID must be numeric")
 
         data = self.get("deleteMonitor", monitorID=id)
@@ -284,7 +284,7 @@ class Client(object):
         variables = {}
 
         if ids is not None:
-            if any(not re.match("^\d+$", id) for id in ids):
+            if any(not re.match(self.ID_PATTERN, id) for id in ids):
                 raise ValueError("IDs must be numeric")
 
             variables["alertcontacts"] = self.LIST_SEPARATOR.join(ids)
@@ -325,7 +325,7 @@ class Client(object):
 
         """
 
-        if not re.match("^\d+$", id):
+        if not re.match(self.ID_PATTERN, id):
             raise ValueError("ID must be numeric")
 
         data = self.get("deleteAlertContact", alertContactID=id)
