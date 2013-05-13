@@ -19,7 +19,9 @@ Installation
 Usage
 -----
 
-General usage, via the CLI::
+### The command line application
+
+The CLI application will take default values from ./.uptimerobot.yml and/or ~/.uptimerobot.yml (at the least, the api_key needs to be defined in one of these)::
 
     $ uptimerobot -h
 
@@ -44,7 +46,9 @@ General usage, via the CLI::
         delete-alert        Delete an alert contact
 
 
-Using the module directly::
+### The module
+
+Users can use the API directly, via the uptimerobot Client class::
 
     from uptimerobot import Client
 

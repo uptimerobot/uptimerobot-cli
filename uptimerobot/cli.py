@@ -15,7 +15,7 @@ from .alert_contact import AlertContact
 
 LOCAL_CONFIG_FILE = ".uptimerobot.yml"
 USER_CONFIG_FILE = os.path.expanduser(os.path.join("~", LOCAL_CONFIG_FILE))
-DEFAULT_CONFIG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', LOCAL_CONFIG_FILE))
+DEFAULT_CONFIG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), LOCAL_CONFIG_FILE))
 
 
 def dict_str(dict):
@@ -397,24 +397,45 @@ def delete_alert(client, options):
     print("Deleted alert contact with id: %s" % id)  
 
 
+def dict_merge(first, second):
+    """Recursively merge dicts and set non-dict values"""
+
+    # Very dumb implementation, but it is fine for our usage.
+    for k, v in second.items():
+        if k in first and isinstance(first[k], dict):
+            dict_merge(first[k], v)
+        else:
+            first[k] = v
+
+    return first
+
+
 def parse_cli_args(args):
     """
-    Parse arguments given to CLI applicationa and run client accordingly
+    Parse arguments given to CLI application and run client
+    accordingly
     """
 
+    with open(DEFAULT_CONFIG_FILE) as f:
+        config = yaml.load(f)
+
+    # See if we can get overriding config from ./ and/or ~/
     try:
-        # uptimerobot.yml
-        with open(LOCAL_CONFIG_FILE) as f:
-            config = yaml.load(f)
+        # ~/.uptimerobot.yml will override the defaults.
+        with open(USER_CONFIG_FILE) as f:
+            dict_merge(config, yaml.load(f))
     except IOError:
-        try:
-            # ~/.uptimerobot.yml
-            with open(USER_CONFIG_FILE) as f:
-                config = yaml.load(f)
-        except IOError:
-            # Defaults.
-            with open(DEFAULT_CONFIG_FILE) as f:
-                config = yaml.load(f)
+        pass
+
+    try:
+        # ./.uptimerobot.yml is the most important.
+        with open(LOCAL_CONFIG_FILE) as f:
+            dict_merge(config, yaml.load(f))
+    except IOError:
+        pass
+
+    if "api_key" not in config:
+        raise APIError("api_key must be defined in './%s' or '%s'" % (LOCAL_CONFIG_FILE, USER_CONFIG_FILE))
 
     parser = create_parser(config)
     options = parser.parse_args(args)
