@@ -474,6 +474,6 @@ def main():
     except UptimeRobotError as ex:
         print("%s: %s" % (type(ex).__name__, ex), file=stderr)
         exit(1)
-    except ValueError as ex:
+    except (ValueError, TypeError) as ex:
         print("Error in parameter value: %s" % ex, file=stderr)
         exit(1)
