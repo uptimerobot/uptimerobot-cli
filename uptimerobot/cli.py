@@ -386,7 +386,7 @@ def edit_monitor(client, options):
 def delete_monitor(client, options):
     monitors = get_monitor_ids(client, [options.monitor])
 
-    if len(monitors) != 1:
+    if len(monitors) == 0:
         raise APIError("Monitor not found with name: %s" % options.monitor)
         
     id = client.delete_monitor(id=monitors[0])
@@ -413,7 +413,7 @@ def new_alert(client, options):
 def delete_alert(client, options):
     alerts = get_alert_contact_ids(client, [options.alert])
 
-    if len(alerts) != 1:
+    if len(alerts) == 0:
         raise APIError("Alert contact not found with value: %s" % options.alert)
 
     id = client.delete_alert_contact(id=alerts[0])
