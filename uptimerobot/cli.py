@@ -27,10 +27,12 @@ def dict_str(dict):
     return str
 
 
-def parse_get_monitors(parser, defaults):
+def parse_get_monitors(parser, defaults, api_key):
     command = parser.add_parser('get-monitors', 
                                 description="Get information about some or all monitors",
                                 help="Get information about some or all monitors")
+
+    parse_api_key(command, api_key)
 
     command.add_argument('--monitors',  metavar="MONITOR", type=str, nargs='+',
                          help='IDs or names of monitors')
@@ -56,7 +58,7 @@ def parse_get_monitors(parser, defaults):
                          help="shows timezone for the logs  (ignored without --show-log)")
 
 
-def parse_new_monitor(parser, defaults):
+def parse_new_monitor(parser, defaults, api_key):
     description = """
 Create a new monitor
 
@@ -83,6 +85,9 @@ Keyword Type:
                          help='URL for new monitor')
 
     # Options:
+
+    parse_api_key(command, api_key)
+
     command.add_argument('--type', metavar='N', type=int,
                          choices=Monitor.TYPES.keys(),
                          default=defaults["type"],
@@ -119,7 +124,7 @@ Keyword Type:
                          help='IDs / values of alert contacts to use')
 
 
-def parse_edit_monitor(parser, defaults):
+def parse_edit_monitor(parser, defaults, api_key):
     description = """
 Edit an existing monitor
 
@@ -143,6 +148,8 @@ Status:
 
     command.add_argument('id', metavar='ID', type=str,
                          help='ID of monitor to edit')
+
+    parse_api_key(command, api_key)
 
     command.add_argument('--name', type=str, metavar="STR",
                          default=defaults["name"],
@@ -193,26 +200,30 @@ Status:
                          help='IDs of alert contacts to use')
 
 
-def parse_delete_monitor(parser):
+def parse_delete_monitor(parser, api_key):
     command = parser.add_parser('delete-monitor', 
                                 description="Delete a monitor",
                                 help="Delete a monitor")
+
+    parse_api_key(command, api_key)
 
     command.add_argument('monitor', metavar='MONITOR', type=str,
                          help='ID/name of monitor to delete')
 
 
-def parse_get_alerts(parser, defaults):
+def parse_get_alerts(parser, defaults, api_key):
     command = parser.add_parser('get-alerts',
                                 description="Get information about some or all alert contact",
                                 help="Get information about some or all alert contacts")
     
+    parse_api_key(command, api_key)
+
     command.add_argument('--alerts', metavar="ALERT", type=str, nargs='+',
                          default=defaults["alerts"],
                          help='IDs/values of alert contacts')
 
 
-def parse_new_alert(parser, defaults):
+def parse_new_alert(parser, defaults, api_key):
     description = """
 Create a new alert contact
 
@@ -228,22 +239,32 @@ Type:
     command.add_argument('value', metavar='VALUE', type=str,
                          help='Value of contact (email address, sms number, twitter user, iOS device)')
 
+    parse_api_key(command, api_key)
+
     command.add_argument('--type', metavar='STR', type=int,
                          choices=AlertContact.TYPES.keys(),
                          default=defaults["type"],
                          help='Type of contact to create')
 
 
-def parse_delete_alert(parser):
+def parse_delete_alert(parser, api_key):
     command = parser.add_parser('delete-alert', 
                                 description="Delete an alert contact",
                                 help="Delete an alert contact")
+
+    parse_api_key(command, api_key)
 
     command.add_argument('alert', metavar='ALERT', type=str,
                          help='ID/value of alert contact to delete')
 
 
-def create_parser(config):
+def parse_api_key(parser, api_key):
+    parser.add_argument('--api-key', metavar="STR", type=str,
+                        default=api_key,
+                        help="Your uptimerobot.com api-key (for account or individual monitor).")
+
+
+def create_parser(defaults):
     description = """
 Manage monitors and alert contacts at UptimeRobot.com
 
@@ -258,14 +279,16 @@ If file exists, application will take defaults from:
     sub_commands = parser.add_subparsers(title='Subcommands',
                                          dest="subcommand")
 
-    parse_get_monitors(sub_commands, config["get_monitors"])
-    parse_new_monitor(sub_commands, config["new_monitor"])
-    parse_edit_monitor(sub_commands, config["edit_monitor"])
-    parse_delete_monitor(sub_commands)
+    api_key = defaults["api_key"]
 
-    parse_get_alerts(sub_commands, config["get_alerts"])
-    parse_new_alert(sub_commands, config["new_alert"])
-    parse_delete_alert(sub_commands)
+    parse_get_monitors(sub_commands, defaults["get_monitors"], api_key)
+    parse_new_monitor(sub_commands, defaults["new_monitor"], api_key)
+    parse_edit_monitor(sub_commands, defaults["edit_monitor"], api_key)
+    parse_delete_monitor(sub_commands, api_key)
+
+    parse_get_alerts(sub_commands, defaults["get_alerts"], api_key)
+    parse_new_alert(sub_commands, defaults["new_alert"], api_key)
+    parse_delete_alert(sub_commands, api_key)
 
     return parser
 
@@ -434,13 +457,11 @@ def parse_cli_args(args):
     except IOError:
         pass
 
-    if "api_key" not in config:
-        raise APIError("api_key must be defined in './%s' or '%s'" % (LOCAL_CONFIG_FILE, USER_CONFIG_FILE))
 
     parser = create_parser(config)
     options = parser.parse_args(args)
 
-    client = Client(config["api_key"])
+    client = Client(options.api_key)
 
     # Call the handler function dynamically.
     getattr(modules[__name__], options.subcommand.replace("-", "_"))(client, options)

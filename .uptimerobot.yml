@@ -1,10 +1,8 @@
 ---
 
-# UptimeRobot API key is required.
+# Default values to use on the command-line.
 
 api_key: u83441-30844a47d712331872e6ee18
-
-# Other values can be defaulted, if desired.
 
 # get_monitors:
 #     monitors: null # e.g ['012', 'my monitor', '1451']

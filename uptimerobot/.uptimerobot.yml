@@ -1,8 +1,8 @@
 ---
 
-# UptimeRobot API key MUST BE SET BY THE USER.
+# UptimeRobot API key MUST BE SET BY THE USER (in config or on the command line).
 
-# api_key: null
+api_key: nokey
 
 # Only optional parameters are defaulted here.
 # Remember that alerts and monitors are STRINGS, not numbers.
