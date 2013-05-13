@@ -25,9 +25,11 @@ if opts.command == "docs":
     print("HTML documentation generated: build/sphinx/html/index.html")
 elif opts.command == "release":
     # Create source distribution.
-    system("python setup.py sdist")
-    print()
-    print("Distribution package created in dist/")
+    result = system("python setup.py sdist")
+
+    if result == 0:
+        print()
+        print("Distribution package created in dist/")
 else:
     print('Invalid action (must be "docs" or "release")', file=stderr)
     print("usage: %s" % USAGE, file=stderr)
