@@ -14,6 +14,7 @@ setup(
     author_email = "bil.bas.dev@gmail.com",
     maintainer = "Arne Schirmacher",
     #maintainer_email = "",
+    #url= "",
     license = "GNU General Public License v3 (GPLv3)",
     install_requires = [
         "requests>=1.2.0",
@@ -32,8 +33,7 @@ setup(
     #include_package_data=True,
     zip_safe=True,
     classifiers=[
-        'Development Status :: 3 - Alpha',
-        #'Development Status :: 4 - Beta',
+        'Development Status :: 4 - Beta',
         #'Development Status :: 5 - Production/Stable',
         'Environment :: Console',
         'Intended Audience :: Developers',
