@@ -7,7 +7,7 @@ Author: Bil Bas (bil.bas.dev@gmail.com)
 
 License: GPLv3
 
-Tested on Python 2.7 and 3.2.
+Tested on Python 2.7 and 3.3.
 
 
 Installation

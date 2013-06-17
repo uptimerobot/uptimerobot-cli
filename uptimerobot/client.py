@@ -163,13 +163,13 @@ class Client(object):
             "monitorType": str(type),
         }
 
-        if subtype:
+        if subtype is not None:
             if subtype not in Monitor.SUBTYPES:
                 raise ValueError("subtype must be one of %s" % ", ".join(str(m) for m in Monitor.SUBTYPES.keys()))
 
             variables["monitorSubType"] = str(subtype)
 
-        if port:
+        if port is not None:
             variables["monitorPort"] = str(port)
 
         if keyword_type and keyword:
@@ -178,13 +178,13 @@ class Client(object):
 
             variables["monitorKeywordType"] = str(keyword_type)
             variables["monitorKeywordValue"] = keyword
-        elif keyword_type or keyword:
+        elif keyword_type is not None or keyword is not None:
             raise ValueError("Requires both keyword_type and keyword if either are specified")
 
-        if username and password:
+        if username is not None and password is not None:
             variables["monitorHTTPUsername"] = username
             variables["monitorHTTPPassword"] = password
-        elif username or password:
+        elif username is not None or password is not None:
             raise ValueError("Requires both username and password if either are specified")
 
         if alert_contacts:
@@ -253,34 +253,34 @@ class Client(object):
             "monitorID": id,
         }
 
-        if status:
-            if type not in Monitor.STATUSES:
+        if status is not None:
+            if status not in Monitor.STATUSES:
                 raise ValueError("status must be one of %s" % ", ".join(str(m) for m in Monitor.STATUSES.keys()))
 
             variables["monitorStatus"] = str(status)
 
-        if name:
+        if name is not None:
             variables["monitorFriendlyName"] = name
 
-        if url:
+        if url is not None:
             variables["monitorURL"] = url
 
-        if type:
+        if type is not None:
             if type not in Monitor.TYPES:
                 raise ValueError("type must be one of %s" % ", ".join(str(m) for m in Monitor.TYPES.keys()))
 
             variables["monitorType"] = str(type)
 
-        if subtype:
+        if subtype is not None:
             if subtype not in Monitor.SUBTYPES:
                 raise ValueError("subtype must be one of %s" % ", ".join(str(m) for m in Monitor.SUBTYPES.keys()))
 
             variables["monitorSubType"] = str(subtype)
 
-        if port:
+        if port is not None:
             variables["monitorPort"] = str(port)
 
-        if keyword_type:
+        if keyword_type is not None:
             if keyword_type not in Monitor.KEYWORD_TYPES:
                 raise ValueError("keyword_type must be one of %s" % ", ".join(str(m) for m in Monitor.KEYWORD_TYPES.keys()))
 
