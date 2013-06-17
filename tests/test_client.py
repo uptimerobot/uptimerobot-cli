@@ -150,6 +150,16 @@ class TestEditMonitor(TestClient):
         edited_id = self.client.edit_monitor(id="128798")
         assert edited_id == "128798"
 
+    def test_edit_monitor_with_status_1(self):
+        flexmock(self.client).should_receive("get").with_args("editMonitor", monitorID="128798", monitorStatus="1").and_return(self.response("edit_monitor"))
+        edited_id = self.client.edit_monitor(id="128798", status=1)
+        assert edited_id == "128798"
+
+    def test_edit_monitor_with_status_0(self):
+        flexmock(self.client).should_receive("get").with_args("editMonitor", monitorID="128798", monitorStatus="0").and_return(self.response("edit_monitor"))
+        edited_id = self.client.edit_monitor(id="128798", status=0)
+        assert edited_id == "128798"
+
 
     def test_bad_id_non_numeric(self):
         with raises(ValueError):
