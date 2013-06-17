@@ -7,7 +7,7 @@ from setuptools import setup, find_packages
 
 setup(
     name = "uptimerobot",
-    version = "1.0.0",
+    version = "1.0.1",
     url = "https:/github.com/spooner",
     description = "A module (with command line application) to access uptimetobot.com API",
     author = "Bil Bas",
