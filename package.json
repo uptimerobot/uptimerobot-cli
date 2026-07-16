@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "The official command-line interface for UptimeRobot API v3",
   "type": "module",
-  "license": "GPL-3.0-or-later",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=22.12.0"
   },
