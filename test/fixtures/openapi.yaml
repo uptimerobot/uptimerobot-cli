@@ -1,0 +1,34 @@
+openapi: 3.0.0
+info:
+  title: Generator test API
+  version: 1.0.0
+servers:
+  - url: https://api.example.test/v3
+paths:
+  /monitors:
+    get:
+      operationId: MonitorsController_list
+      summary: List monitors
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by status
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /monitors/{id}:
+    delete:
+      operationId: MonitorsController_delete
+      summary: Delete a monitor
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK

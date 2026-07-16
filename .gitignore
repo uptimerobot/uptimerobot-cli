@@ -1,6 +1,4 @@
 dist/
-build/
-*.pyc
-__pycache__
-uptimerobot.egg-info
-doc/
+coverage/
+node_modules/
+.pnpm-store/
