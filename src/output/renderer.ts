@@ -1,4 +1,5 @@
 import type { OutputFormat } from './resolve-format.js';
+import { paint, type PaintStyle, statusGlyph } from './style.js';
 
 type Formatter = (payload: unknown) => string | undefined;
 
@@ -40,6 +41,11 @@ function formatPlain(payload: unknown): string | undefined {
     .join('\n');
 }
 
+interface TableCell {
+  style?: PaintStyle;
+  text: string;
+}
+
 function formatTable(payload: unknown): string | undefined {
   const data = extractCollection(payload);
   if (!data) return JSON.stringify(payload, null, 2);
@@ -47,15 +53,25 @@ function formatTable(payload: unknown): string | undefined {
   const columns = firstColumns(data);
   const rows = data.map((item) => {
     const row = isRecord(item) ? item : { value: item };
-    return columns.map((column) => formatValue(row[column], '—'));
+    return columns.map((column) => toCell(column, formatValue(row[column], '—')));
   });
-  const headings = columns.map((column) =>
-    column.replace(/([a-z])([A-Z])/g, '$1 $2').toUpperCase(),
+  const headings = columns.map(
+    (column): TableCell => ({
+      style: 'bold',
+      text: column.replace(/([a-z])([A-Z])/g, '$1 $2').toUpperCase(),
+    }),
   );
   const widths = columns.map((_, index) =>
-    Math.max(headings[index]!.length, ...rows.map((row) => row[index]!.length)),
+    Math.max(headings[index]!.text.length, ...rows.map((row) => row[index]!.text.length)),
   );
   return [formatRow(headings, widths), ...rows.map((row) => formatRow(row, widths))].join('\n');
+}
+
+function toCell(column: string, text: string): TableCell {
+  if (!/status$/i.test(column)) return { text };
+  const status = statusGlyph(text);
+  if (!status) return { text };
+  return { style: status.style, text: `${status.glyph} ${text}` };
 }
 
 function extractCollection(payload: unknown): unknown[] | undefined {
@@ -72,9 +88,12 @@ function firstColumns(rows: unknown[]): string[] {
   return Object.keys(first).slice(0, 8);
 }
 
-function formatRow(values: string[], widths: number[]): string {
-  return values
-    .map((value, index) => value + ' '.repeat(Math.max(0, widths[index]! - value.length)))
+function formatRow(cells: TableCell[], widths: number[]): string {
+  return cells
+    .map((cell, index) => {
+      const padding = ' '.repeat(Math.max(0, widths[index]! - cell.text.length));
+      return (cell.style === undefined ? cell.text : paint(cell.style, cell.text)) + padding;
+    })
     .join('  ')
     .trimEnd();
 }

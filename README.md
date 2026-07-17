@@ -116,6 +116,8 @@ uptimerobot monitors list --format jsonl
 
 `--json` is shorthand for `--format json` and cannot be combined with `--format`. JSONL emits one resource per line. Plain output emits headerless, tab-separated rows without color.
 
+Status columns in table output pair the raw value with a glyph: `●` for healthy states (`UP`, `STARTED`, `SUCCESS`, `PUBLISHED`, `Resolved`, `active`), `✗` for failures (`DOWN`, `NOT_DELIVERED`, `Ongoing`, `error`), `▲` for warning states (`LOOKS_DOWN`, `PENDING`), and `◌` for inactive ones (`PAUSED`, `paused`, `OFFLINE`, `ARCHIVED`). Unrecognized values render unchanged. Color follows the usual conventions: `NO_COLOR` disables it, `FORCE_COLOR=1` forces it, and otherwise it applies only when stdout is an interactive terminal. JSON, JSONL, and plain output never contain glyphs or escape codes.
+
 Collection responses are normalized into an `items` array plus an opaque string
 `nextCursor`. This works consistently for paginated endpoints and API responses that
 return a root array. Use `--raw` to preserve the original single-page API response:
