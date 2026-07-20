@@ -22,22 +22,31 @@ const MUTED: StatusGlyph = { glyph: '◌', style: 'dim' };
 
 // Exact-match on the casing the API emits; unknown values must pass through unstyled.
 const STATUS_GLYPHS: Record<string, StatusGlyph> = {
-  ARCHIVED: MUTED,
+  Active: OK,
+  Archived: MUTED,
+  CantSend: MUTED,
   DOWN: BAD,
-  LOOKS_DOWN: WARN,
+  ENABLED: OK,
+  InQueue: MUTED,
+  LOOKS_DOWN: BAD,
   NOT_DELIVERED: BAD,
-  OFFLINE: MUTED,
+  NotActivated: WARN,
+  Offline: MUTED,
   Ongoing: BAD,
   PAUSED: MUTED,
-  PENDING: WARN,
-  PUBLISHED: OK,
+  Paused: MUTED,
+  Pending: WARN,
+  Published: OK,
   Resolved: OK,
-  STARTED: OK,
+  STARTED: MUTED,
   SUCCESS: OK,
+  Sent: OK,
+  ToMigrate: WARN,
   UP: OK,
   active: OK,
   error: BAD,
   paused: MUTED,
+  success: OK,
 };
 
 export function colorEnabled(): boolean {

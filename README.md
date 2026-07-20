@@ -116,7 +116,21 @@ uptimerobot monitors list --format jsonl
 
 `--json` is shorthand for `--format json` and cannot be combined with `--format`. JSONL emits one resource per line. Plain output emits headerless, tab-separated rows without color.
 
-Status columns in table output pair the raw value with a glyph: `●` for healthy states (`UP`, `STARTED`, `SUCCESS`, `PUBLISHED`, `Resolved`, `active`), `✗` for failures (`DOWN`, `NOT_DELIVERED`, `Ongoing`, `error`), `▲` for warning states (`LOOKS_DOWN`, `PENDING`), and `◌` for inactive ones (`PAUSED`, `paused`, `OFFLINE`, `ARCHIVED`). Unrecognized values render unchanged. Color follows the usual conventions: `NO_COLOR` disables it, `FORCE_COLOR=1` forces it, and otherwise it applies only when stdout is an interactive terminal. JSON, JSONL, and plain output never contain glyphs or escape codes.
+Table and plain output show a curated set of columns for collection commands — the fields the UptimeRobot dashboard surfaces (for example, `monitors list` shows `ID STATUS NAME TYPE TARGET INTERVAL IN STATE TAGS` instead of the first fields in the API response). Curation never removes data from JSON output. To override it:
+
+```sh
+# Pick explicit columns; dotted paths reach nested fields
+uptimerobot incidents list --columns id,monitor.friendlyName,startedAt
+
+# Show every API field across all rows
+uptimerobot monitors list --all
+```
+
+`--columns` and `--all` are available only on collection commands, apply only to `table` and `plain` formats, and cannot be combined with each other. Unknown column names render as `—` in tables and empty fields in plain output rather than failing, since available fields vary by monitor type. `--all` is a debugging escape hatch and may display sensitive API fields.
+
+Table cells stay on one line and default to a maximum of 48 Unicode characters; selected high-variance columns use tighter limits. Longer values end in `…`. Plain, JSON, and JSONL output always retain complete values.
+
+Status columns in table output pair the raw API value with a glyph: `●` for healthy states (`UP`, `ENABLED`, `Resolved`, `SUCCESS`, `Published`, `Sent`, `Active`, `active`, `success`), `✗` for failures (`DOWN`, `LOOKS_DOWN`, `Ongoing`, `NOT_DELIVERED`, `error`), `▲` for warning states (`Pending`, `NotActivated`, `ToMigrate`), and `◌` for inactive or preparing states (`PAUSED`, `STARTED`, `Offline`, `Archived`, `InQueue`, `CantSend`, `Paused`, `paused`). Unrecognized values render unchanged. Color follows the usual conventions: `NO_COLOR` disables it, `FORCE_COLOR=1` forces it, and otherwise it applies only when stdout is an interactive terminal. JSON, JSONL, and plain output never contain glyphs or escape codes.
 
 Collection responses are normalized into an `items` array plus an opaque string
 `nextCursor`. This works consistently for paginated endpoints and API responses that

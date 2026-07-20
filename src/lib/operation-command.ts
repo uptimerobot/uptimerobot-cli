@@ -1,6 +1,7 @@
 import { Args, Command, Flags } from '@oclif/core';
 import { createApiClient } from '../api/client.js';
 import { exitCodeFor, normalizeApiError } from '../api/errors.js';
+import { columnsFor, parseColumnsFlag } from '../output/columns.js';
 import { normalizeResult } from '../output/normalize-result.js';
 import { formatOutput } from '../output/renderer.js';
 import { withRequestProgress } from '../output/request-progress.js';
@@ -44,6 +45,7 @@ export function createOperationCommand(operation: OperationDefinition): typeof C
           }),
         }
       : {};
+  const defaultColumns = columnsFor(operation.commandId);
   const commandFlags = {
     'api-key': Flags.string({
       description: 'UptimeRobot API key',
@@ -51,6 +53,18 @@ export function createOperationCommand(operation: OperationDefinition): typeof C
       helpValue: '<key>',
     }),
     agent: Flags.boolean({ description: 'Mark this invocation as agent-driven' }),
+    ...(defaultColumns === undefined
+      ? {}
+      : {
+          all: Flags.boolean({
+            description:
+              'Show every API field in table or plain output; may expose sensitive API fields',
+          }),
+          columns: Flags.string({
+            description: 'Comma-separated columns for table or plain output (dot paths allowed)',
+            helpValue: '<a,b.c>',
+          }),
+        }),
     ...(operation.destructive
       ? { confirm: Flags.boolean({ description: 'Explicitly confirm a destructive action' }) }
       : {}),
@@ -104,6 +118,38 @@ export function createOperationCommand(operation: OperationDefinition): typeof C
         return this.fail(
           { code: 'INVALID_INPUT', message: '--raw can only be used with JSON output.' },
           true,
+          2,
+        );
+      }
+      if (flags.columns !== undefined && flags.all === true) {
+        return this.fail(
+          { code: 'INVALID_INPUT', message: '--columns cannot be combined with --all.' },
+          jsonOutput,
+          2,
+        );
+      }
+      if ((flags.columns !== undefined || flags.all === true) && jsonOutput) {
+        return this.fail(
+          {
+            code: 'INVALID_INPUT',
+            message: '--columns and --all only apply to table or plain output.',
+          },
+          jsonOutput,
+          2,
+        );
+      }
+
+      let requestedColumns: ReturnType<typeof parseColumnsFlag> | undefined;
+      try {
+        requestedColumns =
+          typeof flags.columns === 'string' ? parseColumnsFlag(flags.columns) : undefined;
+      } catch (error) {
+        return this.fail(
+          {
+            code: 'INVALID_INPUT',
+            message: error instanceof Error ? error.message : String(error),
+          },
+          jsonOutput,
           2,
         );
       }
@@ -200,6 +246,10 @@ export function createOperationCommand(operation: OperationDefinition): typeof C
       const output = formatOutput(
         outputFormat,
         flags.raw === true ? payload : normalizeResult(payload),
+        {
+          allColumns: flags.all === true,
+          columns: requestedColumns ?? (flags.all === true ? undefined : defaultColumns),
+        },
       );
       if (output !== undefined) this.log(output);
     }

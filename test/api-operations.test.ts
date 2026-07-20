@@ -11,6 +11,32 @@ describe('API operations', () => {
     );
   });
 
+  it('only exposes column-selection flags on collection commands', async () => {
+    const collectionHelp = await runCli(['monitors', 'list', '--help']);
+    const detailHelp = await runCli(['monitors', 'get', '--help']);
+    const mutationHelp = await runCli(['monitors', 'create', '--help']);
+    const normalizedCollectionHelp = collectionHelp.stdout.replace(/\s+/g, ' ');
+
+    expect(collectionHelp.exitCode).toBe(0);
+    expect(collectionHelp.stdout).toContain('--columns=<a,b.c>');
+    expect(collectionHelp.stdout).toContain('--all');
+    expect(normalizedCollectionHelp).toContain('may expose sensitive API fields');
+    expect(detailHelp.exitCode).toBe(0);
+    expect(detailHelp.stdout).not.toContain('--columns');
+    expect(detailHelp.stdout).not.toContain('--all');
+    expect(mutationHelp.exitCode).toBe(0);
+    expect(mutationHelp.stdout).not.toContain('--columns');
+    expect(mutationHelp.stdout).not.toContain('--all');
+  });
+
+  it('rejects column-selection flags on detail commands', async () => {
+    const result = await runCli(['monitors', 'get', '42', '--columns', 'id']);
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain('Nonexistent flag: --columns');
+    expect(result.stdout).toBe('');
+  });
+
   it('does not accept a custom API URL as a command-line flag', async () => {
     const result = await runCli([
       'user',
