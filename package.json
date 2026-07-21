@@ -2,8 +2,23 @@
   "name": "@uptimerobot/cli",
   "version": "0.1.0",
   "description": "The official command-line interface for UptimeRobot API v3",
-  "type": "module",
+  "keywords": [
+    "uptimerobot",
+    "cli",
+    "monitoring",
+    "uptime",
+    "status-page",
+    "api"
+  ],
+  "author": "UptimeRobot (https://uptimerobot.com)",
   "license": "Apache-2.0",
+  "homepage": "https://github.com/uptimerobot/uptimerobot-cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uptimerobot/uptimerobot-cli.git"
+  },
+  "bugs": "https://github.com/uptimerobot/uptimerobot-cli/issues",
+  "type": "module",
   "engines": {
     "node": ">=22.12.0"
   },
@@ -14,7 +29,6 @@
   "files": [
     "bin",
     "dist",
-    "docs",
     "openapi/openapi.yaml",
     "README.md",
     "LICENSE"
@@ -37,8 +51,7 @@
     "@napi-rs/keyring": "1.3.0",
     "@oclif/core": "4.11.14",
     "ky": "2.0.2",
-    "yaml": "2.9.0",
-    "zod": "^4.4.3"
+    "yaml": "2.9.0"
   },
   "devDependencies": {
     "@types/node": "26.1.1",

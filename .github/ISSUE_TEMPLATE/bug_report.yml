@@ -1,0 +1,43 @@
+name: Bug report
+description: Report incorrect or unexpected CLI behavior
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never include your API key.** Sanitize command output, config files,
+        and error messages before pasting them.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: The command you ran, what you expected, and what actually happened. Include sanitized output where it helps.
+      placeholder: uptimerobot monitors list --json
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: CLI version
+      description: Output of `uptimerobot --version`
+      placeholder: '@uptimerobot/cli/0.1.0 darwin-arm64 node-v22.14.0'
+    validations:
+      required: true
+  - type: dropdown
+    id: output_mode
+    attributes:
+      label: Output mode
+      description: Which output format the command used
+      options:
+        - table
+        - plain
+        - json
+        - jsonl
+        - raw
+        - not sure
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node version, and whether the CLI ran interactively, in CI, or from a coding agent
+      placeholder: macOS 15, Node 22.14, interactive terminal

@@ -1,13 +1,22 @@
 #!/usr/bin/env node
 
-import { flush, handle, run } from '@oclif/core';
-import { commandSuggestion } from '../dist/lib/command-suggestions.js';
-import {
-  errorEnvelope,
-  exitCodeForError,
-  machineOutputRequested,
-  wasErrorHandled,
-} from '../dist/lib/cli-errors.js';
+const [major, minor, patch] = process.version.replace(/^v/, '').split('.').map(Number);
+
+const nodeVersionSupported =
+  major > 22 || (major === 22 && minor > 12) || (major === 22 && minor === 12 && patch >= 0);
+
+if (!nodeVersionSupported) {
+  process.stderr.write(
+    `uptimerobot requires Node.js 22.12.0 or newer; you are running ${process.version}.\n` +
+      'Install a current release from https://nodejs.org/.\n',
+  );
+  process.exit(1);
+}
+
+const { flush, handle, run } = await import('@oclif/core');
+const { commandSuggestion } = await import('../dist/lib/command-suggestions.js');
+const { errorEnvelope, exitCodeForError, machineOutputRequested, wasErrorHandled } =
+  await import('../dist/lib/cli-errors.js');
 
 try {
   await run(process.argv.slice(2), import.meta.url);

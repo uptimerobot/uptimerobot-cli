@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Command } from '@oclif/core';
+import { Command } from '@oclif/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const keyring = vi.hoisted(() => new Map<string, string>());
@@ -53,9 +53,11 @@ describe('authentication', () => {
   });
 
   it('validates an explicitly provided API key before saving it', async () => {
-    let authorization: string | undefined;
+    let headers: Headers | undefined;
+    let signal: AbortSignal | null | undefined;
     const request = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-      authorization = new Headers(init?.headers).get('authorization') ?? undefined;
+      headers = new Headers(init?.headers);
+      signal = init?.signal;
       expect(String(input)).toBe('https://api.uptimerobot.com/v3/user/me');
       return new Response(JSON.stringify({ data: { email: 'developer@example.com' } }), {
         status: 200,
@@ -66,10 +68,11 @@ describe('authentication', () => {
 
     await Login.run(['--api-key', 'u123-secret'], { root: projectRoot });
 
-    expect({ authorization, saved: keyring.get('com.uptimerobot.cli:default:api-key') }).toEqual({
-      authorization: 'Bearer u123-secret',
-      saved: 'u123-secret',
-    });
+    expect(headers?.get('authorization')).toBe('Bearer u123-secret');
+    expect(headers?.get('x-uptimerobot-client')).toBe('cli');
+    expect(headers?.get('user-agent')).toMatch(/^uptimerobot-cli\/.+ mode\/human environment\/.+$/);
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(keyring.get('com.uptimerobot.cli:default:api-key')).toBe('u123-secret');
   });
 
   it('does not accept an API URL override for persistent login', async () => {
@@ -201,5 +204,17 @@ describe('authentication', () => {
     await Logout.run(['--json'], { root: projectRoot });
 
     await expect(stat(credentialsPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('emits JSON for auth status when stdout is piped, even without --json', async () => {
+    keyring.set('com.uptimerobot.cli:default:api-key', 'u123-secret');
+    const log = vi.spyOn(Command.prototype, 'log').mockImplementation(() => {});
+
+    const { default: Status } = await import('../src/commands/auth/status.js');
+    await Status.run([], { root: projectRoot });
+
+    expect(log).toHaveBeenCalledWith(
+      JSON.stringify({ authenticated: true, source: 'keyring', type: 'api-key' }),
+    );
   });
 });

@@ -66,7 +66,7 @@ class KeyringCredentialStore implements CredentialStore {
 }
 
 /**
- * Stripe-style plaintext fallback for environments without an OS keyring
+ * Plaintext fallback for environments without an OS keyring
  * (minimal/headless Linux, containers): a JSON file beneath the CLI config
  * directory with directory 0700 and file 0600 permissions.
  */

@@ -1,6 +1,8 @@
 import { Flags } from '@oclif/core';
 import { BaseCommand } from '../../lib/base-command.js';
 import { credentialStore, credentialsFilePath } from '../../lib/credential-store.js';
+import { detectInvocationMode } from '../../lib/invocation.js';
+import { resolveFormat } from '../../output/resolve-format.js';
 
 interface AuthenticationStatus {
   authenticated: boolean;
@@ -30,7 +32,8 @@ export default class AuthStatus extends BaseCommand {
     const status: AuthenticationStatus = stored
       ? { authenticated: true, source: stored.backend, type: 'api-key' }
       : { authenticated: false, source: null, type: null };
-    if (flags.json) this.log(JSON.stringify(status));
+    const format = resolveFormat(flags, detectInvocationMode(false));
+    if (format === 'json' || format === 'jsonl') this.log(JSON.stringify(status));
     else if (!stored) this.log('No stored authentication found.');
     else if (stored.backend === 'keyring')
       this.log('Authenticated with an API key stored in the OS credential store.');

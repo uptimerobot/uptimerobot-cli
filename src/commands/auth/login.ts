@@ -2,6 +2,8 @@ import { Flags } from '@oclif/core';
 import { AuthenticationError, PRODUCTION_API_URL, saveValidatedApiKey } from '../../lib/auth.js';
 import { BaseCommand } from '../../lib/base-command.js';
 import { credentialsFilePath } from '../../lib/credential-store.js';
+import { detectInvocationMode, isCI } from '../../lib/invocation.js';
+import { resolveFormat } from '../../output/resolve-format.js';
 
 export default class AuthLogin extends BaseCommand {
   static override description = 'Validate and securely store a UptimeRobot API key';
@@ -18,15 +20,21 @@ export default class AuthLogin extends BaseCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(AuthLogin);
+    const mode = detectInvocationMode(false);
     let backend: Awaited<ReturnType<typeof saveValidatedApiKey>>;
     try {
-      backend = await saveValidatedApiKey(flags['api-key'], PRODUCTION_API_URL);
+      backend = await saveValidatedApiKey(flags['api-key'], PRODUCTION_API_URL, {
+        environment: isCI() ? 'ci' : 'local',
+        mode,
+        version: this.config.pjson.version,
+      });
     } catch (error) {
       if (error instanceof AuthenticationError)
         this.error(error.message, { code: error.code, exit: error.exitCode });
       throw error;
     }
-    if (flags.json) {
+    const format = resolveFormat(flags, mode);
+    if (format === 'json' || format === 'jsonl') {
       this.log(
         JSON.stringify({ authenticated: true, storage: backend, stored: true, type: 'api-key' }),
       );

@@ -1,6 +1,8 @@
 import { Flags } from '@oclif/core';
 import { BaseCommand } from '../../lib/base-command.js';
 import { credentialStore } from '../../lib/credential-store.js';
+import { detectInvocationMode } from '../../lib/invocation.js';
+import { resolveFormat } from '../../output/resolve-format.js';
 
 export default class AuthLogout extends BaseCommand {
   static override description =
@@ -22,7 +24,8 @@ export default class AuthLogout extends BaseCommand {
       });
     }
 
-    if (flags.json) this.log(JSON.stringify({ removed }));
+    const format = resolveFormat(flags, detectInvocationMode(false));
+    if (format === 'json' || format === 'jsonl') this.log(JSON.stringify({ removed }));
     else this.log(removed ? 'Stored API key removed.' : 'No stored API key was found.');
     if (process.env.UPTIMEROBOT_API_KEY) {
       this.warn('UPTIMEROBOT_API_KEY is still set and will continue to authenticate commands.');

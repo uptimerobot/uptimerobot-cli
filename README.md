@@ -1,5 +1,7 @@
 # UptimeRobot CLI
 
+[![CI](https://github.com/uptimerobot/uptimerobot-cli/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/uptimerobot/uptimerobot-cli/actions/workflows/ci.yml)
+
 The official command-line interface for UptimeRobot API v3.
 
 Manage UptimeRobot from a terminal, script, CI pipeline, or coding agent. The CLI combines human-friendly commands with structured output, local validation, and safe automation defaults.

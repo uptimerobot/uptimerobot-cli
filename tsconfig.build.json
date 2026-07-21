@@ -2,12 +2,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "allowImportingTsExtensions": false,
-    "declaration": true,
-    "declarationMap": true,
+    "declaration": false,
     "noEmit": false,
     "outDir": "dist",
-    "rootDir": "src",
-    "sourceMap": true
+    "rootDir": "src"
   },
   "include": ["src/**/*.ts"],
   "exclude": ["scripts", "test", "vitest.config.ts"]

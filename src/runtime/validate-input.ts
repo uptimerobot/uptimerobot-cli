@@ -1,4 +1,3 @@
-import { z } from 'zod';
 import type { InputValue, OperationInput } from './types.js';
 import type { OperationDefinition, OperationParameter } from '../lib/types.js';
 
@@ -17,8 +16,7 @@ export function validateInput(
   input: OperationInput,
 ): OperationInput {
   for (const parameter of operation.parameters) {
-    const values = parameter.in === 'path' ? input.path : input.query;
-    const value = values[parameter.name];
+    const value = (parameter.in === 'path' ? input.path : input.query)[parameter.name];
     if (value === undefined) {
       if (parameter.required) {
         throw new InputValidationError(parameter.name, 'a value', `${parameter.name} is required.`);
@@ -26,58 +24,51 @@ export function validateInput(
       continue;
     }
 
-    const result = schemaFor(parameter).safeParse(value);
-    if (!result.success) {
-      const expected = result.error.issues[0]?.message ?? 'a valid value';
+    const expected = firstIssue(parameter, value);
+    if (expected) {
       throw new InputValidationError(
         parameter.name,
         expected,
         `Invalid ${parameter.name}: ${expected}`,
       );
     }
-    values[parameter.name] = result.data as InputValue;
   }
   return input;
 }
 
-function schemaFor(parameter: OperationParameter): z.ZodType {
-  let schema: z.ZodType;
+function firstIssue(parameter: OperationParameter, value: InputValue): string | undefined {
   switch (parameter.type) {
     case 'array':
-      schema = z.array(z.string());
+      if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+        return 'Expected a list of values';
+      }
       break;
     case 'boolean':
-      schema = z.boolean();
+      if (typeof value !== 'boolean') return 'Expected a boolean';
       break;
     case 'integer':
       // Numeric formats are validated on the raw string so that 64-bit IDs
       // and cursors keep their exact spelling on the wire.
-      schema = z.string().regex(/^-?\d+$/, 'Expected an integer');
+      if (typeof value !== 'string' || !/^-?\d+$/.test(value)) return 'Expected an integer';
       break;
     case 'number':
-      schema = z.string().regex(/^-?(?:\d+\.?\d*|\.\d+)$/, 'Expected a number');
+      if (typeof value !== 'string' || !/^-?(?:\d+\.?\d*|\.\d+)$/.test(value)) {
+        return 'Expected a number';
+      }
       break;
     default:
-      schema = z.string();
+      if (typeof value !== 'string') return 'Expected a string';
   }
 
   const numeric = parameter.type === 'integer' || parameter.type === 'number';
-  if (parameter.minimum !== undefined && numeric) {
-    const { minimum } = parameter;
-    schema = schema.refine((value) => Number(value) >= minimum, {
-      error: `Expected at least ${minimum}`,
-    });
+  if (numeric && parameter.minimum !== undefined && Number(value) < parameter.minimum) {
+    return `Expected at least ${parameter.minimum}`;
   }
-  if (parameter.maximum !== undefined && numeric) {
-    const { maximum } = parameter;
-    schema = schema.refine((value) => Number(value) <= maximum, {
-      error: `Expected at most ${maximum}`,
-    });
+  if (numeric && parameter.maximum !== undefined && Number(value) > parameter.maximum) {
+    return `Expected at most ${parameter.maximum}`;
   }
-  if (parameter.enum) {
-    schema = schema.refine((value) => parameter.enum!.includes(value), {
-      error: `Expected one of: ${parameter.enum.map(String).join(', ')}`,
-    });
+  if (parameter.enum && !parameter.enum.includes(value)) {
+    return `Expected one of: ${parameter.enum.map(String).join(', ')}`;
   }
-  return schema;
+  return undefined;
 }

@@ -1,7 +1,16 @@
 import type { CredentialBackend, CredentialStore } from './credential-store.js';
 import { credentialStore } from './credential-store.js';
+import type { ExecutionEnvironment, InvocationMode } from './invocation.js';
 
 export const PRODUCTION_API_URL = 'https://api.uptimerobot.com/v3';
+
+const VALIDATION_TIMEOUT_MS = 10_000;
+
+export interface ValidationAttribution {
+  environment: ExecutionEnvironment;
+  mode: InvocationMode;
+  version: string;
+}
 
 export class AuthenticationError extends Error {
   constructor(
@@ -20,6 +29,7 @@ export class AuthenticationError extends Error {
 export async function saveValidatedApiKey(
   apiKey: string,
   apiUrl: string,
+  attribution: ValidationAttribution,
   store: CredentialStore = credentialStore,
   fetchImplementation: typeof fetch = fetch,
 ): Promise<CredentialBackend> {
@@ -33,7 +43,15 @@ export async function saveValidatedApiKey(
   let response: Response;
   try {
     response = await fetchImplementation(new URL(`${apiUrl}/user/me`), {
-      headers: { accept: 'application/json', authorization: `Bearer ${apiKey}` },
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${apiKey}`,
+        'user-agent': `uptimerobot-cli/${attribution.version} mode/${attribution.mode} environment/${attribution.environment}`,
+        'x-uptimerobot-client': 'cli',
+        'x-uptimerobot-execution-environment': attribution.environment,
+        'x-uptimerobot-invocation-mode': attribution.mode,
+      },
+      signal: AbortSignal.timeout(VALIDATION_TIMEOUT_MS),
     });
   } catch (error) {
     throw new AuthenticationError(
