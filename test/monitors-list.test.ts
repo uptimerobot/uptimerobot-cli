@@ -2,6 +2,8 @@ import { createServer } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli } from './helpers/run-cli.js';
 
+const ESC = String.fromCharCode(27);
+
 describe('monitors list', () => {
   const servers: ReturnType<typeof createServer>[] = [];
 
@@ -113,7 +115,61 @@ describe('monitors list', () => {
     });
   });
 
-  it('renders an aligned status table for a human', async () => {
+  it('renders an aligned curated table for a human', async () => {
+    const server = createServer((_request, response) => {
+      response.setHeader('content-type', 'application/json');
+      response.end(
+        JSON.stringify({
+          data: [
+            {
+              id: 42,
+              friendlyName: 'checkout-api',
+              type: 'HTTP',
+              status: 'DOWN',
+              interval: 60,
+              url: 'https://checkout.example.com',
+              currentStateDuration: 5025,
+              tags: [
+                { id: 1, name: 'prod', color: '#f00' },
+                { id: 2, name: 'eu', color: '#0f0' },
+              ],
+            },
+            {
+              id: 7,
+              friendlyName: 'home',
+              type: 'HTTP',
+              status: 'UP',
+              interval: 300,
+              url: 'https://example.com',
+            },
+          ],
+        }),
+      );
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+
+    const result = await runCli(['monitors', 'list', '--format', 'table'], {
+      FORCE_COLOR: undefined,
+      NO_COLOR: undefined,
+      UPTIMEROBOT_AGENT: '0',
+      UPTIMEROBOT_API_KEY: 'u123-secret',
+      UPTIMEROBOT_DEV_API_URL: `http://127.0.0.1:${address.port}/v3`,
+    });
+
+    expect(result).toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout:
+        'ID  STATUS  NAME          TYPE  TARGET                        INTERVAL  IN STATE  TAGS\n' +
+        '42  ✗ DOWN  checkout-api  HTTP  https://checkout.example.com  1m        1h 23m    prod, eu\n' +
+        '7   ● UP    home          HTTP  https://example.com           5m        —         —\n',
+    });
+  });
+
+  it('colors glyphed status cells and bold headings when FORCE_COLOR is set', async () => {
     const server = createServer((_request, response) => {
       response.setHeader('content-type', 'application/json');
       response.end(
@@ -145,6 +201,53 @@ describe('monitors list', () => {
     if (!address || typeof address === 'string') throw new Error('Test server did not bind');
 
     const result = await runCli(['monitors', 'list', '--format', 'table'], {
+      FORCE_COLOR: '1',
+      NO_COLOR: undefined,
+      UPTIMEROBOT_AGENT: '0',
+      UPTIMEROBOT_API_KEY: 'u123-secret',
+      UPTIMEROBOT_DEV_API_URL: `http://127.0.0.1:${address.port}/v3`,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain(`${ESC}[1mID${ESC}[0m`);
+    expect(result.stdout).toContain(`${ESC}[31m✗ DOWN${ESC}[0m`);
+    expect(result.stdout).toContain(`${ESC}[32m● UP${ESC}[0m`);
+    expect(result.stdout.replaceAll(new RegExp(`${ESC}\\[\\d+m`, 'g'), '')).toBe(
+      'ID  STATUS  NAME          TYPE  TARGET                        INTERVAL  IN STATE  TAGS\n' +
+        '42  ✗ DOWN  checkout-api  HTTP  https://checkout.example.com  1m        —         —\n' +
+        '7   ● UP    home          HTTP  https://example.com           5m        —         —\n',
+    );
+  });
+
+  it('keeps glyphs but emits no escape codes when NO_COLOR is set', async () => {
+    const server = createServer((_request, response) => {
+      response.setHeader('content-type', 'application/json');
+      response.end(
+        JSON.stringify({
+          data: [
+            {
+              id: 42,
+              friendlyName: 'checkout-api',
+              type: 'HTTP',
+              status: 'DOWN',
+              interval: 60,
+              url: 'https://checkout.example.com',
+            },
+          ],
+        }),
+      );
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+
+    const result = await runCli(['monitors', 'list', '--format', 'table'], {
+      // Node itself warns on stderr when NO_COLOR and FORCE_COLOR are both set,
+      // so the spec-precedence combination is asserted in output.test.ts instead.
+      FORCE_COLOR: undefined,
+      NO_COLOR: '1',
       UPTIMEROBOT_AGENT: '0',
       UPTIMEROBOT_API_KEY: 'u123-secret',
       UPTIMEROBOT_DEV_API_URL: `http://127.0.0.1:${address.port}/v3`,
@@ -154,9 +257,127 @@ describe('monitors list', () => {
       exitCode: 0,
       stderr: '',
       stdout:
-        'ID  FRIENDLY NAME  TYPE  STATUS  INTERVAL  URL\n' +
-        '42  checkout-api   HTTP  DOWN    60        https://checkout.example.com\n' +
-        '7   home           HTTP  UP      300       https://example.com\n',
+        'ID  STATUS  NAME          TYPE  TARGET                        INTERVAL  IN STATE  TAGS\n' +
+        '42  ✗ DOWN  checkout-api  HTTP  https://checkout.example.com  1m        —         —\n',
+    });
+  });
+
+  it('renders only the requested columns when --columns is passed', async () => {
+    const server = createServer((_request, response) => {
+      response.setHeader('content-type', 'application/json');
+      response.end(
+        JSON.stringify({
+          data: [
+            {
+              id: 42,
+              friendlyName: 'checkout-api',
+              status: 'DOWN',
+              lastIncident: { id: '9001', cause: 503 },
+            },
+          ],
+        }),
+      );
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+
+    const result = await runCli(
+      ['monitors', 'list', '--format', 'table', '--columns', 'id,lastIncident.cause,missing'],
+      {
+        FORCE_COLOR: undefined,
+        NO_COLOR: '1',
+        UPTIMEROBOT_AGENT: '0',
+        UPTIMEROBOT_API_KEY: 'u123-secret',
+        UPTIMEROBOT_DEV_API_URL: `http://127.0.0.1:${address.port}/v3`,
+      },
+    );
+
+    expect(result).toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: 'ID  CAUSE  MISSING\n42  503    —\n',
+    });
+  });
+
+  it('shows the union of all row fields when --all is passed', async () => {
+    const server = createServer((_request, response) => {
+      response.setHeader('content-type', 'application/json');
+      response.end(
+        JSON.stringify({
+          data: [{ a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8, i: 9 }, { j: 10 }],
+        }),
+      );
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+
+    const result = await runCli(['monitors', 'list', '--format', 'table', '--all'], {
+      FORCE_COLOR: undefined,
+      NO_COLOR: '1',
+      UPTIMEROBOT_AGENT: '0',
+      UPTIMEROBOT_API_KEY: 'u123-secret',
+      UPTIMEROBOT_DEV_API_URL: `http://127.0.0.1:${address.port}/v3`,
+    });
+
+    expect(result).toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout:
+        'A  B  C  D  E  F  G  H  I  J\n1  2  3  4  5  6  7  8  9  —\n—  —  —  —  —  —  —  —  —  10\n',
+    });
+  });
+
+  it('rejects --columns combined with --all before making a request', async () => {
+    const result = await runCli(
+      ['monitors', 'list', '--format', 'table', '--columns', 'id', '--all'],
+      {
+        UPTIMEROBOT_AGENT: '0',
+        UPTIMEROBOT_API_KEY: 'u123-secret',
+        UPTIMEROBOT_DEV_API_URL: 'http://127.0.0.1:9/v3',
+      },
+    );
+
+    expect(result).toEqual({
+      exitCode: 2,
+      stderr: '--columns cannot be combined with --all. (INVALID_INPUT)\n',
+      stdout: '',
+    });
+  });
+
+  it('rejects an empty --columns selection before making a request', async () => {
+    const result = await runCli(['monitors', 'list', '--format', 'table', '--columns', ',,,'], {
+      UPTIMEROBOT_AGENT: '0',
+      UPTIMEROBOT_API_KEY: 'u123-secret',
+      UPTIMEROBOT_DEV_API_URL: 'http://127.0.0.1:9/v3',
+    });
+
+    expect(result).toEqual({
+      exitCode: 2,
+      stderr: '--columns must contain at least one column name. (INVALID_INPUT)\n',
+      stdout: '',
+    });
+  });
+
+  it('rejects --columns with JSON output before making a request', async () => {
+    const result = await runCli(['monitors', 'list', '--columns', 'id', '--json'], {
+      UPTIMEROBOT_AGENT: '0',
+      UPTIMEROBOT_API_KEY: 'u123-secret',
+      UPTIMEROBOT_DEV_API_URL: 'http://127.0.0.1:9/v3',
+    });
+
+    expect({ ...result, stderr: JSON.parse(result.stderr) }).toEqual({
+      exitCode: 2,
+      stderr: {
+        error: {
+          code: 'INVALID_INPUT',
+          message: '--columns and --all only apply to table or plain output.',
+        },
+      },
+      stdout: '',
     });
   });
 
@@ -198,7 +419,9 @@ describe('monitors list', () => {
       stderr: {
         error: {
           code: 'INVALID_INPUT',
+          expected: expect.stringContaining('expected number'),
           message: expect.stringContaining('limit'),
+          path: 'limit',
         },
       },
       stdout: '',
@@ -262,12 +485,23 @@ describe('monitors list', () => {
     });
   });
 
-  it('emits headerless tab-separated rows in plain mode', async () => {
+  it('emits headerless tab-separated curated rows in plain mode', async () => {
     const server = createServer((_request, response) => {
       response.setHeader('content-type', 'application/json');
       response.end(
         JSON.stringify({
-          data: [{ id: 42, friendlyName: 'checkout-api', status: 'DOWN', interval: 60 }],
+          data: [
+            {
+              id: 42,
+              friendlyName: 'checkout-api',
+              status: 'DOWN',
+              interval: 60,
+              url: 'https://checkout.example.com',
+              type: 'HTTP',
+              currentStateDuration: 5025,
+              tags: [{ id: 1, name: 'prod', color: '#f00' }],
+            },
+          ],
         }),
       );
     });
@@ -285,7 +519,7 @@ describe('monitors list', () => {
     expect(result).toEqual({
       exitCode: 0,
       stderr: '',
-      stdout: '42\tcheckout-api\tDOWN\t60\n',
+      stdout: '42\tDOWN\tcheckout-api\tHTTP\thttps://checkout.example.com\t1m\t1h 23m\tprod\n',
     });
   });
 

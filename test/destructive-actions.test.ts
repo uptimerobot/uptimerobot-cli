@@ -7,6 +7,26 @@ import { runCli } from './helpers/run-cli.js';
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 
 describe('destructive actions', () => {
+  it('compiles a destructive JSON request with --dry-run without confirmation or authentication', async () => {
+    const result = await runCli(['monitors', 'reset', '42', '--dry-run', '--json'], {
+      UPTIMEROBOT_API_KEY: undefined,
+      UPTIMEROBOT_DEV_API_URL: 'http://127.0.0.1:9/v3',
+    });
+
+    expect({ ...result, stdout: JSON.parse(result.stdout) }).toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: {
+        body: {},
+        command: 'monitors reset',
+        contentType: 'application/json',
+        dryRun: true,
+        method: 'POST',
+        path: '/v3/monitors/42/reset',
+      },
+    });
+  });
+
   it('refuses an agent-issued delete until explicit confirmation is supplied', async () => {
     const result = await runCli(['monitors', 'delete', '42', '--json'], {
       UPTIMEROBOT_AGENT: '1',

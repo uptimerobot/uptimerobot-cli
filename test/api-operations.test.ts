@@ -11,6 +11,33 @@ describe('API operations', () => {
     );
   });
 
+  it('only exposes column-selection flags on collection commands', async () => {
+    const collectionHelp = await runCli(['monitors', 'list', '--help']);
+    const detailHelp = await runCli(['monitors', 'get', '--help']);
+    const mutationHelp = await runCli(['monitors', 'create', '--help']);
+    const normalizedCollectionHelp = collectionHelp.stdout.replace(/\s+/g, ' ');
+
+    expect(collectionHelp.exitCode).toBe(0);
+    expect(collectionHelp.stdout).toContain('--columns=<a,b.c>');
+    expect(collectionHelp.stdout).toContain('--all');
+    expect(normalizedCollectionHelp).toContain('may expose sensitive API fields');
+    expect(detailHelp.exitCode).toBe(0);
+    expect(detailHelp.stdout).not.toContain('--columns');
+    expect(detailHelp.stdout).not.toContain('--all');
+    expect(detailHelp.stdout.replace(/\s+/g, ' ')).toContain('$ uptimerobot monitors get 123');
+    expect(mutationHelp.exitCode).toBe(0);
+    expect(mutationHelp.stdout).not.toContain('--columns');
+    expect(mutationHelp.stdout).not.toContain('--all');
+  });
+
+  it('rejects column-selection flags on detail commands', async () => {
+    const result = await runCli(['monitors', 'get', '42', '--columns', 'id']);
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain('Nonexistent flag: --columns');
+    expect(result.stdout).toBe('');
+  });
+
   it('does not accept a custom API URL as a command-line flag', async () => {
     const result = await runCli([
       'user',
@@ -89,6 +116,32 @@ describe('API operations', () => {
     });
   });
 
+  it('shows a continuation notice for human collection output', async () => {
+    const server = createServer((_request, response) => {
+      response.setHeader('content-type', 'application/json');
+      response.end(
+        JSON.stringify({
+          data: [{ id: 42, friendlyName: 'Checkout', status: 'UP' }],
+          nextLink: 'https://api.uptimerobot.com/v3/monitors?cursor=next-page',
+        }),
+      );
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+
+    const result = await runCli(['monitors', 'list', '--format', 'plain'], {
+      UPTIMEROBOT_AGENT: '0',
+      UPTIMEROBOT_API_KEY: 'u123-secret',
+      UPTIMEROBOT_DEV_API_URL: `http://127.0.0.1:${address.port}/v3`,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('Checkout');
+    expect(result.stderr).toBe('More results are available. Next cursor: next-page\n');
+  });
+
   it('normalizes pagination responses that expose the cursor directly', async () => {
     const server = createServer((_request, response) => {
       response.setHeader('content-type', 'application/json');
@@ -161,12 +214,15 @@ describe('API operations', () => {
       [
         'monitors',
         'create',
+        'http',
         '--set',
         'friendlyName=checkout-api',
         '--set',
         'url=https://checkout.example.com',
         '--set',
-        'type=HTTP',
+        'interval=60',
+        '--set',
+        'timeout=30',
         '--json',
       ],
       {
@@ -180,6 +236,8 @@ describe('API operations', () => {
       observedRequest: {
         body: {
           friendlyName: 'checkout-api',
+          interval: 60,
+          timeout: 30,
           type: 'HTTP',
           url: 'https://checkout.example.com',
         },

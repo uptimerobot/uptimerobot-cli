@@ -1,4 +1,5 @@
-import { Command, Flags } from '@oclif/core';
+import { Flags } from '@oclif/core';
+import { BaseCommand } from '../../lib/base-command.js';
 import { credentialStore } from '../../lib/credential-store.js';
 
 interface AuthenticationStatus {
@@ -7,7 +8,7 @@ interface AuthenticationStatus {
   type: 'api-key' | null;
 }
 
-export default class AuthStatus extends Command {
+export default class AuthStatus extends BaseCommand {
   static override description = 'Show whether an API key is saved in the OS credential store';
   static override flags = {
     json: Flags.boolean({ description: 'Emit structured JSON output' }),

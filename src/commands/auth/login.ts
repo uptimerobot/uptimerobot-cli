@@ -1,7 +1,8 @@
-import { Command, Flags } from '@oclif/core';
+import { Flags } from '@oclif/core';
 import { AuthenticationError, PRODUCTION_API_URL, saveValidatedApiKey } from '../../lib/auth.js';
+import { BaseCommand } from '../../lib/base-command.js';
 
-export default class AuthLogin extends Command {
+export default class AuthLogin extends BaseCommand {
   static override description = 'Validate and securely store a UptimeRobot API key';
   static override flags = {
     'api-key': Flags.string({

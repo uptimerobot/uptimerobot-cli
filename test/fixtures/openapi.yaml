@@ -16,6 +16,14 @@ paths:
           description: Filter by status
           schema:
             type: string
+        - name: includePaused
+          in: query
+          required: false
+          description: Include paused monitors
+          schema:
+            type: boolean
+            default: false
+            example: true
       responses:
         '200':
           description: OK
