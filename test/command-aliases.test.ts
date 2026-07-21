@@ -1,5 +1,8 @@
 import { createServer } from 'node:http';
+import { access } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { HANDWRITTEN_COMMANDS } from '../src/lib/command-suggestions.js';
 import { runCli } from './helpers/run-cli.js';
 
 describe('command aliases', () => {
@@ -50,5 +53,16 @@ describe('command aliases', () => {
     expect(result.stderr).toBe('');
     expect(requestUrl).toBe('/v3/user/me');
     expect(JSON.parse(result.stdout)).toEqual({ data: { email: 'developer@example.com' } });
+  });
+
+  it('suggests only handwritten commands that exist as compiled command files', async () => {
+    const commandsDirectory = new URL('../dist/commands/', import.meta.url);
+
+    await Promise.all(
+      HANDWRITTEN_COMMANDS.map(async (command) => {
+        const commandFile = new URL(`${command.replaceAll(' ', '/')}.js`, commandsDirectory);
+        await expect(access(fileURLToPath(commandFile)), command).resolves.toBeUndefined();
+      }),
+    );
   });
 });

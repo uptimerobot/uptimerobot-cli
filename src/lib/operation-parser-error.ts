@@ -1,3 +1,4 @@
+import { flagName } from './flag-name.js';
 import type { OperationDefinition } from './types.js';
 
 export function enrichOperationParserError(error: Error, operation: OperationDefinition): void {
@@ -30,11 +31,4 @@ function pathForFlag(operation: OperationDefinition, flag: string): string | und
   return operation.parameters.find(
     (parameter) => parameter.in === 'query' && flagName(parameter.name) === flag,
   )?.name;
-}
-
-function flagName(value: string): string {
-  return value
-    .replace(/_/g, '-')
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .toLowerCase();
 }

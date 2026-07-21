@@ -8,9 +8,11 @@ import { formatOutput } from '../output/renderer.js';
 import { withRequestProgress } from '../output/request-progress.js';
 import { resolveFormat } from '../output/resolve-format.js';
 import { parseInput } from '../runtime/parse-input.js';
+import type { OperationInput } from '../runtime/types.js';
 import { InputValidationError, validateInput } from '../runtime/validate-input.js';
 import { AuthenticationError, resolveApiKey } from './auth.js';
 import { BaseCommand } from './base-command.js';
+import { flagName } from './flag-name.js';
 import { detectInvocationMode, isCI, requestConfirmation } from './invocation.js';
 import { enrichOperationParserError } from './operation-parser-error.js';
 import { curatedRequestBodyField, curatedRequestExampleBody } from './request-curation.js';
@@ -195,8 +197,9 @@ Canonical command: ${options.canonicalCommand}`
         );
       }
 
+      let input: OperationInput;
       try {
-        validateInput(operation, parseInput(operation, parsed.args, flags));
+        input = validateInput(operation, parseInput(operation, parsed.args, flags));
       } catch (error) {
         if (error instanceof InputValidationError) {
           return this.fail(
@@ -244,7 +247,7 @@ Canonical command: ${options.canonicalCommand}`
             2,
           );
         }
-        const url = buildUrl(operation, parsed.args, flags, apiUrl);
+        const url = buildUrl(operation, input, apiUrl);
         const preview = redactRequestPreview(JSON.parse(body));
         this.log(
           JSON.stringify(
@@ -286,7 +289,7 @@ Canonical command: ${options.canonicalCommand}`
         throw error;
       }
 
-      const url = buildUrl(operation, parsed.args, flags, apiUrl);
+      const url = buildUrl(operation, input, apiUrl);
       const client = createApiClient({
         apiKey,
         apiUrl,
@@ -573,11 +576,4 @@ function scalarHelpValue(type: string | undefined): string {
 
 function displayValue(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value);
-}
-
-function flagName(value: string): string {
-  return value
-    .replace(/_/g, '-')
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .toLowerCase();
 }

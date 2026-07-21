@@ -1,4 +1,6 @@
+import { assignPath, valueAtPath } from './objects.js';
 import { cliRequestDefaults, curatedRequestBodyFields } from './request-curation.js';
+import { isSensitiveFieldName } from './sensitive-fields.js';
 import type { OperationDefinition, OperationValueSchema } from './types.js';
 
 const UNAVAILABLE = Symbol('unavailable request example');
@@ -22,7 +24,7 @@ export function synthesizedRequestExample(operation: OperationDefinition): unkno
         !field.deprecated &&
         !field.hidden &&
         !field.path.includes('.') &&
-        !isSensitiveName(field.path) &&
+        !isSensitiveFieldName(field.path) &&
         exampleValue(field) !== UNAVAILABLE,
     );
     if (candidate) {
@@ -81,35 +83,4 @@ function exampleValue(schema: OperationValueSchema): unknown | typeof UNAVAILABL
 function exampleNumber(schema: OperationValueSchema): number {
   const minimum = schema.minimum ?? 1;
   return schema.maximum !== undefined ? Math.min(minimum, schema.maximum) : minimum;
-}
-
-function assignPath(target: Record<string, unknown>, path: string, value: unknown): void {
-  const segments = path.split('.');
-  let cursor = target;
-  for (const segment of segments.slice(0, -1)) {
-    const existing = cursor[segment];
-    if (!isRecord(existing)) cursor[segment] = {};
-    cursor = cursor[segment] as Record<string, unknown>;
-  }
-  cursor[segments.at(-1)!] = value;
-}
-
-function valueAtPath(target: Record<string, unknown>, path: string): unknown {
-  let value: unknown = target;
-  for (const segment of path.split('.')) {
-    if (!isRecord(value)) return undefined;
-    value = value[segment];
-  }
-  return value;
-}
-
-function isSensitiveName(name: string): boolean {
-  const normalized = name.replace(/[^a-z0-9]/gi, '').toLowerCase();
-  return ['apikey', 'authorization', 'credential', 'password', 'secret', 'token'].some((suffix) =>
-    normalized.endsWith(suffix),
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

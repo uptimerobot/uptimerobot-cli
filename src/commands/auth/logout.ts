@@ -3,7 +3,8 @@ import { BaseCommand } from '../../lib/base-command.js';
 import { credentialStore } from '../../lib/credential-store.js';
 
 export default class AuthLogout extends BaseCommand {
-  static override description = 'Remove the API key saved in the OS credential store';
+  static override description =
+    'Remove the API key saved in the OS credential store or config file';
   static override flags = {
     json: Flags.boolean({ description: 'Emit structured JSON output' }),
   };
@@ -15,7 +16,7 @@ export default class AuthLogout extends BaseCommand {
     try {
       removed = await credentialStore.deleteApiKey();
     } catch {
-      this.error('Secure credential storage is unavailable.', {
+      this.error('Credential storage is unavailable.', {
         code: 'AUTH_STORAGE_UNAVAILABLE',
         exit: 1,
       });

@@ -1,13 +1,18 @@
 import { operations } from '../generated/operations.js';
 
-const HANDWRITTEN_COMMANDS = [
+/**
+ * Commands implemented by hand rather than generated from the OpenAPI
+ * contract. A test asserts that each entry maps to a compiled command file,
+ * so renames and removals break CI instead of silently dropping suggestions.
+ */
+export const HANDWRITTEN_COMMANDS = [
   'auth login',
   'auth logout',
   'auth status',
   'auth whoami',
   'monitors schema',
   'user get',
-];
+] as const;
 const commands = [
   ...Object.keys(operations).map((commandId) => commandId.replaceAll(':', ' ')),
   ...HANDWRITTEN_COMMANDS,

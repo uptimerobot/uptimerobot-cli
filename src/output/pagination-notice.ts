@@ -1,3 +1,4 @@
+import { isRecord } from '../lib/objects.js';
 import type { OutputFormat } from './resolve-format.js';
 
 export interface PaginationNotice {
@@ -30,8 +31,4 @@ function printableCursor(cursor: string): string {
     }
     return character;
   }).join('');
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }

@@ -1,3 +1,6 @@
+import { isRecord } from './objects.js';
+import { isSensitiveFieldName } from './sensitive-fields.js';
+
 const REDACTED = '[REDACTED]';
 
 export interface RedactedRequestPreview {
@@ -19,7 +22,7 @@ function redactValue(value: unknown, path: string[], redacted: string[]): unknow
   return Object.fromEntries(
     Object.entries(value).map(([key, child]) => {
       const childPath = [...path, key];
-      if (isSensitiveName(key)) {
+      if (isSensitiveFieldName(key)) {
         redacted.push(formatPath(childPath));
         return [key, REDACTED];
       }
@@ -28,29 +31,10 @@ function redactValue(value: unknown, path: string[], redacted: string[]): unknow
   );
 }
 
-function isSensitiveName(name: string): boolean {
-  const normalized = name.replace(/[^a-z0-9]/gi, '').toLowerCase();
-  return [
-    'apikey',
-    'authorization',
-    'cookie',
-    'credential',
-    'password',
-    'passphrase',
-    'privatekey',
-    'secret',
-    'token',
-  ].some((suffix) => normalized.endsWith(suffix));
-}
-
 function formatPath(segments: readonly string[]): string {
   return segments.reduce(
     (path, segment) =>
       /^\d+$/.test(segment) ? `${path}[${segment}]` : path ? `${path}.${segment}` : segment,
     '',
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }

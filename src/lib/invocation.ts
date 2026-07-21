@@ -4,18 +4,31 @@ import type { OperationDefinition } from './types.js';
 export type ExecutionEnvironment = 'ci' | 'local';
 export type InvocationMode = 'agent' | 'human';
 
+/** Environment variables set by known coding-agent runtimes. */
+export const AGENT_ENVIRONMENT_VARIABLES = ['CLAUDECODE', 'CODEX_SANDBOX', 'CURSOR_AGENT'] as const;
+
 export function isCI(): boolean {
   return /^(1|true|yes)$/i.test(process.env.CI ?? '');
 }
 
-export function detectInvocationMode(agentFlag: boolean): InvocationMode {
-  if (agentFlag) return 'agent';
-  if (process.env.UPTIMEROBOT_AGENT !== undefined) {
-    return /^(1|true|yes)$/i.test(process.env.UPTIMEROBOT_AGENT) ? 'agent' : 'human';
-  }
-  return ['CLAUDECODE', 'CODEX_SANDBOX', 'CURSOR_AGENT'].some((name) => process.env[name])
-    ? 'agent'
-    : 'human';
+/**
+ * The single source of truth for agent-driven execution. UPTIMEROBOT_AGENT is
+ * an explicit override in both directions; otherwise a known agent runtime's
+ * environment marker decides.
+ */
+export function agentEnvironmentDetected(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  const override = env.UPTIMEROBOT_AGENT;
+  if (override !== undefined) return /^(1|true|yes)$/i.test(override);
+  return AGENT_ENVIRONMENT_VARIABLES.some((name) => env[name]);
+}
+
+export function detectInvocationMode(
+  agentFlag: boolean,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): InvocationMode {
+  return agentFlag || agentEnvironmentDetected(env) ? 'agent' : 'human';
 }
 
 export async function requestConfirmation(

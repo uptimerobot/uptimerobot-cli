@@ -50,19 +50,30 @@ function schemaFor(parameter: OperationParameter): z.ZodType {
       schema = z.boolean();
       break;
     case 'integer':
-      schema = z.number().finite().int();
+      // Numeric formats are validated on the raw string so that 64-bit IDs
+      // and cursors keep their exact spelling on the wire.
+      schema = z.string().regex(/^-?\d+$/, 'Expected an integer');
       break;
     case 'number':
-      schema = z.number().finite();
+      schema = z.string().regex(/^-?(?:\d+\.?\d*|\.\d+)$/, 'Expected a number');
       break;
     default:
       schema = z.string();
   }
 
-  if (parameter.minimum !== undefined && schema instanceof z.ZodNumber)
-    schema = schema.min(parameter.minimum);
-  if (parameter.maximum !== undefined && schema instanceof z.ZodNumber)
-    schema = schema.max(parameter.maximum);
+  const numeric = parameter.type === 'integer' || parameter.type === 'number';
+  if (parameter.minimum !== undefined && numeric) {
+    const { minimum } = parameter;
+    schema = schema.refine((value) => Number(value) >= minimum, {
+      error: `Expected at least ${minimum}`,
+    });
+  }
+  if (parameter.maximum !== undefined && numeric) {
+    const { maximum } = parameter;
+    schema = schema.refine((value) => Number(value) <= maximum, {
+      error: `Expected at most ${maximum}`,
+    });
+  }
   if (parameter.enum) {
     schema = schema.refine((value) => parameter.enum!.includes(value), {
       error: `Expected one of: ${parameter.enum.map(String).join(', ')}`,

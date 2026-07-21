@@ -419,7 +419,7 @@ describe('monitors list', () => {
       stderr: {
         error: {
           code: 'INVALID_INPUT',
-          expected: expect.stringContaining('expected number'),
+          expected: expect.stringContaining('Expected a number'),
           message: expect.stringContaining('limit'),
           path: 'limit',
         },

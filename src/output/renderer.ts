@@ -1,4 +1,6 @@
+import { isRecord } from '../lib/objects.js';
 import type { ColumnSpec } from './columns.js';
+import { displayWidth, truncateToWidth } from './display-width.js';
 import type { OutputFormat } from './resolve-format.js';
 import { paint, type PaintStyle, statusGlyph } from './style.js';
 
@@ -76,8 +78,8 @@ function formatTable(payload: unknown, options: RenderOptions): string | undefin
   );
   const widths = columns.map((_, index) =>
     Math.max(
-      codePointLength(headings[index]!.text),
-      ...rows.map((row) => codePointLength(row[index]!.text)),
+      displayWidth(headings[index]!.text),
+      ...rows.map((row) => displayWidth(row[index]!.text)),
     ),
   );
   return [formatRow(headings, widths), ...rows.map((row) => formatRow(row, widths))].join('\n');
@@ -165,7 +167,7 @@ function allKeys(rows: unknown[]): string[] {
 function formatRow(cells: TableCell[], widths: number[]): string {
   return cells
     .map((cell, index) => {
-      const padding = ' '.repeat(Math.max(0, widths[index]! - codePointLength(cell.text)));
+      const padding = ' '.repeat(Math.max(0, widths[index]! - displayWidth(cell.text)));
       return (cell.style === undefined ? cell.text : paint(cell.style, cell.text)) + padding;
     })
     .join('  ')
@@ -173,23 +175,14 @@ function formatRow(cells: TableCell[], widths: number[]): string {
 }
 
 function truncate(value: string, maxWidth: number): string {
-  const codePoints = Array.from(value);
-  return codePoints.length > maxWidth ? `${codePoints.slice(0, maxWidth - 1).join('')}…` : value;
+  return truncateToWidth(value, maxWidth);
 }
 
 function singleLine(value: string): string {
   return value.replace(/[\t\r\n]+/g, ' ');
 }
 
-function codePointLength(value: string): number {
-  return Array.from(value).length;
-}
-
 function formatValue(value: unknown, nullValue: string): string {
   if (typeof value === 'object' && value !== null) return JSON.stringify(value);
   return value === undefined || value === null ? nullValue : String(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }

@@ -1,3 +1,5 @@
+import { isRecord } from '../lib/objects.js';
+
 export function normalizeResult(payload: unknown): unknown {
   if (Array.isArray(payload)) return { items: payload, nextCursor: null };
   if (!isRecord(payload) || !Array.isArray(payload.data)) return payload;
@@ -23,8 +25,4 @@ function cursorFromNextLink(nextLink: unknown): string | null {
 function cursorFromValue(value: unknown): string | null {
   if (typeof value === 'string') return value.length > 0 ? value : null;
   return typeof value === 'number' && Number.isFinite(value) ? String(value) : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }

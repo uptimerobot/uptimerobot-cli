@@ -1,8 +1,12 @@
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Command } from '@oclif/core';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const keyring = vi.hoisted(() => new Map<string, string>());
+const keyringControl = vi.hoisted(() => ({ fail: false }));
 
 vi.mock('@napi-rs/keyring', () => ({
   AsyncEntry: class {
@@ -13,14 +17,17 @@ vi.mock('@napi-rs/keyring', () => ({
     }
 
     async deleteCredential(): Promise<boolean> {
+      if (keyringControl.fail) throw new Error('keyring unavailable');
       return keyring.delete(this.key);
     }
 
     async getPassword(): Promise<string | undefined> {
+      if (keyringControl.fail) throw new Error('keyring unavailable');
       return keyring.get(this.key);
     }
 
     async setPassword(password: string): Promise<void> {
+      if (keyringControl.fail) throw new Error('keyring unavailable');
       keyring.set(this.key, password);
     }
   },
@@ -29,10 +36,20 @@ vi.mock('@napi-rs/keyring', () => ({
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 
 describe('authentication', () => {
-  afterEach(() => {
+  let configDirectory: string;
+
+  beforeEach(async () => {
+    configDirectory = await mkdtemp(join(tmpdir(), 'uptimerobot-cli-test-'));
+    vi.stubEnv('UPTIMEROBOT_CONFIG_DIR', configDirectory);
+  });
+
+  afterEach(async () => {
     keyring.clear();
+    keyringControl.fail = false;
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
+    await rm(configDirectory, { force: true, recursive: true });
   });
 
   it('validates an explicitly provided API key before saving it', async () => {
@@ -117,5 +134,72 @@ describe('authentication', () => {
 
     expect(status).toEqual({ authenticated: true, source: 'keyring', type: 'api-key' });
     expect(JSON.stringify(status)).not.toContain('u123-never-print-this');
+  });
+
+  it('falls back to a 0600 plaintext config file when the keyring is unavailable', async () => {
+    keyringControl.fail = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 200 })),
+    );
+    const { default: Login } = await import('../src/commands/auth/login.js');
+
+    await Login.run(['--api-key', 'u123-file-secret'], { root: projectRoot });
+
+    const credentialsPath = join(configDirectory, 'credentials.json');
+    const stored = JSON.parse(await readFile(credentialsPath, 'utf8')) as { apiKey?: string };
+    expect(stored.apiKey).toBe('u123-file-secret');
+    expect(keyring.size).toBe(0);
+    if (process.platform !== 'win32') {
+      const mode = (await stat(credentialsPath)).mode & 0o777;
+      expect(mode.toString(8)).toBe('600');
+    }
+  });
+
+  it('authenticates API commands with a key stored only in the config file', async () => {
+    keyringControl.fail = true;
+    await writeFile(
+      join(configDirectory, 'credentials.json'),
+      JSON.stringify({ apiKey: 'u123-from-file' }),
+    );
+    const request = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      const outgoing = input instanceof Request ? input : new Request(input, init);
+      expect(outgoing.headers.get('authorization')).toBe('Bearer u123-from-file');
+      return new Response(JSON.stringify({ data: [] }), {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      });
+    });
+    vi.stubGlobal('fetch', request);
+
+    const { default: MonitorsList } = await import('../src/commands/monitors/list.js');
+    await (MonitorsList as Command.Class).run(['--json'], { root: projectRoot });
+
+    expect(request).toHaveBeenCalledOnce();
+  });
+
+  it('reports the config file as the credential source in auth status', async () => {
+    keyringControl.fail = true;
+    await writeFile(
+      join(configDirectory, 'credentials.json'),
+      JSON.stringify({ apiKey: 'u123-from-file' }),
+    );
+
+    const { default: Status } = await import('../src/commands/auth/status.js');
+    const status = await Status.run(['--json'], { root: projectRoot });
+
+    expect(status).toEqual({ authenticated: true, source: 'file', type: 'api-key' });
+    expect(JSON.stringify(status)).not.toContain('u123-from-file');
+  });
+
+  it('removes a file-stored API key on logout', async () => {
+    keyringControl.fail = true;
+    const credentialsPath = join(configDirectory, 'credentials.json');
+    await writeFile(credentialsPath, JSON.stringify({ apiKey: 'u123-from-file' }));
+
+    const { default: Logout } = await import('../src/commands/auth/logout.js');
+    await Logout.run(['--json'], { root: projectRoot });
+
+    await expect(stat(credentialsPath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

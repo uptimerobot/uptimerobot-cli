@@ -1,4 +1,4 @@
-import type { CredentialStore } from './credential-store.js';
+import type { CredentialBackend, CredentialStore } from './credential-store.js';
 import { credentialStore } from './credential-store.js';
 
 export const PRODUCTION_API_URL = 'https://api.uptimerobot.com/v3';
@@ -22,7 +22,7 @@ export async function saveValidatedApiKey(
   apiUrl: string,
   store: CredentialStore = credentialStore,
   fetchImplementation: typeof fetch = fetch,
-): Promise<void> {
+): Promise<CredentialBackend> {
   if (apiUrl !== PRODUCTION_API_URL) {
     throw new AuthenticationError(
       'AUTH_URL_RESTRICTED',
@@ -50,11 +50,11 @@ export async function saveValidatedApiKey(
     );
   }
   try {
-    await store.setApiKey(apiKey);
+    return await store.setApiKey(apiKey);
   } catch {
     throw new AuthenticationError(
       'AUTH_STORAGE_UNAVAILABLE',
-      'Secure credential storage is unavailable. Use UPTIMEROBOT_API_KEY for this environment.',
+      'No credential storage is available. Use UPTIMEROBOT_API_KEY for this environment.',
       1,
     );
   }
@@ -73,17 +73,17 @@ export async function resolveApiKey(
       2,
     );
   }
-  let stored: string | undefined;
+  let stored: Awaited<ReturnType<CredentialStore['getApiKey']>>;
   try {
     stored = await store.getApiKey();
   } catch {
     throw new AuthenticationError(
       'AUTH_STORAGE_UNAVAILABLE',
-      'Secure credential storage is unavailable. Set UPTIMEROBOT_API_KEY or pass --api-key.',
+      'Credential storage is unavailable. Set UPTIMEROBOT_API_KEY or pass --api-key.',
       1,
     );
   }
-  if (stored) return stored;
+  if (stored) return stored.apiKey;
   throw new AuthenticationError(
     'AUTH_REQUIRED',
     'Run `uptimerobot auth login --api-key <key>`, set UPTIMEROBOT_API_KEY, or pass --api-key.',

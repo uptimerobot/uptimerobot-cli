@@ -2,6 +2,8 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import process from 'node:process';
 import { parse } from 'yaml';
+import { flagName } from '../src/lib/flag-name.ts';
+import { isPlainRecord } from '../src/lib/objects.ts';
 import type {
   OperationBodyField,
   OperationBodyFieldType,
@@ -228,7 +230,7 @@ function collectOperations(document: OpenApiDocument): OperationDefinition[] {
         assertBodyFlagNames(variant.fields, parameters);
         generated.push({
           ...definition,
-          commandId: `${commandId}:${toKebabCase(variant.value)}`,
+          commandId: `${commandId}:${flagName(variant.value)}`,
           requestBodyDefaults: { [variant.propertyName]: variant.value },
           ...(variant.examples.length > 0 ? { requestBodyExamples: variant.examples } : {}),
           requestBodyFields: variant.fields,
@@ -341,7 +343,7 @@ function bodyFieldFor(
   requiredWhenParentPresent: boolean,
 ): OperationBodyField {
   const dottedPath = path.join('.');
-  const generatedFlag = path.map(toKebabCase).join('-');
+  const generatedFlag = path.map(flagName).join('-');
   const curation = BODY_FLAG_CURATIONS[dottedPath];
   const valueSchema = valueSchemaFor(document, schema);
   return {
@@ -420,12 +422,8 @@ function requestBodyExamples(
   if (discriminatorProperty === undefined) return examples;
   return examples.filter(
     (example) =>
-      isRecord(example.body) && example.body[discriminatorProperty] === discriminatorValue,
+      isPlainRecord(example.body) && example.body[discriminatorProperty] === discriminatorValue,
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function resolveSchema(
@@ -478,7 +476,7 @@ function assertBodyFlagNames(
     ...RESERVED_FLAGS,
     ...parameters
       .filter((parameter) => parameter.in !== 'path')
-      .map((parameter) => toKebabCase(parameter.name)),
+      .map((parameter) => flagName(parameter.name)),
   ]);
   for (const field of fields) {
     for (const flag of [field.flag, ...(field.aliases ?? [])]) {
@@ -496,7 +494,7 @@ function commandIdFor(method: HttpMethod, path: string): string {
   const parts = path.split('/').filter(Boolean);
   const staticParts = parts
     .filter((part) => !/^\{.+\}$/.test(part))
-    .map((part) => (part === 'psps' ? 'status-pages' : toKebabCase(part)));
+    .map((part) => (part === 'psps' ? 'status-pages' : flagName(part)));
   const hasParameter = parts.some((part) => /^\{.+\}$/.test(part));
   const endsWithParameter = /^\{.+\}$/.test(parts.at(-1) ?? '');
   const lastStatic = staticParts.at(-1);
@@ -628,11 +626,4 @@ function parseArgs(values: string[]): Record<string, string> {
     result[key.slice(2)] = value;
   }
   return result;
-}
-
-function toKebabCase(value: string): string {
-  return value
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .replace(/_/g, '-')
-    .toLowerCase();
 }

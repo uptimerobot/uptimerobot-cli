@@ -1,4 +1,6 @@
 import { outputFormatFromEnvironment, requestedFormatFromArgv } from '../output/resolve-format.js';
+import { agentEnvironmentDetected } from './invocation.js';
+import { isRecord } from './objects.js';
 import type { CliError } from './types.js';
 
 const handledErrors = new WeakSet<object>();
@@ -86,12 +88,7 @@ export function machineOutputRequested(
   }
 
   if (options.includes('--agent')) return true;
-  if (
-    env.UPTIMEROBOT_AGENT === undefined &&
-    ['CLAUDECODE', 'CODEX_SANDBOX', 'CURSOR_AGENT'].some((name) => env[name])
-  )
-    return true;
-  if (/^(1|true|yes)$/i.test(env.UPTIMEROBOT_AGENT ?? '')) return true;
+  if (agentEnvironmentDetected(env)) return true;
   return !stdoutIsTTY;
 }
 
@@ -101,8 +98,4 @@ export function markErrorHandled(error: object): void {
 
 export function wasErrorHandled(error: unknown): boolean {
   return isRecord(error) && handledErrors.has(error);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }

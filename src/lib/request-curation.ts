@@ -1,4 +1,5 @@
 import type { operations } from '../generated/operations.js';
+import { assignPath, isPlainRecord, valueAtPath } from './objects.js';
 import type {
   OperationBodyField,
   OperationDefinition,
@@ -68,7 +69,7 @@ export function curatedRequestBodyFields(
 }
 
 export function curatedRequestExampleBody(operation: OperationDefinition, body: unknown): unknown {
-  if (!isRecord(body)) return body;
+  if (!isPlainRecord(body)) return body;
   const curated = structuredClone(body);
   for (const [path, value] of Object.entries(cliRequestDefaults(operation))) {
     if (valueAtPath(curated, path) === undefined) assignPath(curated, path, value);
@@ -119,28 +120,4 @@ function curateApiAssertionTarget<T extends OperationValueSchema>(schema: T, pat
         type: 'json',
       } as T)
     : curated;
-}
-
-function assignPath(target: Record<string, unknown>, path: string, value: unknown): void {
-  const segments = path.split('.');
-  let cursor = target;
-  for (const segment of segments.slice(0, -1)) {
-    const existing = cursor[segment];
-    if (!isRecord(existing)) cursor[segment] = {};
-    cursor = cursor[segment] as Record<string, unknown>;
-  }
-  cursor[segments.at(-1)!] = value;
-}
-
-function valueAtPath(target: Readonly<Record<string, unknown>>, path: string): unknown {
-  let value: unknown = target;
-  for (const segment of path.split('.')) {
-    if (!isRecord(value)) return undefined;
-    value = value[segment];
-  }
-  return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

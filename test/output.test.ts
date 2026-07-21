@@ -130,7 +130,23 @@ describe('output formatting', () => {
     const payload = { items: [{ value: '😀abcdefghi' }] };
     const columns = [{ key: 'value', maxWidth: 8 }];
 
-    expect(formatOutput('table', payload, { columns })).toBe('VALUE\n😀abcdef…');
+    expect(formatOutput('table', payload, { columns })).toBe('VALUE\n😀abcde…');
+  });
+
+  it('counts wide characters as two columns when aligning and truncating', () => {
+    vi.stubEnv('NO_COLOR', '1');
+    const payload = { items: [{ name: '監控', status: 'UP' }] };
+    const columns = [{ key: 'name' }, { key: 'status' }];
+
+    expect(formatOutput('table', payload, { columns })).toBe('NAME  STATUS\n監控  ● UP');
+  });
+
+  it('truncates wide characters by display width without splitting clusters', () => {
+    vi.stubEnv('NO_COLOR', '1');
+    const payload = { items: [{ name: '監控abcd' }] };
+    const columns = [{ key: 'name', maxWidth: 5 }];
+
+    expect(formatOutput('table', payload, { columns })).toBe('NAME\n監控…');
   });
 
   it('keeps table cells on one line without changing plain or JSON values', () => {

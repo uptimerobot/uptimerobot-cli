@@ -1,4 +1,5 @@
 import type { operations } from '../generated/operations.js';
+import { isRecord } from '../lib/objects.js';
 
 // Editorial registry of the columns each list command displays in table/plain
 // output. Column relevance mirrors the web dashboard's list views and the MCP
@@ -241,8 +242,4 @@ function accessLevel(value: unknown): unknown {
   if (value === true) return 'password';
   if (value === false) return 'public';
   return undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }

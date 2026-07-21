@@ -7,7 +7,7 @@ Research date: 2026-07-11. Sources are limited to official documentation and rep
 - **Stripe CLI now uses a hybrid design.** It prefers the native OS credential store for its most sensitive credentials, but falls back to an unencrypted JSON file with `0600` permissions when the keyring is unavailable, and tells the user that this happened. Less-sensitive/test credentials and profile metadata remain in `config.toml` with `0600` permissions.
 - **Sentry CLI uses a plaintext configuration file on every platform.** On Unix it creates/replaces that file with mode `0600`; it does not use Keychain, Credential Manager, or Secret Service. CI normally supplies `SENTRY_AUTH_TOKEN`.
 - **`@napi-rs/keyring` is well covered on macOS and Windows and reasonable on desktop Ubuntu.** Its current Linux implementation tries Secret Service first and then falls back to Linux kernel keyutils. That fallback is suitable for headless Linux but is only an in-memory cache: it does not survive reboot, so it cannot alone fulfill a promise that `auth login` persists indefinitely across sessions.
-- For UptimeRobot, the most predictable first version is: `auth login --api-key <key>`, validate before saving, prefer the OS keyring, and either (a) fail clearly on storage failure and direct CI/headless users to `UPTIMEROBOT_API_KEY`, or (b) offer an **explicit, warned-about** `0600` plaintext fallback. Do not silently fall back.
+- For UptimeRobot, the most predictable first version is: `auth login --api-key <key>`, validate before saving, prefer the OS keyring, and either (a) fail clearly on storage failure and direct CI/headless users to `UPTIMEROBOT_API_KEY`, or (b) offer an **explicit, warned-about** `0600` plaintext fallback. Do not silently fall back. (Option (b) was later implemented; see the implementation decision at the end of this document.)
 
 ## Stripe CLI
 
@@ -98,3 +98,13 @@ For persistence:
    - **Convenience-first, Stripe-style:** ask for/require an explicit plaintext-fallback opt-in, store beneath the CLI config directory with directory `0700` and file `0600`, and print the exact location and warning.
 
 For this CLI, the security-first policy is the cleaner default. CI and agents already have a first-class environment-variable path, while macOS, Windows, and Ubuntu desktop users receive the intended persistent keychain experience. OAuth can later reuse the same credential-store abstraction without changing generated API commands.
+
+## Implementation decision (2026-07-21)
+
+The shipped policy is the **convenience-first, Stripe-style** option above:
+
+1. `auth login` validates the key, then tries the OS keyring first, with a three-second timeout around keyring operations (mirroring Stripe's guard against hung D-Bus sessions on Linux).
+2. If the keyring is unavailable or fails the read-back check, the key is written to `credentials.json` beneath the CLI config directory (`UPTIMEROBOT_CONFIG_DIR`, else `XDG_CONFIG_HOME/uptimerobot`, else `~/.config/uptimerobot`) with directory `0700` and file `0600` permissions, written atomically and verified by read-back.
+3. The fallback is never silent: `auth login` prints the exact file location and a warning, and `auth status` reports `source: "file"` with the path in human output.
+4. Reads prefer the keyring so a later keyring-backed login takes precedence over a stale file; `auth logout` removes the credential from both backends.
+5. Only if both backends fail does login fail with `AUTH_STORAGE_UNAVAILABLE`, pointing at `UPTIMEROBOT_API_KEY`.

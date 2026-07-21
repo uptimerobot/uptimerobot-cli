@@ -1,16 +1,18 @@
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
+import type { OperationInput } from '../runtime/types.js';
+import { assignPath, isPlainRecord, valueAtPath } from './objects.js';
+import {
+  cliRequestDefaults,
+  curatedRequestBodyFields,
+  requestCurationIssue,
+} from './request-curation.js';
 import type {
   FlagValues,
   OperationBodyField,
   OperationDefinition,
   OperationValueSchema,
 } from './types.js';
-import {
-  cliRequestDefaults,
-  curatedRequestBodyFields,
-  requestCurationIssue,
-} from './request-curation.js';
 
 export class RequestInputError extends Error {
   readonly code = 'INVALID_INPUT';
@@ -26,15 +28,10 @@ export class RequestInputError extends Error {
   }
 }
 
-export function buildUrl(
-  operation: OperationDefinition,
-  args: Record<string, unknown>,
-  flags: FlagValues,
-  apiUrl: URL,
-): URL {
+export function buildUrl(operation: OperationDefinition, input: OperationInput, apiUrl: URL): URL {
   let path = operation.path;
   for (const parameter of operation.parameters.filter((candidate) => candidate.in === 'path')) {
-    const value = args[parameter.name];
+    const value = input.path[parameter.name];
     if (value !== undefined)
       path = path.replace(`{${parameter.name}}`, encodeURIComponent(String(value)));
   }
@@ -42,11 +39,10 @@ export function buildUrl(
   const base = apiUrl.toString().replace(/\/$/, '');
   const url = new URL(`${base}${path}`);
   for (const parameter of operation.parameters.filter((candidate) => candidate.in === 'query')) {
-    const value = flags[flagName(parameter.name)];
+    const value = input.query[parameter.name];
     if (Array.isArray(value))
       value.forEach((item) => url.searchParams.append(parameter.name, item));
-    else if (typeof value === 'string' || typeof value === 'boolean')
-      url.searchParams.set(parameter.name, String(value));
+    else if (value !== undefined) url.searchParams.set(parameter.name, String(value));
   }
   return url;
 }
@@ -154,28 +150,15 @@ async function readStandardInput(): Promise<string> {
 
 function toObject(value: unknown): Record<string, unknown> {
   if (value === undefined) return {};
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  if (!isPlainRecord(value)) {
     throw new Error('Request body must be a JSON object.');
   }
-  return structuredClone(value) as Record<string, unknown>;
+  return structuredClone(value);
 }
 
 function assignValue(target: Record<string, unknown>, assignment: string): void {
   const [path, rawValue] = splitAssignment(assignment, '--set');
   assignPath(target, path, parseValue(rawValue));
-}
-
-function assignPath(target: Record<string, unknown>, path: string, value: unknown): void {
-  const segments = path.split('.').filter(Boolean);
-  if (segments.length === 0) throw new Error('--set requires a field path.');
-  let cursor = target;
-  for (const segment of segments.slice(0, -1)) {
-    const existing = cursor[segment];
-    if (typeof existing !== 'object' || existing === null || Array.isArray(existing))
-      cursor[segment] = {};
-    cursor = cursor[segment] as Record<string, unknown>;
-  }
-  cursor[segments.at(-1)!] = value;
 }
 
 function splitAssignment(value: string, flag: string): [string, string] {
@@ -220,7 +203,7 @@ function parseTypedValue(schema: OperationValueSchema, rawValue: unknown, path: 
   if (schema.type === 'integer' || schema.type === 'number') return Number(rawValue);
   if (schema.type === 'object') {
     const value = typeof rawValue === 'string' ? parseJsonValue(rawValue, path) : rawValue;
-    if (!isRecord(value)) throw new RequestInputError(path, 'an object');
+    if (!isPlainRecord(value)) throw new RequestInputError(path, 'an object');
     return value;
   }
   if (schema.type === 'array') {
@@ -281,7 +264,7 @@ function validateSchemaValue(schema: OperationValueSchema, value: unknown, path:
     return;
   }
   if (schema.type === 'object') {
-    if (!isRecord(value)) throw new RequestInputError(path, 'an object');
+    if (!isPlainRecord(value)) throw new RequestInputError(path, 'an object');
     const properties = schema.properties ?? {};
     for (const property of schema.requiredProperties ?? []) {
       if (value[property] === undefined) {
@@ -339,26 +322,6 @@ function numericId(value: unknown): number | undefined {
   return Number.isSafeInteger(id) ? id : undefined;
 }
 
-function valueAtPath(target: Record<string, unknown>, path: string): unknown {
-  let value: unknown = target;
-  for (const segment of path.split('.')) {
-    if (!isRecord(value)) return undefined;
-    value = value[segment];
-  }
-  return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
-}
-
-function flagName(value: string): string {
-  return value
-    .replace(/_/g, '-')
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .toLowerCase();
 }
