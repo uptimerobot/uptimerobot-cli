@@ -1859,7 +1859,7 @@ export const operations = {
         "flag": "post-value-data",
         "path": "postValueData",
         "required": false,
-        "description": "Data to be sent in the request. Not applicable for HTTP method type = HEAD. Can be JSON string or string",
+        "description": "Data to be sent in the request. Not applicable for HTTP method type = HEAD. Can be a JSON object or string",
         "type": "json"
       },
       {
@@ -1891,7 +1891,6 @@ export const operations = {
         "flag": "success-http-response-codes",
         "path": "successHttpResponseCodes",
         "required": false,
-        "default": [],
         "description": "Success HTTP response codes. Can contain specific codes or ranges like 2xx. Default is [2xx, 3xx]",
         "example": [
           "2xx",
@@ -3653,7 +3652,7 @@ export const operations = {
         "flag": "post-value-data",
         "path": "postValueData",
         "required": false,
-        "description": "Data to be sent in the request. Not applicable for HTTP method type = HEAD. Can be JSON string or string",
+        "description": "Data to be sent in the request. Not applicable for HTTP method type = HEAD. Can be a JSON object or string",
         "type": "json"
       },
       {
@@ -3685,7 +3684,6 @@ export const operations = {
         "flag": "success-http-response-codes",
         "path": "successHttpResponseCodes",
         "required": false,
-        "default": [],
         "description": "Success HTTP response codes. Can contain specific codes or ranges like 2xx. Default is [2xx, 3xx]",
         "example": [
           "2xx",
@@ -4206,7 +4204,7 @@ export const operations = {
         "flag": "post-value-data",
         "path": "postValueData",
         "required": false,
-        "description": "Data to be sent in the request. Not applicable for HTTP method type = HEAD. Can be JSON string or string",
+        "description": "Data to be sent in the request. Not applicable for HTTP method type = HEAD. Can be a JSON object or string",
         "type": "json"
       },
       {
@@ -4238,7 +4236,6 @@ export const operations = {
         "flag": "success-http-response-codes",
         "path": "successHttpResponseCodes",
         "required": false,
-        "default": [],
         "description": "Success HTTP response codes. Can contain specific codes or ranges like 2xx. Default is [2xx, 3xx]",
         "example": [
           "2xx",
@@ -6620,7 +6617,7 @@ export const operations = {
         "flag": "interval",
         "path": "interval",
         "required": false,
-        "description": "Interval of check in seconds",
+        "description": "Interval of check in seconds. Heartbeat monitors support at most 2678400 seconds (31 days).",
         "example": 60,
         "minimum": 30,
         "type": "number"
