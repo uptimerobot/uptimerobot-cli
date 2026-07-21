@@ -50,6 +50,7 @@
   "oclif": {
     "bin": "uptimerobot",
     "dirname": "uptimerobot",
+    "description": "The official command-line interface for UptimeRobot API v3\n\nOutput: --format selects json, jsonl, table, or plain. --json is shorthand for normalized JSON. --raw emits the untouched API response as JSON.",
     "commands": "./dist/commands",
     "theme": {
       "spinner": "#3bd671"

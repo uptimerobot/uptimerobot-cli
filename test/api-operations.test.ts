@@ -24,6 +24,7 @@ describe('API operations', () => {
     expect(detailHelp.exitCode).toBe(0);
     expect(detailHelp.stdout).not.toContain('--columns');
     expect(detailHelp.stdout).not.toContain('--all');
+    expect(detailHelp.stdout.replace(/\s+/g, ' ')).toContain('$ uptimerobot monitors get 123');
     expect(mutationHelp.exitCode).toBe(0);
     expect(mutationHelp.stdout).not.toContain('--columns');
     expect(mutationHelp.stdout).not.toContain('--all');
@@ -115,6 +116,32 @@ describe('API operations', () => {
     });
   });
 
+  it('shows a continuation notice for human collection output', async () => {
+    const server = createServer((_request, response) => {
+      response.setHeader('content-type', 'application/json');
+      response.end(
+        JSON.stringify({
+          data: [{ id: 42, friendlyName: 'Checkout', status: 'UP' }],
+          nextLink: 'https://api.uptimerobot.com/v3/monitors?cursor=next-page',
+        }),
+      );
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+
+    const result = await runCli(['monitors', 'list', '--format', 'plain'], {
+      UPTIMEROBOT_AGENT: '0',
+      UPTIMEROBOT_API_KEY: 'u123-secret',
+      UPTIMEROBOT_DEV_API_URL: `http://127.0.0.1:${address.port}/v3`,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('Checkout');
+    expect(result.stderr).toBe('More results are available. Next cursor: next-page\n');
+  });
+
   it('normalizes pagination responses that expose the cursor directly', async () => {
     const server = createServer((_request, response) => {
       response.setHeader('content-type', 'application/json');
@@ -187,12 +214,15 @@ describe('API operations', () => {
       [
         'monitors',
         'create',
+        'http',
         '--set',
         'friendlyName=checkout-api',
         '--set',
         'url=https://checkout.example.com',
         '--set',
-        'type=HTTP',
+        'interval=60',
+        '--set',
+        'timeout=30',
         '--json',
       ],
       {
@@ -206,6 +236,8 @@ describe('API operations', () => {
       observedRequest: {
         body: {
           friendlyName: 'checkout-api',
+          interval: 60,
+          timeout: 30,
           type: 'HTTP',
           url: 'https://checkout.example.com',
         },

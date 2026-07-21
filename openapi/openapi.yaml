@@ -594,16 +594,104 @@ paths:
       tags:
         - Monitors
     post:
-      description: New monitors of any type can be created using this endpoint.
+      description: >-
+        New monitors of any type can be created using this endpoint. The request
+        body is documented as one schema per monitor type — pick the one
+        matching the `type` you are creating.
       operationId: MonitorsController_create
       parameters: []
       requestBody:
         required: true
+        description: >-
+          Monitor to create. The `type` field selects which shape the body must
+          take — each monitor type requires a different set of fields. Type
+          names are matched case-insensitively; the canonical form is upper
+          case.
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateMonitorDto'
+              oneOf:
+                - $ref: '#/components/schemas/CreateHttpMonitorDto'
+                - $ref: '#/components/schemas/CreateKeywordMonitorDto'
+                - $ref: '#/components/schemas/CreatePingMonitorDto'
+                - $ref: '#/components/schemas/CreatePortMonitorDto'
+                - $ref: '#/components/schemas/CreateHeartbeatMonitorDto'
+                - $ref: '#/components/schemas/CreateDnsMonitorDto'
+                - $ref: '#/components/schemas/CreateApiMonitorDto'
+                - $ref: '#/components/schemas/CreateUdpMonitorDto'
+                - $ref: '#/components/schemas/CreateVisualComparisonMonitorDto'
+              discriminator:
+                propertyName: type
+                mapping:
+                  HTTP: '#/components/schemas/CreateHttpMonitorDto'
+                  KEYWORD: '#/components/schemas/CreateKeywordMonitorDto'
+                  PING: '#/components/schemas/CreatePingMonitorDto'
+                  PORT: '#/components/schemas/CreatePortMonitorDto'
+                  HEARTBEAT: '#/components/schemas/CreateHeartbeatMonitorDto'
+                  DNS: '#/components/schemas/CreateDnsMonitorDto'
+                  API: '#/components/schemas/CreateApiMonitorDto'
+                  UDP: '#/components/schemas/CreateUdpMonitorDto'
+                  VISUAL_COMPARISON: '#/components/schemas/CreateVisualComparisonMonitorDto'
             examples:
+              HTTP Monitor:
+                value:
+                  friendlyName: My HTTP monitor
+                  type: HTTP
+                  url: https://example.com
+                  interval: 60
+                  timeout: 30
+              HTTP/Keyword Monitor (IP version):
+                value:
+                  friendlyName: My HTTP monitor
+                  type: HTTP
+                  url: https://example.com
+                  interval: 60
+                  timeout: 30
+                  config:
+                    ipVersion: ipv6Only
+              HTTP/Keyword Monitor (SSL expiration periods):
+                value:
+                  friendlyName: My HTTPS monitor
+                  type: HTTP
+                  url: https://example.com
+                  interval: 60
+                  timeout: 30
+                  config:
+                    sslExpirationPeriodDays:
+                      - 7
+                      - 14
+                      - 30
+              Keyword Monitor:
+                value:
+                  friendlyName: My Keyword monitor
+                  type: KEYWORD
+                  url: https://example.com
+                  interval: 60
+                  timeout: 30
+                  keywordType: ALERT_EXISTS
+                  keywordCaseType: CaseSensitive
+                  keywordValue: Service Unavailable
+              Ping Monitor:
+                value:
+                  friendlyName: My Ping monitor
+                  type: PING
+                  url: example.com
+                  interval: 60
+                  timeout: 30
+              Port Monitor:
+                value:
+                  friendlyName: My Port monitor
+                  type: PORT
+                  url: example.com
+                  port: 443
+                  interval: 60
+                  timeout: 30
+              Heartbeat Monitor:
+                value:
+                  friendlyName: My Heartbeat monitor
+                  type: HEARTBEAT
+                  interval: 60
+                  gracePeriod: 300
               DNS Monitor:
                 value:
                   friendlyName: My DNS monitor
@@ -630,6 +718,7 @@ paths:
                   type: API
                   url: https://api.example.com/health
                   interval: 60
+                  timeout: 30
                   config:
                     apiAssertions:
                       logic: AND
@@ -645,25 +734,6 @@ paths:
                       - 7
                       - 14
                       - 30
-              HTTP/Keyword Monitor (IP version):
-                value:
-                  friendlyName: My HTTP monitor
-                  type: HTTP
-                  url: https://example.com
-                  interval: 60
-                  config:
-                    ipVersion: ipv6Only
-              HTTP/Keyword Monitor (SSL expiration periods):
-                value:
-                  friendlyName: My HTTPS monitor
-                  type: HTTP
-                  url: https://example.com
-                  interval: 60
-                  config:
-                    sslExpirationPeriodDays:
-                      - 7
-                      - 14
-                      - 30
               UDP Monitor:
                 value:
                   friendlyName: My UDP monitor
@@ -671,10 +741,21 @@ paths:
                   url: 1.2.3.4
                   port: 53
                   interval: 60
+                  timeout: 30
                   config:
                     udp:
                       payload: ping
                       packetLossThreshold: 50
+              Visual Comparison Monitor:
+                value:
+                  friendlyName: My Visual Comparison monitor
+                  type: VISUAL_COMPARISON
+                  url: https://example.com
+                  interval: 300
+                  config:
+                    visualComparison:
+                      sensitivityThreshold: 10
+                      viewport: desktop
       responses:
         '201':
           description: ''
@@ -4573,6 +4654,787 @@ components:
         - lastDayUptimes
         - createDateTime
         - apiKey
+    AlertContactSettings:
+      type: object
+      properties:
+        alertContactId:
+          type: number
+          description: ID of the alert contact to notify
+          example: 12345
+        threshold:
+          type: number
+          description: Delay of notification in minutes, after the monitor is down
+          example: 5
+        recurrence:
+          type: number
+          description: Repeat notifications every X minutes
+          example: 30
+      required:
+        - alertContactId
+        - threshold
+        - recurrence
+    HttpKeywordMonitorConfigDto:
+      type: object
+      properties:
+        sslExpirationPeriodDays:
+          maxItems: 10
+          description: SSL expiration period in days (0-365, max 10 items)
+          example:
+            - 7
+            - 14
+            - 30
+          type: array
+          items:
+            type: number
+            maximum: 365
+            minimum: 0
+        ipVersion:
+          type: string
+          enum:
+            - ipv4Only
+            - ipv6Only
+          description: >-
+            IP version preference. Omit for default behavior (IPv4 priority,
+            falls back to IPv6)
+          example: ipv4Only
+        applicationErrorRetries:
+          type: number
+          minimum: 0
+          maximum: 3
+          description: >-
+            Number of retries on application errors (HTTP 4xx/5xx). 0-3.
+            Connection errors always retry 3 times regardless of this setting.
+          example: 1
+    CreateHttpMonitorDto:
+      type: object
+      properties:
+        friendlyName:
+          type: string
+          example: My monitor
+          description: Friendly name of the monitor
+          maxLength: 250
+        interval:
+          type: number
+          example: 60
+          minimum: 30
+          description: Interval of check in seconds
+        assignedAlertContacts:
+          description: >-
+            Alert contacts to be assigned to the monitor. Threshold and
+            recurrence are only available in the paid plans, they are always 0
+            in the Free Plan
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertContactSettings'
+        tagNames:
+          example:
+            - tag1
+            - tag2
+          description: Tags to be assigned to the monitor
+          type: array
+          items:
+            type: string
+        maintenanceWindowsIds:
+          example:
+            - 123
+            - 234
+          description: Maintenance windows to be assigned to the monitor
+          type: array
+          items:
+            type: number
+        regionData:
+          description: Regional data for monitoring
+          allOf:
+            - $ref: '#/components/schemas/RegionalDataDto'
+        regionalData:
+          enum:
+            - na
+            - eu
+            - as
+            - oc
+          type: string
+          example: na
+          deprecated: true
+          description: >-
+            Region for monitoring: na (North America), eu (Europe), as (Asia),
+            oc (Oceania). Note: If both regionalData and regionData are
+            provided, regionData takes priority.
+        responseTimeThreshold:
+          type: number
+          minimum: 0
+          maximum: 60000
+          description: >-
+            Response time threshold in milliseconds. When provided, the value is
+            applied to all active regions as regionData.THRESHOLD. Always
+            returns 0 — use regionData.THRESHOLD for per-region control.
+        groupId:
+          type: number
+          example: 0
+          minimum: 0
+          description: Monitor group ID to assign the monitor to. Default is 0 (no group).
+        customFields:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            environment: production
+            team: platform
+          description: >-
+            Custom key-value metadata for the monitor. Max 20 keys. Keys:
+            alphanumeric + underscore + hyphen, max 64 chars. Values: max 255
+            chars. Paid plans only.
+        httpMethodType:
+          type: string
+          enum:
+            - HEAD
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+            - QUERY
+          example: HEAD
+          description: >-
+            HTTP method to use for the request. For HTTP and Keyword monitors it
+            defaults to HEAD if omitted
+        authType:
+          type: string
+          enum:
+            - NONE
+            - HTTP_BASIC
+            - DIGEST
+            - BEARER
+          example: NONE
+          description: Authentication method to use for the request
+        httpUsername:
+          type: string
+          example: admin
+          maxLength: 255
+          description: Username for HTTP Basic authentication
+        httpPassword:
+          type: string
+          example: password
+          maxLength: 255
+          description: Password for HTTP Basic authentication
+        postValueData:
+          oneOf:
+            - type: string
+            - type: object
+          description: >-
+            Data to be sent in the request. Not applicable for HTTP method type
+            = HEAD. Can be JSON string or string
+        postValueType:
+          enum:
+            - KEY_VALUE
+            - RAW_JSON
+          type: string
+          example: RAW_JSON
+          description: >-
+            Type of data payload to be sent in the request. Affects what data is
+            accepted by "postValueData" field
+        customHttpHeaders:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            X-Custom-Header: value
+          description: >-
+            Custom HTTP headers to be sent in the request. Must be sent as JSON
+            object with key-value pairs
+        successHttpResponseCodes:
+          example:
+            - 2xx
+            - 3xx
+          default: []
+          description: >-
+            Success HTTP response codes. Can contain specific codes or ranges
+            like 2xx. Default is [2xx, 3xx]
+          type: array
+          items:
+            type: string
+        checkSSLErrors:
+          type: boolean
+          description: Whether to check for SSL and domain expiration errors
+        sslExpirationReminder:
+          type: boolean
+          description: >-
+            Whether to send a notification when the SSL certificate is about to
+            expire
+        domainExpirationReminder:
+          type: boolean
+          description: Whether to send a notification when the domain is about to expire
+        followRedirections:
+          type: boolean
+          description: Whether to follow redirections
+        type:
+          type: string
+          enum:
+            - HTTP
+          example: HTTP
+        url:
+          type: string
+          example: https://example.com
+          maxLength: 10000
+          description: URL of the monitor
+        timeout:
+          type: number
+          example: 30
+          minimum: 0
+          maximum: 60
+          description: Timeout of check in seconds
+        config:
+          description: >-
+            Optional HTTP monitor configuration: ipVersion,
+            sslExpirationPeriodDays, applicationErrorRetries
+          allOf:
+            - $ref: '#/components/schemas/HttpKeywordMonitorConfigDto'
+      required:
+        - friendlyName
+        - interval
+        - type
+        - url
+        - timeout
+    CreateKeywordMonitorDto:
+      type: object
+      properties:
+        friendlyName:
+          type: string
+          example: My monitor
+          description: Friendly name of the monitor
+          maxLength: 250
+        interval:
+          type: number
+          example: 60
+          minimum: 30
+          description: Interval of check in seconds
+        assignedAlertContacts:
+          description: >-
+            Alert contacts to be assigned to the monitor. Threshold and
+            recurrence are only available in the paid plans, they are always 0
+            in the Free Plan
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertContactSettings'
+        tagNames:
+          example:
+            - tag1
+            - tag2
+          description: Tags to be assigned to the monitor
+          type: array
+          items:
+            type: string
+        maintenanceWindowsIds:
+          example:
+            - 123
+            - 234
+          description: Maintenance windows to be assigned to the monitor
+          type: array
+          items:
+            type: number
+        regionData:
+          description: Regional data for monitoring
+          allOf:
+            - $ref: '#/components/schemas/RegionalDataDto'
+        regionalData:
+          enum:
+            - na
+            - eu
+            - as
+            - oc
+          type: string
+          example: na
+          deprecated: true
+          description: >-
+            Region for monitoring: na (North America), eu (Europe), as (Asia),
+            oc (Oceania). Note: If both regionalData and regionData are
+            provided, regionData takes priority.
+        responseTimeThreshold:
+          type: number
+          minimum: 0
+          maximum: 60000
+          description: >-
+            Response time threshold in milliseconds. When provided, the value is
+            applied to all active regions as regionData.THRESHOLD. Always
+            returns 0 — use regionData.THRESHOLD for per-region control.
+        groupId:
+          type: number
+          example: 0
+          minimum: 0
+          description: Monitor group ID to assign the monitor to. Default is 0 (no group).
+        customFields:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            environment: production
+            team: platform
+          description: >-
+            Custom key-value metadata for the monitor. Max 20 keys. Keys:
+            alphanumeric + underscore + hyphen, max 64 chars. Values: max 255
+            chars. Paid plans only.
+        httpMethodType:
+          type: string
+          enum:
+            - HEAD
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+            - QUERY
+          example: HEAD
+          description: >-
+            HTTP method to use for the request. For HTTP and Keyword monitors it
+            defaults to HEAD if omitted
+        authType:
+          type: string
+          enum:
+            - NONE
+            - HTTP_BASIC
+            - DIGEST
+            - BEARER
+          example: NONE
+          description: Authentication method to use for the request
+        httpUsername:
+          type: string
+          example: admin
+          maxLength: 255
+          description: Username for HTTP Basic authentication
+        httpPassword:
+          type: string
+          example: password
+          maxLength: 255
+          description: Password for HTTP Basic authentication
+        postValueData:
+          oneOf:
+            - type: string
+            - type: object
+          description: >-
+            Data to be sent in the request. Not applicable for HTTP method type
+            = HEAD. Can be JSON string or string
+        postValueType:
+          enum:
+            - KEY_VALUE
+            - RAW_JSON
+          type: string
+          example: RAW_JSON
+          description: >-
+            Type of data payload to be sent in the request. Affects what data is
+            accepted by "postValueData" field
+        customHttpHeaders:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            X-Custom-Header: value
+          description: >-
+            Custom HTTP headers to be sent in the request. Must be sent as JSON
+            object with key-value pairs
+        successHttpResponseCodes:
+          example:
+            - 2xx
+            - 3xx
+          default: []
+          description: >-
+            Success HTTP response codes. Can contain specific codes or ranges
+            like 2xx. Default is [2xx, 3xx]
+          type: array
+          items:
+            type: string
+        checkSSLErrors:
+          type: boolean
+          description: Whether to check for SSL and domain expiration errors
+        sslExpirationReminder:
+          type: boolean
+          description: >-
+            Whether to send a notification when the SSL certificate is about to
+            expire
+        domainExpirationReminder:
+          type: boolean
+          description: Whether to send a notification when the domain is about to expire
+        followRedirections:
+          type: boolean
+          description: Whether to follow redirections
+        type:
+          type: string
+          enum:
+            - KEYWORD
+          example: KEYWORD
+        url:
+          type: string
+          example: https://example.com
+          maxLength: 10000
+          description: URL of the monitor
+        timeout:
+          type: number
+          example: 30
+          minimum: 0
+          maximum: 60
+          description: Timeout of check in seconds
+        keywordType:
+          type: string
+          enum:
+            - ALERT_EXISTS
+            - ALERT_NOT_EXISTS
+          example: ALERT_EXISTS
+          description: Whether to alert when the keyword exists or when it does not exist
+        keywordCaseType:
+          type: string
+          enum:
+            - CaseSensitive
+            - CaseInsensitive
+          example: CaseSensitive
+          description: Whether the keyword match is case sensitive
+        keywordValue:
+          type: string
+          example: Welcome
+          maxLength: 500
+          description: >-
+            Keyword to search for in the response body. Surrounding whitespace
+            is trimmed
+        config:
+          description: >-
+            Optional Keyword monitor configuration: ipVersion,
+            sslExpirationPeriodDays, applicationErrorRetries
+          allOf:
+            - $ref: '#/components/schemas/HttpKeywordMonitorConfigDto'
+      required:
+        - friendlyName
+        - interval
+        - type
+        - url
+        - timeout
+        - keywordType
+        - keywordCaseType
+        - keywordValue
+    IpVersionMonitorConfigDto:
+      type: object
+      properties:
+        ipVersion:
+          type: string
+          enum:
+            - ipv4Only
+            - ipv6Only
+          example: ipv4Only
+          description: >-
+            IP version preference. Omit for default behavior (IPv4 priority,
+            falls back to IPv6)
+    CreatePingMonitorDto:
+      type: object
+      properties:
+        friendlyName:
+          type: string
+          example: My monitor
+          description: Friendly name of the monitor
+          maxLength: 250
+        interval:
+          type: number
+          example: 60
+          minimum: 30
+          description: Interval of check in seconds
+        assignedAlertContacts:
+          description: >-
+            Alert contacts to be assigned to the monitor. Threshold and
+            recurrence are only available in the paid plans, they are always 0
+            in the Free Plan
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertContactSettings'
+        tagNames:
+          example:
+            - tag1
+            - tag2
+          description: Tags to be assigned to the monitor
+          type: array
+          items:
+            type: string
+        maintenanceWindowsIds:
+          example:
+            - 123
+            - 234
+          description: Maintenance windows to be assigned to the monitor
+          type: array
+          items:
+            type: number
+        regionData:
+          description: Regional data for monitoring
+          allOf:
+            - $ref: '#/components/schemas/RegionalDataDto'
+        regionalData:
+          enum:
+            - na
+            - eu
+            - as
+            - oc
+          type: string
+          example: na
+          deprecated: true
+          description: >-
+            Region for monitoring: na (North America), eu (Europe), as (Asia),
+            oc (Oceania). Note: If both regionalData and regionData are
+            provided, regionData takes priority.
+        responseTimeThreshold:
+          type: number
+          minimum: 0
+          maximum: 60000
+          description: >-
+            Response time threshold in milliseconds. When provided, the value is
+            applied to all active regions as regionData.THRESHOLD. Always
+            returns 0 — use regionData.THRESHOLD for per-region control.
+        groupId:
+          type: number
+          example: 0
+          minimum: 0
+          description: Monitor group ID to assign the monitor to. Default is 0 (no group).
+        customFields:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            environment: production
+            team: platform
+          description: >-
+            Custom key-value metadata for the monitor. Max 20 keys. Keys:
+            alphanumeric + underscore + hyphen, max 64 chars. Values: max 255
+            chars. Paid plans only.
+        type:
+          type: string
+          enum:
+            - PING
+          example: PING
+        url:
+          type: string
+          example: example.com
+          maxLength: 10000
+          description: >-
+            Hostname or IP address to ping. A protocol prefix is stripped if
+            provided
+        timeout:
+          type: number
+          example: 30
+          minimum: 0
+          maximum: 60
+          description: Timeout of check in seconds
+        config:
+          description: 'Optional Ping monitor configuration: ipVersion'
+          allOf:
+            - $ref: '#/components/schemas/IpVersionMonitorConfigDto'
+      required:
+        - friendlyName
+        - interval
+        - type
+        - url
+        - timeout
+    CreatePortMonitorDto:
+      type: object
+      properties:
+        friendlyName:
+          type: string
+          example: My monitor
+          description: Friendly name of the monitor
+          maxLength: 250
+        interval:
+          type: number
+          example: 60
+          minimum: 30
+          description: Interval of check in seconds
+        assignedAlertContacts:
+          description: >-
+            Alert contacts to be assigned to the monitor. Threshold and
+            recurrence are only available in the paid plans, they are always 0
+            in the Free Plan
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertContactSettings'
+        tagNames:
+          example:
+            - tag1
+            - tag2
+          description: Tags to be assigned to the monitor
+          type: array
+          items:
+            type: string
+        maintenanceWindowsIds:
+          example:
+            - 123
+            - 234
+          description: Maintenance windows to be assigned to the monitor
+          type: array
+          items:
+            type: number
+        regionData:
+          description: Regional data for monitoring
+          allOf:
+            - $ref: '#/components/schemas/RegionalDataDto'
+        regionalData:
+          enum:
+            - na
+            - eu
+            - as
+            - oc
+          type: string
+          example: na
+          deprecated: true
+          description: >-
+            Region for monitoring: na (North America), eu (Europe), as (Asia),
+            oc (Oceania). Note: If both regionalData and regionData are
+            provided, regionData takes priority.
+        responseTimeThreshold:
+          type: number
+          minimum: 0
+          maximum: 60000
+          description: >-
+            Response time threshold in milliseconds. When provided, the value is
+            applied to all active regions as regionData.THRESHOLD. Always
+            returns 0 — use regionData.THRESHOLD for per-region control.
+        groupId:
+          type: number
+          example: 0
+          minimum: 0
+          description: Monitor group ID to assign the monitor to. Default is 0 (no group).
+        customFields:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            environment: production
+            team: platform
+          description: >-
+            Custom key-value metadata for the monitor. Max 20 keys. Keys:
+            alphanumeric + underscore + hyphen, max 64 chars. Values: max 255
+            chars. Paid plans only.
+        type:
+          type: string
+          enum:
+            - PORT
+          example: PORT
+        url:
+          type: string
+          example: example.com
+          maxLength: 10000
+          description: >-
+            Hostname or IP address to check. A protocol prefix is stripped if
+            provided
+        port:
+          type: number
+          example: 443
+          minimum: 1
+          maximum: 65535
+          description: Port to check
+        timeout:
+          type: number
+          example: 30
+          minimum: 0
+          maximum: 60
+          description: Timeout of check in seconds
+        config:
+          description: 'Optional Port monitor configuration: ipVersion'
+          allOf:
+            - $ref: '#/components/schemas/IpVersionMonitorConfigDto'
+      required:
+        - friendlyName
+        - interval
+        - type
+        - url
+        - port
+        - timeout
+    CreateHeartbeatMonitorDto:
+      type: object
+      properties:
+        friendlyName:
+          type: string
+          example: My monitor
+          description: Friendly name of the monitor
+          maxLength: 250
+        interval:
+          type: number
+          example: 60
+          minimum: 30
+          description: Interval of check in seconds
+        assignedAlertContacts:
+          description: >-
+            Alert contacts to be assigned to the monitor. Threshold and
+            recurrence are only available in the paid plans, they are always 0
+            in the Free Plan
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertContactSettings'
+        tagNames:
+          example:
+            - tag1
+            - tag2
+          description: Tags to be assigned to the monitor
+          type: array
+          items:
+            type: string
+        maintenanceWindowsIds:
+          example:
+            - 123
+            - 234
+          description: Maintenance windows to be assigned to the monitor
+          type: array
+          items:
+            type: number
+        regionData:
+          description: Regional data for monitoring
+          allOf:
+            - $ref: '#/components/schemas/RegionalDataDto'
+        regionalData:
+          enum:
+            - na
+            - eu
+            - as
+            - oc
+          type: string
+          example: na
+          deprecated: true
+          description: >-
+            Region for monitoring: na (North America), eu (Europe), as (Asia),
+            oc (Oceania). Note: If both regionalData and regionData are
+            provided, regionData takes priority.
+        responseTimeThreshold:
+          type: number
+          minimum: 0
+          maximum: 60000
+          description: >-
+            Response time threshold in milliseconds. When provided, the value is
+            applied to all active regions as regionData.THRESHOLD. Always
+            returns 0 — use regionData.THRESHOLD for per-region control.
+        groupId:
+          type: number
+          example: 0
+          minimum: 0
+          description: Monitor group ID to assign the monitor to. Default is 0 (no group).
+        customFields:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            environment: production
+            team: platform
+          description: >-
+            Custom key-value metadata for the monitor. Max 20 keys. Keys:
+            alphanumeric + underscore + hyphen, max 64 chars. Values: max 255
+            chars. Paid plans only.
+        type:
+          type: string
+          enum:
+            - HEARTBEAT
+          example: HEARTBEAT
+        gracePeriod:
+          type: number
+          example: 300
+          minimum: 0
+          maximum: 86400
+          description: >-
+            Grace period in seconds to wait past the expected heartbeat before
+            alerting
+      required:
+        - friendlyName
+        - interval
+        - type
     DnsRecordsDto:
       type: object
       properties:
@@ -4653,6 +5515,104 @@ components:
           description: DNS records configuration
           allOf:
             - $ref: '#/components/schemas/DnsRecordsDto'
+    CreateDnsMonitorDto:
+      type: object
+      properties:
+        friendlyName:
+          type: string
+          example: My monitor
+          description: Friendly name of the monitor
+          maxLength: 250
+        interval:
+          type: number
+          example: 60
+          minimum: 30
+          description: Interval of check in seconds
+        assignedAlertContacts:
+          description: >-
+            Alert contacts to be assigned to the monitor. Threshold and
+            recurrence are only available in the paid plans, they are always 0
+            in the Free Plan
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertContactSettings'
+        tagNames:
+          example:
+            - tag1
+            - tag2
+          description: Tags to be assigned to the monitor
+          type: array
+          items:
+            type: string
+        maintenanceWindowsIds:
+          example:
+            - 123
+            - 234
+          description: Maintenance windows to be assigned to the monitor
+          type: array
+          items:
+            type: number
+        regionData:
+          description: Regional data for monitoring
+          allOf:
+            - $ref: '#/components/schemas/RegionalDataDto'
+        regionalData:
+          enum:
+            - na
+            - eu
+            - as
+            - oc
+          type: string
+          example: na
+          deprecated: true
+          description: >-
+            Region for monitoring: na (North America), eu (Europe), as (Asia),
+            oc (Oceania). Note: If both regionalData and regionData are
+            provided, regionData takes priority.
+        responseTimeThreshold:
+          type: number
+          minimum: 0
+          maximum: 60000
+          description: >-
+            Response time threshold in milliseconds. When provided, the value is
+            applied to all active regions as regionData.THRESHOLD. Always
+            returns 0 — use regionData.THRESHOLD for per-region control.
+        groupId:
+          type: number
+          example: 0
+          minimum: 0
+          description: Monitor group ID to assign the monitor to. Default is 0 (no group).
+        customFields:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            environment: production
+            team: platform
+          description: >-
+            Custom key-value metadata for the monitor. Max 20 keys. Keys:
+            alphanumeric + underscore + hyphen, max 64 chars. Values: max 255
+            chars. Paid plans only.
+        type:
+          type: string
+          enum:
+            - DNS
+          example: DNS
+        url:
+          type: string
+          example: example.com
+          maxLength: 10000
+          description: DNS server IP or hostname. A protocol prefix is stripped if provided
+        config:
+          description: DNS monitor configuration — the records to resolve and match
+          allOf:
+            - $ref: '#/components/schemas/DnsMonitorConfigDto'
+      required:
+        - friendlyName
+        - interval
+        - type
+        - url
+        - config
     AssertionCheckDto:
       type: object
       properties:
@@ -4741,6 +5701,196 @@ components:
           example: 1
       required:
         - apiAssertions
+    CreateApiMonitorDto:
+      type: object
+      properties:
+        friendlyName:
+          type: string
+          example: My monitor
+          description: Friendly name of the monitor
+          maxLength: 250
+        interval:
+          type: number
+          example: 60
+          minimum: 30
+          description: Interval of check in seconds
+        assignedAlertContacts:
+          description: >-
+            Alert contacts to be assigned to the monitor. Threshold and
+            recurrence are only available in the paid plans, they are always 0
+            in the Free Plan
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertContactSettings'
+        tagNames:
+          example:
+            - tag1
+            - tag2
+          description: Tags to be assigned to the monitor
+          type: array
+          items:
+            type: string
+        maintenanceWindowsIds:
+          example:
+            - 123
+            - 234
+          description: Maintenance windows to be assigned to the monitor
+          type: array
+          items:
+            type: number
+        regionData:
+          description: Regional data for monitoring
+          allOf:
+            - $ref: '#/components/schemas/RegionalDataDto'
+        regionalData:
+          enum:
+            - na
+            - eu
+            - as
+            - oc
+          type: string
+          example: na
+          deprecated: true
+          description: >-
+            Region for monitoring: na (North America), eu (Europe), as (Asia),
+            oc (Oceania). Note: If both regionalData and regionData are
+            provided, regionData takes priority.
+        responseTimeThreshold:
+          type: number
+          minimum: 0
+          maximum: 60000
+          description: >-
+            Response time threshold in milliseconds. When provided, the value is
+            applied to all active regions as regionData.THRESHOLD. Always
+            returns 0 — use regionData.THRESHOLD for per-region control.
+        groupId:
+          type: number
+          example: 0
+          minimum: 0
+          description: Monitor group ID to assign the monitor to. Default is 0 (no group).
+        customFields:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            environment: production
+            team: platform
+          description: >-
+            Custom key-value metadata for the monitor. Max 20 keys. Keys:
+            alphanumeric + underscore + hyphen, max 64 chars. Values: max 255
+            chars. Paid plans only.
+        httpMethodType:
+          type: string
+          enum:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+            - QUERY
+          example: GET
+          description: >-
+            HTTP method to use for the request. Defaults to GET. HEAD is not
+            allowed for API monitors because assertions need a response body
+        authType:
+          type: string
+          enum:
+            - NONE
+            - HTTP_BASIC
+            - DIGEST
+            - BEARER
+          example: NONE
+          description: Authentication method to use for the request
+        httpUsername:
+          type: string
+          example: admin
+          maxLength: 255
+          description: Username for HTTP Basic authentication
+        httpPassword:
+          type: string
+          example: password
+          maxLength: 255
+          description: Password for HTTP Basic authentication
+        postValueData:
+          oneOf:
+            - type: string
+            - type: object
+          description: >-
+            Data to be sent in the request. Not applicable for HTTP method type
+            = HEAD. Can be JSON string or string
+        postValueType:
+          enum:
+            - KEY_VALUE
+            - RAW_JSON
+          type: string
+          example: RAW_JSON
+          description: >-
+            Type of data payload to be sent in the request. Affects what data is
+            accepted by "postValueData" field
+        customHttpHeaders:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            X-Custom-Header: value
+          description: >-
+            Custom HTTP headers to be sent in the request. Must be sent as JSON
+            object with key-value pairs
+        successHttpResponseCodes:
+          example:
+            - 2xx
+            - 3xx
+          default: []
+          description: >-
+            Success HTTP response codes. Can contain specific codes or ranges
+            like 2xx. Default is [2xx, 3xx]
+          type: array
+          items:
+            type: string
+        checkSSLErrors:
+          type: boolean
+          description: Whether to check for SSL and domain expiration errors
+        sslExpirationReminder:
+          type: boolean
+          description: >-
+            Whether to send a notification when the SSL certificate is about to
+            expire
+        domainExpirationReminder:
+          type: boolean
+          description: Whether to send a notification when the domain is about to expire
+        followRedirections:
+          type: boolean
+          description: Whether to follow redirections
+        type:
+          type: string
+          enum:
+            - API
+          example: API
+        url:
+          type: string
+          example: https://api.example.com/health
+          maxLength: 10000
+          description: URL of the API endpoint to monitor
+        timeout:
+          type: number
+          example: 30
+          minimum: 0
+          maximum: 60
+          description: Timeout of check in seconds
+        config:
+          description: >-
+            API monitor configuration. `apiAssertions` is required — at least
+            one check must be provided
+          allOf:
+            - $ref: '#/components/schemas/ApiMonitorConfigDto'
+      required:
+        - friendlyName
+        - interval
+        - type
+        - url
+        - timeout
+        - config
     UdpConfigFieldsDto:
       type: object
       properties:
@@ -4768,38 +5918,120 @@ components:
             IP version preference. Omit for default behavior (IPv4 priority,
             falls back to IPv6)
           example: ipv4Only
-    HttpKeywordMonitorConfigDto:
+    CreateUdpMonitorDto:
       type: object
       properties:
-        sslExpirationPeriodDays:
-          maxItems: 10
-          description: SSL expiration period in days (0-365, max 10 items)
+        friendlyName:
+          type: string
+          example: My monitor
+          description: Friendly name of the monitor
+          maxLength: 250
+        interval:
+          type: number
+          example: 60
+          minimum: 30
+          description: Interval of check in seconds
+        assignedAlertContacts:
+          description: >-
+            Alert contacts to be assigned to the monitor. Threshold and
+            recurrence are only available in the paid plans, they are always 0
+            in the Free Plan
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertContactSettings'
+        tagNames:
           example:
-            - 7
-            - 14
-            - 30
+            - tag1
+            - tag2
+          description: Tags to be assigned to the monitor
+          type: array
+          items:
+            type: string
+        maintenanceWindowsIds:
+          example:
+            - 123
+            - 234
+          description: Maintenance windows to be assigned to the monitor
           type: array
           items:
             type: number
-            maximum: 365
-            minimum: 0
-        ipVersion:
-          type: string
+        regionData:
+          description: Regional data for monitoring
+          allOf:
+            - $ref: '#/components/schemas/RegionalDataDto'
+        regionalData:
           enum:
-            - ipv4Only
-            - ipv6Only
+            - na
+            - eu
+            - as
+            - oc
+          type: string
+          example: na
+          deprecated: true
           description: >-
-            IP version preference. Omit for default behavior (IPv4 priority,
-            falls back to IPv6)
-          example: ipv4Only
-        applicationErrorRetries:
+            Region for monitoring: na (North America), eu (Europe), as (Asia),
+            oc (Oceania). Note: If both regionalData and regionData are
+            provided, regionData takes priority.
+        responseTimeThreshold:
           type: number
           minimum: 0
-          maximum: 3
+          maximum: 60000
           description: >-
-            Number of retries on application errors (HTTP 4xx/5xx). 0-3.
-            Connection errors always retry 3 times regardless of this setting.
-          example: 1
+            Response time threshold in milliseconds. When provided, the value is
+            applied to all active regions as regionData.THRESHOLD. Always
+            returns 0 — use regionData.THRESHOLD for per-region control.
+        groupId:
+          type: number
+          example: 0
+          minimum: 0
+          description: Monitor group ID to assign the monitor to. Default is 0 (no group).
+        customFields:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            environment: production
+            team: platform
+          description: >-
+            Custom key-value metadata for the monitor. Max 20 keys. Keys:
+            alphanumeric + underscore + hyphen, max 64 chars. Values: max 255
+            chars. Paid plans only.
+        type:
+          type: string
+          enum:
+            - UDP
+          example: UDP
+        url:
+          type: string
+          example: 1.2.3.4
+          maxLength: 10000
+          description: >-
+            Hostname or IP address to check. A protocol prefix is stripped if
+            provided
+        port:
+          type: number
+          example: 53
+          minimum: 1
+          maximum: 65535
+          description: Port to send the UDP packet to
+        timeout:
+          type: number
+          example: 30
+          minimum: 0
+          maximum: 60
+          description: Timeout of check in seconds
+        config:
+          description: UDP monitor configuration. `udp.packetLossThreshold` is required
+          allOf:
+            - $ref: '#/components/schemas/UdpMonitorConfigDto'
+      required:
+        - friendlyName
+        - interval
+        - type
+        - url
+        - port
+        - timeout
+        - config
     VisualComparisonAreaCoordinatesDto:
       type: object
       properties:
@@ -4860,146 +6092,19 @@ components:
             - $ref: '#/components/schemas/VisualComparisonFieldsDto'
       required:
         - visualComparison
-    AlertContactSettings:
-      type: object
-      properties:
-        alertContactId:
-          type: number
-          description: ID of the alert contact to notify
-          example: 12345
-        threshold:
-          type: number
-          description: Delay of notification in minutes, after the monitor is down
-          example: 5
-        recurrence:
-          type: number
-          description: Repeat notifications every X minutes
-          example: 30
-      required:
-        - alertContactId
-        - threshold
-        - recurrence
-    CreateMonitorDto:
+    CreateVisualComparisonMonitorDto:
       type: object
       properties:
         friendlyName:
           type: string
-          maxLength: 250
           example: My monitor
           description: Friendly name of the monitor
-        url:
-          type: string
-          maxLength: 10000
-          example: http://test.com
-          description: >-
-            URL of the monitor. For DNS monitors: DNS server IP or hostname. Not
-            required for Heartbeat monitor
-        type:
-          enum:
-            - HTTP
-            - KEYWORD
-            - PING
-            - PORT
-            - HEARTBEAT
-            - DNS
-            - API
-            - UDP
-            - VISUAL_COMPARISON
-          type: string
-          example: HTTP
-        port:
-          type: number
-          minimum: 1
-          maximum: 65535
-          description: Required for Port and UDP monitors
-        keywordType:
-          enum:
-            - ALERT_EXISTS
-            - ALERT_NOT_EXISTS
-          type: string
-          example: ALERT_EXISTS
-          description: Required for Keyword monitor
-        keywordCaseType:
-          enum:
-            - 0
-            - 1
-          type: number
-          description: Required for Keyword monitor
-        keywordValue:
-          type: string
-          nullable: true
-          maxLength: 500
-          description: Required for Keyword monitor
+          maxLength: 250
         interval:
           type: number
-          minimum: 30
           example: 60
+          minimum: 30
           description: Interval of check in seconds
-        timeout:
-          type: number
-          minimum: 0
-          maximum: 60
-          example: 30
-          description: >-
-            Timeout of check in seconds. Only for Http, Keyword and Port
-            monitors
-        gracePeriod:
-          type: number
-          minimum: 0
-          maximum: 86400
-          example: 300
-          description: Grace period of check in seconds. Only for Heartbeat monitor
-        httpUsername:
-          type: string
-          maxLength: 255
-          example: admin
-          description: Username for HTTP Basic authentication
-        httpPassword:
-          type: string
-          maxLength: 255
-          example: password
-          description: Password for HTTP Basic authentication
-        httpMethodType:
-          nullable: true
-          enum:
-            - HEAD
-            - GET
-            - POST
-            - PUT
-            - PATCH
-            - DELETE
-            - OPTIONS
-            - QUERY
-          type: string
-          example: HEAD
-          description: >-
-            HTTP method to use for the request. For HTTP and Keyword monitors it
-            defaults to HEAD if omitted; API monitors default to GET and do not
-            allow HEAD
-        authType:
-          enum:
-            - NONE
-            - HTTP_BASIC
-            - DIGEST
-            - BEARER
-          type: string
-          example: NONE
-          description: >-
-            Authentication method to use for the request. Only applicable for
-            HTTP and Keyword monitors
-        postValueData:
-          type: object
-          description: >-
-            Data to be sent in the request. Not applicable for HTTP method type
-            = HEAD. Can be JSON string or string
-        postValueType:
-          enum:
-            - KEY_VALUE
-            - RAW_JSON
-          type: string
-          description: >-
-            Type of data payload to be sent in the request. Affects what data is
-            accepted by "postValueData" field
         assignedAlertContacts:
           description: >-
             Alert contacts to be assigned to the monitor. Threshold and
@@ -5008,25 +6113,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AlertContactSettings'
-        customHttpHeaders:
-          type: object
-          description: >-
-            Custom HTTP headers to be sent in the request. Must be sent as JSON
-            object with key-value pairs
-        successHttpResponseCodes:
-          example:
-            - 2xx
-            - 3xx
-          default: []
-          description: >-
-            Success HTTP response codes. Can contain specific codes or ranges
-            like 2xx. Default is [2xx, 3xx]
-          type: array
-          items:
-            type: string
-        checkSSLErrors:
-          type: boolean
-          description: Whether to check for SSL and domain expiration errors
         tagNames:
           example:
             - tag1
@@ -5043,17 +6129,23 @@ components:
           type: array
           items:
             type: number
-        domainExpirationReminder:
-          type: boolean
-          description: Whether to send a notification when the domain is about to expire
-        sslExpirationReminder:
-          type: boolean
+        regionData:
+          description: Regional data for monitoring
+          allOf:
+            - $ref: '#/components/schemas/RegionalDataDto'
+        regionalData:
+          enum:
+            - na
+            - eu
+            - as
+            - oc
+          type: string
+          example: na
+          deprecated: true
           description: >-
-            Whether to send a notification when the SSL certificate is about to
-            expire
-        followRedirections:
-          type: boolean
-          description: Whether to follow redirections
+            Region for monitoring: na (North America), eu (Europe), as (Asia),
+            oc (Oceania). Note: If both regionalData and regionData are
+            provided, regionData takes priority.
         responseTimeThreshold:
           type: number
           minimum: 0
@@ -5062,55 +6154,44 @@ components:
             Response time threshold in milliseconds. When provided, the value is
             applied to all active regions as regionData.THRESHOLD. Always
             returns 0 — use regionData.THRESHOLD for per-region control.
-        regionalData:
-          type: string
-          description: >-
-            Region for monitoring: na (North America), eu (Europe), as (Asia),
-            oc (Oceania). Note: If both regionalData and regionData are
-            provided, regionData takes priority.
-          enum:
-            - na
-            - eu
-            - as
-            - oc
-          example: na
-          deprecated: true
-        regionData:
-          description: Regional data for monitoring
-          allOf:
-            - $ref: '#/components/schemas/RegionalDataDto'
-        config:
-          description: >-
-            Monitor configuration. For DNS monitors: dnsRecords. For API
-            monitors: apiAssertions, sslExpirationPeriodDays, ipVersion,
-            applicationErrorRetries. For UDP monitors: udp, ipVersion. For
-            HTTP/Keyword monitors: ipVersion, sslExpirationPeriodDays,
-            applicationErrorRetries.
-          oneOf:
-            - $ref: '#/components/schemas/DnsMonitorConfigDto'
-            - $ref: '#/components/schemas/ApiMonitorConfigDto'
-            - $ref: '#/components/schemas/UdpMonitorConfigDto'
-            - $ref: '#/components/schemas/HttpKeywordMonitorConfigDto'
-            - $ref: '#/components/schemas/VisualComparisonMonitorConfigDto'
         groupId:
           type: number
+          example: 0
           minimum: 0
           description: Monitor group ID to assign the monitor to. Default is 0 (no group).
-          example: 0
         customFields:
           type: object
+          additionalProperties:
+            type: string
+          example:
+            environment: production
+            team: platform
           description: >-
             Custom key-value metadata for the monitor. Max 20 keys. Keys:
             alphanumeric + underscore + hyphen, max 64 chars. Values: max 255
             chars. Paid plans only.
-          example:
-            environment: production
-            team: platform
+        type:
+          type: string
+          enum:
+            - VISUAL_COMPARISON
+          example: VISUAL_COMPARISON
+        url:
+          type: string
+          example: https://example.com
+          maxLength: 10000
+          description: URL of the page to capture and compare
+        config:
+          description: >-
+            Visual comparison configuration — sensitivity, viewport and optional
+            area to compare
+          allOf:
+            - $ref: '#/components/schemas/VisualComparisonMonitorConfigDto'
       required:
         - friendlyName
-        - type
-        - keywordType
         - interval
+        - type
+        - url
+        - config
     UpdateMonitorDto:
       type: object
       properties:

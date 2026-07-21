@@ -1,7 +1,8 @@
-import { Command, Flags } from '@oclif/core';
+import { Flags } from '@oclif/core';
+import { BaseCommand } from '../../lib/base-command.js';
 import { credentialStore } from '../../lib/credential-store.js';
 
-export default class AuthLogout extends Command {
+export default class AuthLogout extends BaseCommand {
   static override description = 'Remove the API key saved in the OS credential store';
   static override flags = {
     json: Flags.boolean({ description: 'Emit structured JSON output' }),

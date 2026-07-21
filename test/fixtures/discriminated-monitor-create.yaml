@@ -1,0 +1,124 @@
+openapi: 3.0.0
+info:
+  title: Discriminated monitor generator fixture
+  version: 1.0.0
+servers:
+  - url: https://api.example.test/v3
+paths:
+  /monitors:
+    post:
+      operationId: MonitorsController_create
+      summary: Create a monitor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/CreateHttpMonitor'
+                - $ref: '#/components/schemas/CreateHeartbeatMonitor'
+              discriminator:
+                propertyName: type
+                mapping:
+                  HTTP: '#/components/schemas/CreateHttpMonitor'
+                  HEARTBEAT: '#/components/schemas/CreateHeartbeatMonitor'
+            examples:
+              HTTP monitor:
+                summary: Create a basic HTTP monitor
+                value:
+                  friendlyName: Checkout
+                  interval: 60
+                  type: HTTP
+                  url: https://checkout.example.com
+              Heartbeat monitor:
+                value:
+                  friendlyName: Worker heartbeat
+                  interval: 300
+                  type: HEARTBEAT
+      responses:
+        '201':
+          description: Created
+components:
+  schemas:
+    CreateHttpMonitor:
+      type: object
+      required:
+        - friendlyName
+        - interval
+        - type
+        - url
+      properties:
+        friendlyName:
+          type: string
+          description: Friendly name of the monitor
+        interval:
+          type: number
+          minimum: 30
+          description: Interval of check in seconds
+        type:
+          type: string
+          enum:
+            - HTTP
+        url:
+          type: string
+          description: URL of the monitor
+        checkSSLErrors:
+          type: boolean
+          default: false
+          description: Check for SSL errors
+        assignedAlertContacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertContactSettings'
+        config:
+          allOf:
+            - $ref: '#/components/schemas/HttpConfig'
+          description: Optional HTTP configuration
+    HttpConfig:
+      type: object
+      properties:
+        ipVersion:
+          type: string
+          enum:
+            - ipv4Only
+            - ipv6Only
+          description: IP version preference
+    AlertContactSettings:
+      type: object
+      required:
+        - alertContactId
+        - threshold
+        - recurrence
+      properties:
+        alertContactId:
+          type: number
+          example: 12345
+        threshold:
+          type: number
+          minimum: 0
+          example: 5
+        recurrence:
+          type: number
+          minimum: 0
+          example: 30
+    CreateHeartbeatMonitor:
+      type: object
+      required:
+        - friendlyName
+        - interval
+        - type
+      properties:
+        friendlyName:
+          type: string
+          description: Friendly name of the monitor
+        interval:
+          type: number
+          minimum: 30
+          description: Expected heartbeat interval in seconds
+        type:
+          type: string
+          enum:
+            - HEARTBEAT
+        gracePeriod:
+          type: number
+          description: Grace period in seconds

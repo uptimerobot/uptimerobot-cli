@@ -1,12 +1,18 @@
 import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const fixture = fileURLToPath(new URL('./fixtures/openapi.yaml', import.meta.url));
+const discriminatedFixture = fileURLToPath(
+  new URL('./fixtures/discriminated-monitor-create.yaml', import.meta.url),
+);
+const ordinaryRequestFixture = fileURLToPath(
+  new URL('./fixtures/ordinary-request-body.yaml', import.meta.url),
+);
 
 describe('OpenAPI command generation', () => {
   it('turns every operation into a deterministic oclif command entrypoint', async () => {
@@ -27,6 +33,64 @@ describe('OpenAPI command generation', () => {
       operations: expect.stringContaining('"commandId": "monitors:list"'),
       result: { exitCode: 0, stderr: '', stdout: 'Generated 2 commands.\n' },
     });
+    expect(operations).toContain('"name": "includePaused"');
+    expect(operations).toContain('"default": false');
+    expect(operations).toContain('"example": true');
+  });
+
+  it('expands a discriminated request body into typed command entrypoints', async () => {
+    const output = await mkdtemp(join(tmpdir(), 'uptimerobot-openapi-discriminator-'));
+    const result = await runGenerator(['--input', discriminatedFixture, '--output', output]);
+
+    const commandFiles = await listFiles(join(output, 'commands'));
+    const operations = await readFile(join(output, 'generated/operations.ts'), 'utf8');
+    const httpCommand = await readFile(join(output, 'commands/monitors/create/http.ts'), 'utf8');
+
+    expect(commandFiles.map((path) => relative(join(output, 'commands'), path))).toEqual([
+      'monitors/create/heartbeat.ts',
+      'monitors/create/http.ts',
+    ]);
+    await expect(
+      readFile(join(output, 'commands/monitors/create.ts'), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(httpCommand).toContain("operations['monitors:create:http']");
+    expect(operations).toContain('"commandId": "monitors:create:http"');
+    expect(operations).toContain('"requestBodyDefaults": {\n      "type": "HTTP"\n    }');
+    expect(operations).toContain('"path": "friendlyName"');
+    expect(operations).toContain('"flag": "name"');
+    expect(operations).toContain('"path": "config.ipVersion"');
+    expect(operations).toContain('"default": false');
+    expect(operations).toContain('"path": "assignedAlertContacts"');
+    expect(operations).toContain('"requiredProperties": [');
+    expect(operations).toContain('"alertContactId"');
+    expect(operations).toContain('"example": 12345');
+    expect(operations).toContain('"summary": "Create a basic HTTP monitor"');
+    expect(operations).toContain('"friendlyName": "Checkout"');
+    expect(operations).not.toContain('"path": "type"');
+    expect(result).toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: 'Generated 2 commands.\n',
+    });
+  });
+
+  it('generates typed flags for an ordinary object request body', async () => {
+    const output = await mkdtemp(join(tmpdir(), 'uptimerobot-openapi-request-body-'));
+    const result = await runGenerator(['--input', ordinaryRequestFixture, '--output', output]);
+
+    const operations = await readFile(join(output, 'generated/operations.ts'), 'utf8');
+
+    expect(operations).toContain('"commandId": "monitors:update"');
+    expect(operations).toContain('"path": "friendlyName"');
+    expect(operations).toContain('"flag": "name"');
+    expect(operations).toContain('"path": "checkSSLErrors"');
+    expect(operations).toContain('"flag": "check-ssl"');
+    expect(operations).toContain('"path": "config.ipVersion"');
+    expect(result).toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: 'Generated 1 commands.\n',
+    });
   });
 
   it('covers every operation in the pinned public API contract', async () => {
@@ -34,15 +98,33 @@ describe('OpenAPI command generation', () => {
     const contract = join(projectRoot, 'openapi/openapi.yaml');
     const result = await runGenerator(['--input', contract, '--output', output]);
     const commandFiles = await listFiles(join(output, 'commands'));
+    const monitorCreateCommands = commandFiles
+      .filter((path) => path.includes('/monitors/create/'))
+      .map((path) => path.slice(path.lastIndexOf('/create/') + 8, -3))
+      .sort();
 
     expect({
       bulkUpdate: commandFiles.some((path) => path.endsWith('/monitors/bulk/update.ts')),
       commandCount: commandFiles.length,
+      genericMonitorCreate: commandFiles.some((path) => path.endsWith('/monitors/create.ts')),
+      monitorCreateCommands,
       result,
     }).toEqual({
       bulkUpdate: true,
-      commandCount: 59,
-      result: { exitCode: 0, stderr: '', stdout: 'Generated 59 commands.\n' },
+      commandCount: 67,
+      genericMonitorCreate: false,
+      monitorCreateCommands: [
+        'api',
+        'dns',
+        'heartbeat',
+        'http',
+        'keyword',
+        'ping',
+        'port',
+        'udp',
+        'visual-comparison',
+      ],
+      result: { exitCode: 0, stderr: '', stdout: 'Generated 67 commands.\n' },
     });
   });
 
@@ -57,6 +139,22 @@ describe('OpenAPI command generation', () => {
     await expect(readFile(manualCommand, 'utf8')).resolves.toBe('export default class Login {}\n');
     expect(result).toEqual({ exitCode: 0, stderr: '', stdout: 'Generated 2 commands.\n' });
   });
+
+  it('removes discriminator commands that disappear from the contract', async () => {
+    const output = await mkdtemp(join(tmpdir(), 'uptimerobot-openapi-remove-variant-'));
+    await runGenerator(['--input', discriminatedFixture, '--output', output]);
+
+    expect(await listFiles(join(output, 'commands'))).toHaveLength(2);
+
+    await runGenerator(['--input', fixture, '--output', output]);
+    const remaining = await listFiles(join(output, 'commands'));
+
+    expect(remaining.some((path) => path.includes('/monitors/create/'))).toBe(false);
+    expect(remaining.map((path) => relative(join(output, 'commands'), path))).toEqual([
+      'monitors/delete.ts',
+      'monitors/list.ts',
+    ]);
+  });
 });
 
 async function listFiles(directory: string): Promise<string[]> {
@@ -66,7 +164,7 @@ async function listFiles(directory: string): Promise<string[]> {
     if (entry.isDirectory()) output.push(...(await listFiles(path)));
     else output.push(path);
   }
-  return output;
+  return output.sort();
 }
 
 async function runGenerator(

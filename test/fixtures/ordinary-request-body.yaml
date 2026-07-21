@@ -1,0 +1,47 @@
+openapi: 3.0.0
+info:
+  title: Ordinary request body generator fixture
+  version: 1.0.0
+servers:
+  - url: https://api.example.test/v3
+paths:
+  /monitors/{id}:
+    patch:
+      operationId: MonitorsController_update
+      summary: Update a monitor
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMonitor'
+      responses:
+        '200':
+          description: Updated
+components:
+  schemas:
+    UpdateMonitor:
+      type: object
+      properties:
+        friendlyName:
+          type: string
+          description: Friendly name of the monitor
+        interval:
+          type: number
+          minimum: 30
+        checkSSLErrors:
+          type: boolean
+        config:
+          type: object
+          properties:
+            ipVersion:
+              type: string
+              enum:
+                - ipv4Only
+                - ipv6Only

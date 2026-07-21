@@ -2,7 +2,15 @@ import { z } from 'zod';
 import type { InputValue, OperationInput } from './types.js';
 import type { OperationDefinition, OperationParameter } from '../lib/types.js';
 
-export class InputValidationError extends Error {}
+export class InputValidationError extends Error {
+  constructor(
+    readonly path: string,
+    readonly expected: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 export function validateInput(
   operation: OperationDefinition,
@@ -12,14 +20,19 @@ export function validateInput(
     const values = parameter.in === 'path' ? input.path : input.query;
     const value = values[parameter.name];
     if (value === undefined) {
-      if (parameter.required) throw new InputValidationError(`${parameter.name} is required.`);
+      if (parameter.required) {
+        throw new InputValidationError(parameter.name, 'a value', `${parameter.name} is required.`);
+      }
       continue;
     }
 
     const result = schemaFor(parameter).safeParse(value);
     if (!result.success) {
+      const expected = result.error.issues[0]?.message ?? 'a valid value';
       throw new InputValidationError(
-        `Invalid ${parameter.name}: ${result.error.issues[0]?.message ?? 'Validation failed.'}`,
+        parameter.name,
+        expected,
+        `Invalid ${parameter.name}: ${expected}`,
       );
     }
     values[parameter.name] = result.data as InputValue;
