@@ -1,6 +1,6 @@
 import { Flags } from '@oclif/core';
 import { BaseCommand } from '../../lib/base-command.js';
-import { credentialStore, credentialsFilePath } from '../../lib/credential-store.js';
+import { credentialStore } from '../../lib/credential-store.js';
 import { detectInvocationMode } from '../../lib/invocation.js';
 import { resolveFormat } from '../../output/resolve-format.js';
 
@@ -37,7 +37,7 @@ export default class AuthStatus extends BaseCommand {
     else if (!stored) this.log('No stored authentication found.');
     else if (stored.backend === 'keyring')
       this.log('Authenticated with an API key stored in the OS credential store.');
-    else this.log(`Authenticated with an API key stored in plaintext at ${credentialsFilePath()}.`);
+    else this.log('Authenticated with an API key stored in the config file.');
     return status;
   }
 }

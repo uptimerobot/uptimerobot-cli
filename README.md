@@ -37,10 +37,16 @@ uptimerobot --help
 [Create an API key](https://help.uptimerobot.com/en/articles/11620152-how-to-use-uptimerobot-s-api), then save it in your operating system's secure credential store:
 
 ```sh
+uptimerobot auth login
+```
+
+The CLI prompts for the key with masked input and validates it before saving, so the key never appears in shell history. For scripts, provide it through the environment instead:
+
+```sh
 UPTIMEROBOT_API_KEY='your-api-key' uptimerobot auth login
 ```
 
-The key is validated before it is saved. The CLI stores it in macOS Keychain, Windows Credential Manager, or an available Linux keyring. When no OS keyring is available — common on minimal or headless Linux — the key is saved in plaintext at `~/.config/uptimerobot/credentials.json` with owner-only `0600` permissions, and login prints a warning when this happens. Set `UPTIMEROBOT_CONFIG_DIR` to change that location. Prefer a preconfigured environment or secret manager instead of typing secrets directly into shell history.
+The key is stored in macOS Keychain, Windows Credential Manager, or an available Linux keyring. When no OS keyring is available — common on minimal or headless Linux — the key is saved in plaintext at `~/.config/uptimerobot/credentials.json` with owner-only `0600` permissions. Set `UPTIMEROBOT_CONFIG_DIR` to change that location. Prefer a preconfigured environment or secret manager instead of typing secrets directly into shell history.
 
 For CI, containers, and other temporary environments, provide the key without storing it:
 

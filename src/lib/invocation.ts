@@ -1,3 +1,4 @@
+import { emitKeypressEvents } from 'node:readline';
 import { createInterface } from 'node:readline/promises';
 import type { OperationDefinition } from './types.js';
 
@@ -43,4 +44,41 @@ export async function requestConfirmation(
   } finally {
     reader.close();
   }
+}
+
+/**
+ * Prompts for a secret on stderr with masked echo. Returns undefined when
+ * there is no interactive terminal, so callers can fail with guidance instead.
+ */
+export async function promptSecret(question: string): Promise<string | undefined> {
+  if (!process.stdin.isTTY || !process.stderr.isTTY) return undefined;
+  process.stderr.write(question);
+  return new Promise((resolve) => {
+    let secret = '';
+    const finish = (value: string | undefined, exitCode?: number) => {
+      process.stdin.setRawMode(false);
+      process.stdin.removeListener('keypress', onKeypress);
+      process.stderr.write('\n');
+      if (exitCode !== undefined) process.exit(exitCode);
+      resolve(value);
+    };
+    const onKeypress = (str: string, key: { ctrl?: boolean; name?: string }) => {
+      if (key.ctrl && key.name === 'c') return finish(undefined, 130);
+      if (key.name === 'return') return finish(secret.trim() || undefined);
+      if (key.name === 'backspace') {
+        if (secret.length > 0) {
+          secret = [...secret].slice(0, -1).join('');
+          process.stderr.write('\b \b');
+        }
+        return;
+      }
+      if (str === '' || str < ' ') return; // arrows, escape sequences, control keys
+      secret += str;
+      process.stderr.write('*'.repeat([...str].length));
+    };
+    emitKeypressEvents(process.stdin);
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.on('keypress', onKeypress);
+  });
 }

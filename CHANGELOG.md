@@ -12,6 +12,9 @@ may change in minor releases.
 
 ### Added
 
+- Interactive `auth login`: when no `--api-key` or `UPTIMEROBOT_API_KEY` is
+  provided, an interactive terminal prompts for the key with masked input;
+  agents and non-interactive processes receive `AUTH_REQUIRED` with guidance.
 - Warned plaintext credential fallback: when no OS keyring is available,
   `auth login` stores the validated API key in a `0600` config file and
   prints the exact location; `auth status` reports the storage backend and

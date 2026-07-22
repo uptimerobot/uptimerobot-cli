@@ -33,6 +33,11 @@ vi.mock('@napi-rs/keyring', () => ({
   },
 }));
 
+vi.mock('../src/lib/invocation.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../src/lib/invocation.js')>();
+  return { ...original, promptSecret: vi.fn() };
+});
+
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 
 describe('authentication', () => {
@@ -41,6 +46,10 @@ describe('authentication', () => {
   beforeEach(async () => {
     configDirectory = await mkdtemp(join(tmpdir(), 'uptimerobot-cli-test-'));
     vi.stubEnv('UPTIMEROBOT_CONFIG_DIR', configDirectory);
+    vi.stubEnv('UPTIMEROBOT_API_KEY', undefined);
+    vi.stubEnv('UPTIMEROBOT_AGENT', '0');
+    const { promptSecret } = await import('../src/lib/invocation.js');
+    vi.mocked(promptSecret).mockReset();
   });
 
   afterEach(async () => {
@@ -216,5 +225,45 @@ describe('authentication', () => {
     expect(log).toHaveBeenCalledWith(
       JSON.stringify({ authenticated: true, source: 'keyring', type: 'api-key' }),
     );
+  });
+
+  it('prompts for the API key in an interactive terminal when none is provided', async () => {
+    const { promptSecret } = await import('../src/lib/invocation.js');
+    vi.mocked(promptSecret).mockResolvedValue('u123-typed');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 200 })),
+    );
+    const { default: Login } = await import('../src/commands/auth/login.js');
+
+    await Login.run([], { root: projectRoot });
+
+    expect(vi.mocked(promptSecret)).toHaveBeenCalledOnce();
+    expect(keyring.get('com.uptimerobot.cli:default:api-key')).toBe('u123-typed');
+  });
+
+  it('fails clearly when no API key can be resolved', async () => {
+    const request = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', request);
+    const { default: Login } = await import('../src/commands/auth/login.js');
+
+    await expect(Login.run([], { root: projectRoot })).rejects.toMatchObject({
+      code: 'AUTH_REQUIRED',
+      oclif: { exit: 2 },
+    });
+    expect(request).not.toHaveBeenCalled();
+    expect(keyring.size).toBe(0);
+  });
+
+  it('never prompts for an API key in agent mode', async () => {
+    vi.stubEnv('UPTIMEROBOT_AGENT', '1');
+    const { promptSecret } = await import('../src/lib/invocation.js');
+    const { default: Login } = await import('../src/commands/auth/login.js');
+
+    await expect(Login.run([], { root: projectRoot })).rejects.toMatchObject({
+      code: 'AUTH_REQUIRED',
+      oclif: { exit: 2 },
+    });
+    expect(vi.mocked(promptSecret)).not.toHaveBeenCalled();
   });
 });

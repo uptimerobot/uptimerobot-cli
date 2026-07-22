@@ -1,18 +1,17 @@
 import { Flags } from '@oclif/core';
 import { AuthenticationError, PRODUCTION_API_URL, saveValidatedApiKey } from '../../lib/auth.js';
 import { BaseCommand } from '../../lib/base-command.js';
-import { credentialsFilePath } from '../../lib/credential-store.js';
-import { detectInvocationMode, isCI } from '../../lib/invocation.js';
+import { detectInvocationMode, isCI, promptSecret } from '../../lib/invocation.js';
 import { resolveFormat } from '../../output/resolve-format.js';
 
 export default class AuthLogin extends BaseCommand {
-  static override description = 'Validate and securely store a UptimeRobot API key';
+  static override description =
+    'Validate and securely store a UptimeRobot API key. Run without flags to paste the key at a masked prompt.';
   static override flags = {
     'api-key': Flags.string({
-      description: 'UptimeRobot API key to validate and save',
+      description: 'UptimeRobot API key to validate and save (prompted securely when omitted)',
       env: 'UPTIMEROBOT_API_KEY',
       helpValue: '<key>',
-      required: true,
     }),
     json: Flags.boolean({ description: 'Emit structured JSON output' }),
   };
@@ -21,9 +20,19 @@ export default class AuthLogin extends BaseCommand {
   async run(): Promise<void> {
     const { flags } = await this.parse(AuthLogin);
     const mode = detectInvocationMode(false);
+    let apiKey = flags['api-key'];
+    if (!apiKey && mode === 'human') {
+      apiKey = await promptSecret('Paste your UptimeRobot API key: ');
+    }
+    if (!apiKey) {
+      this.error(
+        'No API key provided. Pass --api-key, set UPTIMEROBOT_API_KEY, or run in an interactive terminal.',
+        { code: 'AUTH_REQUIRED', exit: 2 },
+      );
+    }
     let backend: Awaited<ReturnType<typeof saveValidatedApiKey>>;
     try {
-      backend = await saveValidatedApiKey(flags['api-key'], PRODUCTION_API_URL, {
+      backend = await saveValidatedApiKey(apiKey, PRODUCTION_API_URL, {
         environment: isCI() ? 'ci' : 'local',
         mode,
         version: this.config.pjson.version,
@@ -41,13 +50,7 @@ export default class AuthLogin extends BaseCommand {
     } else if (backend === 'keyring') {
       this.log('API key validated and saved in the OS credential store.');
     } else {
-      this.log(`API key validated and saved in plaintext at ${credentialsFilePath()}.`);
-    }
-    if (backend === 'file') {
-      this.warn(
-        'The OS credential store was unavailable, so the API key was saved in plaintext ' +
-          '(file permissions 0600). Use UPTIMEROBOT_API_KEY to avoid storing it.',
-      );
+      this.log('API key validated and saved in the config file.');
     }
   }
 }
