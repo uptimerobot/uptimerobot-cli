@@ -1,10 +1,14 @@
 # UptimeRobot CLI
 
-[![CI](https://github.com/uptimerobot/uptimerobot-cli/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/uptimerobot/uptimerobot-cli/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/@uptimerobot/cli)](https://www.npmjs.com/package/@uptimerobot/cli)
+[![npm downloads](https://img.shields.io/npm/dm/@uptimerobot/cli)](https://www.npmjs.com/package/@uptimerobot/cli)
+[![CI](https://github.com/uptimerobot/uptimerobot-cli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/uptimerobot/uptimerobot-cli/actions/workflows/ci.yml)
+[![Node.js](https://img.shields.io/node/v/@uptimerobot/cli)](https://nodejs.org)
+[![License: Apache-2.0](https://img.shields.io/npm/l/@uptimerobot/cli)](./LICENSE)
 
-The official command-line interface for UptimeRobot API v3.
+The official command-line interface for UptimeRobot. Manage uptime monitors, incidents, status pages, maintenance windows, and alert contacts from your terminal, scripts, CI pipelines, or coding agents — readable tables when you're interactive, stable JSON when you're automating.
 
-Manage UptimeRobot from a terminal, script, CI pipeline, or coding agent. The CLI combines human-friendly commands with structured output, local validation, and safe automation defaults.
+Built on the UptimeRobot API v3. The CLI combines human-friendly commands with structured output, local validation, and safe automation defaults.
 
 - Manage monitors, incidents, status pages, maintenance windows, alert contacts, integrations, tags, and more.
 - Create each monitor type through a dedicated command such as `monitors create http` or `monitors create keyword`.

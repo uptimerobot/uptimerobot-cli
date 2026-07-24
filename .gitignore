@@ -5,3 +5,7 @@ node_modules/
 
 # pack artifacts
 *.tgz
+
+# local agent worktrees and research scratch — never commit or publish
+.orca/
+research/

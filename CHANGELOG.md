@@ -10,6 +10,8 @@ may change in minor releases.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-24
+
 ### Added
 
 - Interactive `auth login`: when no `--api-key` or `UPTIMEROBOT_API_KEY` is
@@ -44,3 +46,6 @@ may change in minor releases.
 
 - Redirects are followed manually and the origin is re-checked at every hop
   before credentials are attached; cross-origin redirects are refused.
+
+[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/uptimerobot/uptimerobot-cli/releases/tag/v0.1.0

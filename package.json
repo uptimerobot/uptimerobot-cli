@@ -1,14 +1,22 @@
 {
   "name": "@uptimerobot/cli",
   "version": "0.1.0",
-  "description": "The official command-line interface for UptimeRobot API v3",
+  "description": "Official UptimeRobot CLI — manage uptime monitors, incidents, status pages, and alert contacts from your terminal, scripts, or CI.",
   "keywords": [
     "uptimerobot",
     "cli",
-    "monitoring",
+    "command-line",
     "uptime",
+    "uptime-monitoring",
+    "monitoring",
     "status-page",
-    "api"
+    "incidents",
+    "alerting",
+    "devops",
+    "sre",
+    "oclif",
+    "api",
+    "automation"
   ],
   "author": "UptimeRobot (https://uptimerobot.com)",
   "license": "Apache-2.0",
@@ -33,6 +41,10 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "pnpm clean && tsc -p tsconfig.build.json",
     "clean": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/clean.ts",
