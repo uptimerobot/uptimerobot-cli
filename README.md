@@ -106,6 +106,58 @@ uptimerobot monitors get 797054213
 uptimerobot monitors delete 797054213 --confirm
 ```
 
+## Set up a repository for a coding agent
+
+`uptimerobot init` prepares a repository for agent-driven monitoring. It resolves credentials, scans the working tree for endpoints and scheduled jobs, writes what it found to `uptimerobot-scan.md` at the project root, detects which coding agent you use, and makes the UptimeRobot skills reachable from it.
+
+```sh
+uptimerobot init
+```
+
+The scan is pattern matching over the working tree. It reaches no network, runs nothing, and never reads `.env` values. Its output sits between `<!-- uptimerobot:scan:begin ... -->` markers, so a rerun replaces only what a previous run wrote and refuses to overwrite a file it did not write.
+
+| Flag              | Effect                                                                     |
+| ----------------- | -------------------------------------------------------------------------- |
+| `--api-key <key>` | Key for this run, ahead of `UPTIMEROBOT_API_KEY` and the stored login      |
+| `--target <name>` | Agent to set up: `claude-code`, `codex`, `cursor`, `opencode`, or `gemini` |
+| `--no-agent`      | Scan and write the seed context only; skip agent setup                     |
+| `--uninstall`     | Remove what a previous run planted, then exit                              |
+| `--yes`           | Never prompt; run non-interactively                                        |
+| `--json`          | Structured JSON, which also implies `--yes`                                |
+
+`--uninstall` is terminal, cannot be combined with `--target` or `--no-agent`, and runs before the authentication check because it only removes local files — so it works logged out. Without `--target`, a non-interactive run that detects no agent, or more than one, fails and lists the candidates rather than guessing. Note that `--target` names the agent being set up, while `--agent` marks the invocation itself as agent-driven; they are different flags and can be passed together. `uptimerobot init --help` carries the full precedence rules.
+
+Only Claude Code has a confirmed first-party install path today — `git clone https://github.com/uptimerobot/ai.git` followed by `claude --plugin-dir ./ai`, which loads the plugin for that session only, since the marketplace listing has not shipped. Codex, Cursor, Gemini, and OpenCode instead get a marked, idempotent UptimeRobot section written to `AGENTS.md` at the project root. Nothing is written to your home directory or to any global agent configuration.
+
+Then open the agent in the repository and ask it to read `uptimerobot-scan.md`. It proposes monitors and heartbeats from that file, asks before creating anything, tags what it creates `agent-setup`, and writes `uptimerobot-report.md`. That report is the agent's account of its own work; `uptimerobot verify` is the API's:
+
+```sh
+uptimerobot verify
+uptimerobot verify --json
+uptimerobot verify --tags agent-setup,production
+```
+
+`verify` only reads. It lists every monitor carrying the tag with its ID, status, type, target, and creation time, and exits 0 whether the count is zero or a hundred. It also states what the count misses: tags are replaced wholesale on update, and the email-only quick setup creates monitors through an endpoint that accepts no tags, so treat the number as a floor rather than a total.
+
+`--tags` takes a comma-separated, case-sensitive list — the same spelling `monitors list --tags` uses. Setting tags at creation is a different flag, `--tag-names`, repeated once per tag:
+
+```sh
+uptimerobot monitors create http \
+  --name checkout-api \
+  --url https://checkout.example.com \
+  --tag-names agent-setup \
+  --tag-names production
+```
+
+Two smaller commands do parts of the same job on their own. `uptimerobot scan [PATH]` prints the seed context and nothing else — no API key, no network, no writes — so it can be run against any directory as often as you like:
+
+```sh
+uptimerobot scan
+uptimerobot scan ../other-repo --json
+```
+
+`uptimerobot skills install` only makes the skills reachable, using the same detection and the same `AGENTS.md` block. `uptimerobot skills install --uninstall` removes that block and leaves the rest of the file byte-identical.
+
 ## Find the right command
 
 Help is available at every level of the command tree:
@@ -251,6 +303,14 @@ uptimerobot monitors delete 797054213 --confirm --json
 ```
 
 The CLI retries only safe `GET` and `HEAD` requests. It does not retry `POST`, `PATCH`, or `DELETE`; retain returned resource IDs before deciding to repeat a mutation.
+
+## Scanning untrusted repositories
+
+`uptimerobot init` and `uptimerobot scan` only read files, but the agent they hand off to does not. The CLI authenticates from your OS keyring, and your coding agent has a shell. Text planted in a scanned repository — in a route file, a Compose comment, a cron script — can therefore instruct the agent to run `uptimerobot monitors create`, or any other authenticated command, directly. Nothing here sandboxes the agent, detects injected instructions, or filters what a scanned file can say before the agent reads it.
+
+The blast radius is the UptimeRobot account behind whichever key resolves, at that key's permissions: monitors, status pages, maintenance windows, alert contacts, and incident comments can be created, changed, or deleted, and reading a monitor back returns the credentials stored on it, such as `httpUsername`, `httpPassword`, and `customHttpHeaders`. Where no OS keyring is available and the key sits in `~/.config/uptimerobot/credentials.json`, a shell can read the key itself. What the CLI does not add is reach: it holds no credential other than that key, and an agent with a shell could already read your repository and make network calls without it.
+
+The mitigations available today are procedural. Review the diff before applying it, and do not run `init` — or point an agent at `uptimerobot-scan.md` — in a repository you would not otherwise trust to run its own build. The skills require the agent to show its proposal and get an explicit yes in the conversation before creating a monitor or editing a file, but that is an instruction to the model rather than a check the harness enforces: under `--permission-mode acceptEdits` the approval gate is gone, and only the agent's compliance is left. If a run does go wrong, `uptimerobot monitors list --json` shows the current state of the account and `uptimerobot auth logout` removes the stored key.
 
 ## Development
 
