@@ -77,6 +77,19 @@ describe('promptSecret', () => {
     await expect(answer).resolves.toBeUndefined();
   });
 
+  it('releases stdin on submit so the process can exit', async () => {
+    const { stdin } = fakeTerminal();
+
+    const answer = promptSecret('Paste: ');
+    stdin.write('u123-secret\r');
+    await answer;
+
+    // Regression: promptSecret resumes stdin to read keypresses, which ref's the
+    // TTY handle. Without pausing it again on teardown the event loop never
+    // drains and `auth login` hangs after the key is submitted.
+    expect(stdin.isPaused()).toBe(true);
+  });
+
   it('returns undefined without an interactive terminal', async () => {
     await expect(promptSecret('Paste: ')).resolves.toBeUndefined();
   });
