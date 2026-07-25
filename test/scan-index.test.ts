@@ -633,6 +633,37 @@ describe('the seed-context document', () => {
   });
 });
 
+describe('health endpoint ranking', () => {
+  it('marks a health route and sorts it ahead of other paths', () => {
+    const context = seed({
+      routes: [route('/pricing'), route('/api/health'), route('/docs')],
+    });
+    const paths = context.accepted.filter((candidate) => candidate.target === 'path');
+
+    expect(paths[0]).toMatchObject({ value: '/api/health', health: true });
+    expect(paths.slice(1).every((candidate) => candidate.health === undefined)).toBe(true);
+  });
+
+  it('leaves a non-health route unmarked', () => {
+    const context = seed({ routes: [route('/pricing')] });
+
+    expect(context.accepted[0]?.health).toBeUndefined();
+  });
+
+  it('renders the health marker and its legend', () => {
+    const rendered = formatSeedContext(seed({ routes: [route('/api/health')] }));
+
+    expect(rendered).toContain('★ `/api/health` (express)');
+    expect(rendered).toContain('★ marks a likely health endpoint');
+  });
+
+  it('adds no legend when nothing is a health endpoint', () => {
+    const rendered = formatSeedContext(seed({ routes: [route('/pricing')] }));
+
+    expect(rendered).not.toContain('★ marks a likely health endpoint');
+  });
+});
+
 describe('scanRepository', () => {
   it('aggregates all three scanners over a real tree', async () => {
     const root = await makeRepo({

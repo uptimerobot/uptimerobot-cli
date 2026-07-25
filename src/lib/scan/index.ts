@@ -28,7 +28,7 @@
 import { isIP, isIPv6 } from 'node:net';
 import { type ContainerScanLimits, scanContainers } from './containers.js';
 import type { ScanEvidence, ScanFinding } from './finding.js';
-import { type ScanRoutesOptions, scanRoutes } from './routes.js';
+import { type ScanRoutesOptions, isHealthPath, scanRoutes } from './routes.js';
 import { type ScanScheduledOptions, scanScheduled } from './scheduled.js';
 
 export { DEFAULT_CONTAINER_SCAN_LIMITS, scanContainers } from './containers.js';
@@ -100,6 +100,11 @@ export interface ScanCandidate {
   alsoAt?: readonly ScanEvidence[];
   /** Extras carried through from the finding, e.g. { method: 'GET' }. */
   detail?: Record<string, string>;
+  /**
+   * Set when the path reads as a health/liveness/readiness endpoint. Absent
+   * otherwise, so it never widens a candidate that is not one.
+   */
+  health?: boolean;
 }
 
 export interface RejectedCandidate extends ScanCandidate {
@@ -222,8 +227,16 @@ export function buildSeedContext(repoRoot: string, findings: ScanFindings): Seed
         evidence: finding.evidence,
         ...(finding.detail === undefined ? {} : { detail: finding.detail }),
       };
-      if (verdict.rejection === undefined) accepted.push(candidate);
-      else rejected.push({ ...candidate, ...verdict.rejection });
+      if (verdict.rejection === undefined) {
+        // A health probe is the strongest thing to monitor, so it is marked
+        // here and surfaced first. Only a route path can be one: a port has no
+        // path, and a healthcheck URL is a probe the repository already runs.
+        accepted.push(
+          source === 'routes' && isHealthPath(finding.value)
+            ? { ...candidate, health: true }
+            : candidate,
+        );
+      } else rejected.push({ ...candidate, ...verdict.rejection });
     }
   }
 
@@ -798,10 +811,19 @@ function countReasons(rejected: readonly RejectedCandidate[]): Record<string, nu
 function compareAccepted(left: ScanCandidate, right: ScanCandidate): number {
   return (
     TARGET_ORDER[left.target] - TARGET_ORDER[right.target] ||
+    healthRank(left) - healthRank(right) ||
     compare(left.value, right.value) ||
     compare(left.kind, right.kind) ||
     compareEvidence(left.evidence, right.evidence)
   );
+}
+
+/**
+ * Health endpoints lead their target group. Rejected candidates never carry the
+ * mark, so this contributes nothing to {@link compareRejected}'s ordering.
+ */
+function healthRank(candidate: ScanCandidate): number {
+  return candidate.health === true ? 0 : 1;
 }
 
 function compareRejected(left: RejectedCandidate, right: RejectedCandidate): number {
@@ -850,6 +872,9 @@ export function formatSeedContext(context: SeedContext): string {
   ];
 
   lines.push('', '## Accepted candidates');
+  if (context.accepted.some((candidate) => candidate.health === true)) {
+    lines.push('', '> ★ marks a likely health endpoint — usually the strongest thing to monitor.');
+  }
   if (context.accepted.length === 0) lines.push('', 'None.');
   for (const { heading, target } of groups) {
     const members = context.accepted.filter((candidate) => candidate.target === target);
@@ -889,7 +914,10 @@ export function formatSeedContext(context: SeedContext): string {
 
 function candidateLine(candidate: ScanCandidate): string {
   const alsoAt = (candidate.alsoAt ?? []).map((evidence) => citation(evidence)).join(', ');
-  return `\`${candidate.value}\` (${candidate.kind}) — ${citation(candidate.evidence)}${
+  // Shared with the rejected list, which never carries the mark, so the star
+  // only ever appears among accepted candidates.
+  const marker = candidate.health === true ? '★ ' : '';
+  return `${marker}\`${candidate.value}\` (${candidate.kind}) — ${citation(candidate.evidence)}${
     alsoAt === '' ? '' : `, also ${alsoAt}`
   }${detailSuffix(candidate.detail)}`;
 }
