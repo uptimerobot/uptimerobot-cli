@@ -362,10 +362,21 @@ describe('init', () => {
     // The guide is the whole contract; spot-check that its load-bearing rules
     // survived into the file init actually wrote.
     expect(content).toContain('--tag-names agent-setup');
-    expect(content).toContain('Cap at 10 monitors per run');
+    expect(content).toContain('Cap at 50 monitors per run');
     expect(content).toContain('|| true');
     expect(content.trimEnd().endsWith(SETUP_END_MARKER)).toBe(true);
     expect((await readdir(repository)).sort()).toEqual(BOTH_FILES);
+  });
+
+  it('threads --max-monitors into the setup guide cap', async () => {
+    keyring.set(STORED_CREDENTIAL, 'u123-stored');
+    const { default: Init } = await import('../src/commands/init.js');
+
+    await Init.run(['--no-agent', '--max-monitors', '3', '--json'], { root: projectRoot });
+
+    const content = await readFile(join(repository, SETUP_GUIDE_FILE), 'utf8');
+    expect(content).toContain('Cap at 3 monitors per run');
+    expect(content).not.toContain('Cap at 50 monitors per run');
   });
 
   it('leaves an unchanged setup guide untouched on a rerun', async () => {

@@ -43,10 +43,23 @@ describe('renderSetupGuide', () => {
     ['static-site generators in the frameworks-it-misses list', 'static-site generators'],
     ['a concrete static-site generator example', 'SvelteKit'],
     ['the base-URL-first rule', 'Ask the user for the base URL first'],
-    ['the cap-of-10 rule', 'Cap at 10 monitors per run'],
+    ['the default cap rule', 'Cap at 50 monitors per run'],
     ['the confirm-before-create rule', 'before creating any monitor'],
   ])('states %s', (_label, substring) => {
     expect(guide).toContain(substring);
+  });
+
+  it('defaults the monitor cap to 50', () => {
+    expect(renderSetupGuide(ON_PATH)).toContain('Cap at 50 monitors per run');
+  });
+
+  it('interpolates a custom cap everywhere it appears', () => {
+    const capped = renderSetupGuide(ON_PATH, { maxMonitors: 3 });
+
+    expect(capped).toContain('Cap at 3 monitors per run');
+    expect(capped).toContain('capped at 3');
+    expect(capped).toContain('over the cap of 3');
+    expect(capped).not.toContain('Cap at 50 monitors per run');
   });
 
   it('names all nine monitor types', () => {

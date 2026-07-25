@@ -32,11 +32,29 @@ const SCAN_FILE = 'uptimerobot-scan.md';
 const REPORT_FILE = 'uptimerobot-report.md';
 
 /**
+ * How many monitors one run may propose unless the caller says otherwise. A
+ * ceiling rather than a target: the guide still asks for the endpoints that
+ * best prove the system works, and a small repository proposes a handful. It
+ * exists so a repository with hundreds of routes cannot turn into hundreds of
+ * monitors — and everything over it is reported as skipped, never dropped.
+ */
+const DEFAULT_MAX_MONITORS = 50;
+
+export interface RenderSetupGuideOptions {
+  /** The per-run monitor ceiling. Defaults to {@link DEFAULT_MAX_MONITORS}. */
+  maxMonitors?: number;
+}
+
+/**
  * Renders the whole guide as Markdown, with every CLI command templated for the
  * machine `init` ran on. The returned body carries no marker or generated-by
  * note — `init` adds those when it writes the file.
  */
-export function renderSetupGuide(invocation: CliInvocation): string {
+export function renderSetupGuide(
+  invocation: CliInvocation,
+  options: RenderSetupGuideOptions = {},
+): string {
+  const maxMonitors = options.maxMonitors ?? DEFAULT_MAX_MONITORS;
   /** Templates a bare subcommand into the resolved invocation. */
   const cmd = (subcommand: string): string => formatInvocation(invocation, subcommand);
 
@@ -72,9 +90,10 @@ export function renderSetupGuide(invocation: CliInvocation): string {
     '  never use `localhost`, a loopback/private/link-local/internal address, a preview',
     "  domain, the git remote's host, or the package name. A path with no confirmed origin",
     '  is a skip, not a monitor.',
-    '- **Cap at 10 monitors per run**, heartbeats included. If more survive, propose the 10',
+    `- **Cap at ${maxMonitors} monitors per run**, heartbeats included. If more survive, propose the ${maxMonitors}`,
     '  that best prove the system works and hand the rest to the report as skipped for the',
-    '  cap. Never silently truncate.',
+    '  cap. Never silently truncate. The cap is a ceiling, not a target: propose what earns',
+    '  its place, which for a small repository is a handful.',
     '- **Never touch a pre-existing monitor.** This run only creates. Anything already in',
     `  the account — including monitors an earlier run tagged \`${AGENT_SETUP_TAG}\` — is out of scope.`,
     '- **Never propose a value on the scan\'s "Skipped, and why" list.** That is a',
@@ -203,7 +222,7 @@ export function renderSetupGuide(invocation: CliInvocation): string {
     '',
     '## Step 2 — Propose, then stop',
     '',
-    'One message, one table, every candidate that survived — **capped at 10**. Every row',
+    `One message, one table, every candidate that survived — **capped at ${maxMonitors}**. Every row`,
     'carries its `file:line` evidence; a row with no evidence is a row you invented.',
     '',
     '**Open with an inventory line — required, not optional.** Before the table, state how',
@@ -454,7 +473,7 @@ export function renderSetupGuide(invocation: CliInvocation): string {
     '  dashboard link (`https://dashboard.uptimerobot.com/monitors/<id>`).',
     '- **Evidence** — the `file:line` that justified each monitor, plus one line of why.',
     "- **Skipped** — as important as Created. Cover the scan's suppressed entries (reason",
-    '  verbatim), duplicates dropped after normalization, anything over the cap of 10, and',
+    `  verbatim), duplicates dropped after normalization, anything over the cap of ${maxMonitors}, and`,
     '  anything you declined to guess about. State "nothing was skipped" explicitly if so.',
     '- **Heartbeat wiring** — the exact diff applied per file, in a `diff` fence; declined',
     '  wiring named as declined.',
