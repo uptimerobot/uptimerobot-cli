@@ -45,6 +45,17 @@ describe('renderSetupGuide', () => {
     ['the base-URL-first rule', 'Ask the user for the base URL first'],
     ['the default cap rule', 'Cap at 50 monitors per run'],
     ['the confirm-before-create rule', 'before creating any monitor'],
+    ['the auth-gate check heading', 'Auth-gate check'],
+    ['the never-read-a-secret rule for detection', 'never read a secret value'],
+    ['the Express/Fastify auth-middleware signal', 'auth middleware on the route'],
+    ['the Django/DRF signal', 'permission_classes'],
+    ['the Rails signal', 'before_action :authenticate'],
+    ['the Laravel signal', "->middleware('auth')"],
+    ['the FastAPI signal', 'Depends('],
+    ['the Spring signal', '@PreAuthorize'],
+    ['the prefer-a-public-route remedy', 'Prefer a public alternative'],
+    ['the user-supplied-credential path via existing flags', '--auth-type HTTP_BASIC'],
+    ['the custom-header remedy naming the header form', 'X-Health-Token'],
   ])('states %s', (_label, substring) => {
     expect(guide).toContain(substring);
   });
