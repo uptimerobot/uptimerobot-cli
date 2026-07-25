@@ -84,9 +84,6 @@ describe('promptSecret', () => {
     stdin.write('u123-secret\r');
     await answer;
 
-    // Regression: promptSecret resumes stdin to read keypresses, which ref's the
-    // TTY handle. Without pausing it again on teardown the event loop never
-    // drains and `auth login` hangs after the key is submitted.
     expect(stdin.isPaused()).toBe(true);
   });
 

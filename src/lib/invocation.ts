@@ -58,8 +58,6 @@ export async function promptSecret(question: string): Promise<string | undefined
     const finish = (value: string | undefined, exitCode?: number) => {
       process.stdin.setRawMode(false);
       process.stdin.removeListener('keypress', onKeypress);
-      // resume() above ref'd the stdin TTY handle; pause() releases it so the
-      // event loop can drain and the process exits instead of hanging.
       process.stdin.pause();
       process.stderr.write('\n');
       if (exitCode !== undefined) process.exit(exitCode);
