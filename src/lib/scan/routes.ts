@@ -25,6 +25,39 @@ export type { ScanEvidence } from './finding.js';
  */
 export type RouteFinding = ScanFinding;
 
+/**
+ * Whether a route path reads as a health/liveness/readiness endpoint — the
+ * strongest kind of monitor target, and the one an agent should reach for
+ * first. Matched on the final path segment, so `/api/health`, `/v1/healthz`,
+ * `/-/health` and `/actuator/health` all count, while `/status-page` — a
+ * different segment that merely starts the same way — does not.
+ * Case-insensitive; a trailing slash is ignored.
+ */
+export function isHealthPath(path: string): boolean {
+  const segments = path.toLowerCase().split('/').filter(Boolean);
+  const last = segments.at(-1);
+  return last !== undefined && HEALTH_SEGMENTS.has(last);
+}
+
+/** Final segments that name a health probe rather than a product surface. */
+const HEALTH_SEGMENTS: ReadonlySet<string> = new Set([
+  'alive',
+  'health',
+  'health-check',
+  'healthcheck',
+  'healthz',
+  'heartbeat',
+  'live',
+  'liveness',
+  'livez',
+  'ping',
+  'ready',
+  'readiness',
+  'readyz',
+  'status',
+  'up',
+]);
+
 export interface ScanRoutesOptions {
   /** Bytes. Files larger than this are never read. Defaults to 512 KiB. */
   maxFileBytes?: number;

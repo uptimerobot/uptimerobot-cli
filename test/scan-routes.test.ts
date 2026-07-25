@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RouteFinding } from '../src/lib/scan/routes.js';
-import { scanRoutes } from '../src/lib/scan/routes.js';
+import { isHealthPath, scanRoutes } from '../src/lib/scan/routes.js';
 import {
   DJANGO_REPOSITORY,
   EXPRESS_REPOSITORY,
@@ -69,6 +69,40 @@ beforeEach(() => {
 afterAll(async () => {
   await Promise.all(
     temporaryDirectories.map((directory) => rm(directory, { force: true, recursive: true })),
+  );
+});
+
+describe('isHealthPath', () => {
+  it.each([
+    '/health',
+    '/healthz',
+    '/healthcheck',
+    '/health-check',
+    '/api/health',
+    '/v1/healthz',
+    '/ready',
+    '/readyz',
+    '/readiness',
+    '/live',
+    '/livez',
+    '/liveness',
+    '/status',
+    '/ping',
+    '/up',
+    '/alive',
+    '/-/health',
+    '/actuator/health',
+    '/HEALTH',
+    '/api/Health/',
+  ])('marks %s as a health endpoint', (path) => {
+    expect(isHealthPath(path)).toBe(true);
+  });
+
+  it.each(['/', '/pricing', '/status-page', '/healthy-recipes', '/api/users', '/login', '/uptime'])(
+    'does not mark %s',
+    (path) => {
+      expect(isHealthPath(path)).toBe(false);
+    },
   );
 });
 
