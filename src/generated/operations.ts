@@ -1267,7 +1267,7 @@ export const operations = {
         "required": false,
         "description": "Monitoring interval in seconds",
         "example": 60,
-        "minimum": 30,
+        "minimum": 15,
         "type": "number"
       },
       {
@@ -6619,7 +6619,7 @@ export const operations = {
         "required": false,
         "description": "Interval of check in seconds. Heartbeat monitors support at most 2678400 seconds (31 days).",
         "example": 60,
-        "minimum": 30,
+        "minimum": 15,
         "type": "number"
       },
       {

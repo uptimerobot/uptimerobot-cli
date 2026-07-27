@@ -1,6 +1,6 @@
 {
   "name": "@uptimerobot/cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Official UptimeRobot CLI — manage uptime monitors, incidents, status pages, and alert contacts from your terminal, scripts, or CI.",
   "keywords": [
     "uptimerobot",

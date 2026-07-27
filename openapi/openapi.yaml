@@ -2125,7 +2125,7 @@ components:
           example: 42
         interval:
           type: number
-          minimum: 30
+          minimum: 15
           description: Monitoring interval in seconds
           example: 60
         timeout:
@@ -2658,7 +2658,7 @@ components:
               type: {}
               interval:
                 type: number
-                minimum: 30
+                minimum: 15
                 exclusiveMinimum: false
                 maximum: 2678400
                 exclusiveMaximum: false
@@ -3867,7 +3867,7 @@ components:
         type: {}
         interval:
           type: number
-          minimum: 30
+          minimum: 15
           exclusiveMinimum: false
           maximum: 2678400
           exclusiveMaximum: false
@@ -6242,7 +6242,7 @@ components:
           description: Required for Keyword monitor
         interval:
           type: number
-          minimum: 30
+          minimum: 15
           example: 60
           description: >-
             Interval of check in seconds. Heartbeat monitors support at most
@@ -7706,6 +7706,12 @@ components:
           type: object
           properties:
             plan:
+              description: >-
+                Display label for the active plan (e.g. "Free", "Solo", "Team",
+                "Scale"). This is a human-readable label, NOT a stable
+                identifier — it can change (e.g. "Enterprise" → "Scale").
+                Consumers needing stability should branch on a stable field, not
+                on this string.
               type: string
             monitorLimit:
               type: number

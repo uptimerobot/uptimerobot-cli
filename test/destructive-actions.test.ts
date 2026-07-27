@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { runCli } from './helpers/run-cli.js';
+import { cliEnvironment, cliVersion, runCli } from './helpers/run-cli.js';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 
@@ -82,7 +82,7 @@ describe('destructive actions', () => {
             method: 'DELETE',
             mode: 'agent',
             url: '/v3/monitors/42',
-            userAgent: 'uptimerobot-cli/0.1.0 mode/agent environment/local',
+            userAgent: `uptimerobot-cli/${cliVersion} mode/agent environment/${cliEnvironment}`,
           },
           result: {
             exitCode: 0,

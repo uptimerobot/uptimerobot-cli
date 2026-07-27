@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
-import { runCli } from './helpers/run-cli.js';
+import { cliVersion, runCli } from './helpers/run-cli.js';
 
 const ESC = String.fromCharCode(27);
 
@@ -40,7 +40,7 @@ describe('monitors list', () => {
       observedRequest: {
         environment: 'ci',
         mode: 'human',
-        userAgent: 'uptimerobot-cli/0.1.0 mode/human environment/ci',
+        userAgent: `uptimerobot-cli/${cliVersion} mode/human environment/ci`,
       },
       result: {
         exitCode: 0,

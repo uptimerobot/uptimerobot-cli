@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
-import { runCli } from './helpers/run-cli.js';
+import { cliEnvironment, cliVersion, runCli } from './helpers/run-cli.js';
 
 describe('monitor creation', () => {
   const servers: ReturnType<typeof createServer>[] = [];
@@ -373,7 +373,7 @@ describe('monitor creation', () => {
         contentType: 'application/json',
         method: 'POST',
         url: '/v3/monitors',
-        userAgent: 'uptimerobot-cli/0.1.0 mode/human environment/local',
+        userAgent: `uptimerobot-cli/${cliVersion} mode/human environment/${cliEnvironment}`,
       },
       result: {
         exitCode: 0,
