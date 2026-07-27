@@ -77,6 +77,16 @@ describe('promptSecret', () => {
     await expect(answer).resolves.toBeUndefined();
   });
 
+  it('releases stdin on submit so the process can exit', async () => {
+    const { stdin } = fakeTerminal();
+
+    const answer = promptSecret('Paste: ');
+    stdin.write('u123-secret\r');
+    await answer;
+
+    expect(stdin.isPaused()).toBe(true);
+  });
+
   it('returns undefined without an interactive terminal', async () => {
     await expect(promptSecret('Paste: ')).resolves.toBeUndefined();
   });

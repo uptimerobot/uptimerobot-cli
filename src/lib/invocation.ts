@@ -58,6 +58,7 @@ export async function promptSecret(question: string): Promise<string | undefined
     const finish = (value: string | undefined, exitCode?: number) => {
       process.stdin.setRawMode(false);
       process.stdin.removeListener('keypress', onKeypress);
+      process.stdin.pause();
       process.stderr.write('\n');
       if (exitCode !== undefined) process.exit(exitCode);
       resolve(value);
