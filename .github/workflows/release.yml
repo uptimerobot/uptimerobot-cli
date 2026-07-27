@@ -8,8 +8,12 @@ name: Release
 # repository, commit, and workflow run.
 #
 # Release flow: bump the version and update CHANGELOG.md on `main`, then publish
-# a GitHub Release for tag vX.Y.Z. That event triggers this workflow, which
-# re-verifies the released commit and publishes it to npm.
+# a GitHub Release for tag vX.Y.Z. That event triggers this workflow.
+#
+# Build and publish are deliberately separate jobs. Dependency install and the
+# build run in `build`, which has NO id-token, so no third-party code executes
+# while the OIDC publish credential exists. Only `publish` holds id-token:write,
+# and it installs nothing — it publishes the prebuilt artifact with scripts off.
 
 on:
   release:
@@ -44,14 +48,10 @@ jobs:
       - run: pnpm test
       - run: pnpm openapi:check
 
-  publish:
-    name: Publish to npm
+  build:
+    name: Build release artifact
     needs: verify
-    runs-on: ubuntu-latest # trusted publishing requires a cloud-hosted runner
-    environment: release # optional approval gate; add reviewers in repo settings
-    permissions:
-      id-token: write # OIDC: trusted publishing + provenance
-      contents: read
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -70,14 +70,8 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 24.x # >= 22.14 required for OIDC
+          node-version: 24.x
           cache: pnpm
-          registry-url: https://registry.npmjs.org
-
-      # Trusted publishing needs npm >= 11.5.1. Pin it so a toolchain bump can't
-      # break release day; bump this line deliberately.
-      - name: Pin an OIDC-capable npm
-        run: npm install -g npm@11.6.2
 
       - run: pnpm install --frozen-lockfile
 
@@ -94,8 +88,50 @@ jobs:
 
       - run: pnpm build
 
-      # No NODE_AUTH_TOKEN: OIDC supplies a short-lived, workflow-scoped
-      # credential and attaches provenance automatically. publishConfig in
-      # package.json already forces public access and the npmjs registry.
+      - name: Upload built dist
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest # trusted publishing requires a cloud-hosted runner
+    environment: release # approval gate; add reviewers in repo settings
+    permissions:
+      id-token: write # OIDC: trusted publishing + provenance
+      contents: read
+    steps:
+      # Only the repo's own tracked files (package.json, bin/, README, LICENSE,
+      # openapi/) plus the prebuilt dist/ artifact are present here. No
+      # dependency install and no build run in this job, so nothing untrusted
+      # executes while the OIDC publish credential is live.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.x # >= 22.14 required for OIDC
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1. Pin it so a toolchain bump can't
+      # break release day; bump this line deliberately.
+      - name: Pin an OIDC-capable npm
+        run: npm install -g npm@11.6.2
+
+      - name: Download built dist
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist
+
+      # --ignore-scripts skips the prepack build (dist/ is already built and
+      # downloaded above). No NODE_AUTH_TOKEN: OIDC supplies a short-lived,
+      # workflow-scoped credential and attaches provenance automatically;
+      # publishConfig already forces public access and the npmjs registry.
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --ignore-scripts
