@@ -83,7 +83,7 @@
     "topicSeparator": " ",
     "topics": {
       "auth": {
-        "description": "Manage authentication"
+        "description": "Manage authentication\n\nCreate an API key at https://dashboard.uptimerobot.com/integrations."
       },
       "alert-contacts": {
         "description": "Manage personal alert contacts"

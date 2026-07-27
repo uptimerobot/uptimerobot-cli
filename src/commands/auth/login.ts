@@ -4,9 +4,11 @@ import { BaseCommand } from '../../lib/base-command.js';
 import { detectInvocationMode, isCI, promptSecret } from '../../lib/invocation.js';
 import { resolveFormat } from '../../output/resolve-format.js';
 
+/** Where a user creates and copies an API key. Not an API endpoint. */
+const API_KEY_DASHBOARD_URL = 'https://dashboard.uptimerobot.com/integrations';
+
 export default class AuthLogin extends BaseCommand {
-  static override description =
-    'Validate and securely store a UptimeRobot API key. Run without flags to paste the key at a masked prompt.';
+  static override description = `Validate and securely store a UptimeRobot API key. Run without flags to paste the key at a masked prompt. Create an API key at ${API_KEY_DASHBOARD_URL}.`;
   static override flags = {
     'api-key': Flags.string({
       description: 'UptimeRobot API key to validate and save (prompted securely when omitted)',
@@ -22,7 +24,9 @@ export default class AuthLogin extends BaseCommand {
     const mode = detectInvocationMode(false);
     let apiKey = flags['api-key'];
     if (!apiKey && mode === 'human') {
-      apiKey = await promptSecret('Paste your UptimeRobot API key: ');
+      apiKey = await promptSecret(
+        `Create an API key at ${API_KEY_DASHBOARD_URL}\nPaste your UptimeRobot API key: `,
+      );
     }
     if (!apiKey) {
       this.error(

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command } from '@oclif/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runCli } from './helpers/run-cli.js';
 
 const keyring = vi.hoisted(() => new Map<string, string>());
 const keyringControl = vi.hoisted(() => ({ fail: false }));
@@ -240,6 +241,36 @@ describe('authentication', () => {
 
     expect(vi.mocked(promptSecret)).toHaveBeenCalledOnce();
     expect(keyring.get('com.uptimerobot.cli:default:api-key')).toBe('u123-typed');
+  });
+
+  it('tells the user where to create an API key before prompting for one', async () => {
+    const { promptSecret } = await import('../src/lib/invocation.js');
+    vi.mocked(promptSecret).mockResolvedValue('u123-typed');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 200 })),
+    );
+    const { default: Login } = await import('../src/commands/auth/login.js');
+
+    await Login.run([], { root: projectRoot });
+
+    expect(vi.mocked(promptSecret)).toHaveBeenCalledWith(
+      expect.stringContaining('https://dashboard.uptimerobot.com/integrations'),
+    );
+  });
+
+  it('tells the user where to create an API key in the command description', async () => {
+    const { default: Login } = await import('../src/commands/auth/login.js');
+
+    expect(Login.description).toContain('https://dashboard.uptimerobot.com/integrations');
+  });
+
+  it('tells the user where to create an API key in the auth topic help', async () => {
+    const result = await runCli(['auth', '--help']);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('https://dashboard.uptimerobot.com/integrations');
   });
 
   it('fails clearly when no API key can be resolved', async () => {
