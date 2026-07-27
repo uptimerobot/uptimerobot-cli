@@ -10,7 +10,7 @@ may change in minor releases.
 
 ## [Unreleased]
 
-## [0.1.1] - 2026-07-27
+## [0.1.2] - 2026-07-27
 
 ### Added
 
@@ -21,6 +21,8 @@ may change in minor releases.
 
 - `auth login` and the `auth` help topic now show where to create an API key,
   so first-time users know where to get one.
+- Monitor `interval` now accepts a minimum of 15 seconds (was 30), matching the
+  published API contract.
 
 ### Fixed
 
@@ -64,6 +66,6 @@ may change in minor releases.
 - Redirects are followed manually and the origin is re-checked at every hop
   before credentials are attached; cross-origin redirects are refused.
 
-[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.1...HEAD
-[0.1.1]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.0...v0.1.1
+[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.0...v0.1.2
 [0.1.0]: https://github.com/uptimerobot/uptimerobot-cli/releases/tag/v0.1.0
