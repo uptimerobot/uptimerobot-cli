@@ -242,6 +242,22 @@ describe('authentication', () => {
     expect(keyring.get('com.uptimerobot.cli:default:api-key')).toBe('u123-typed');
   });
 
+  it('tells the user where to create an API key before prompting for one', async () => {
+    const { promptSecret } = await import('../src/lib/invocation.js');
+    vi.mocked(promptSecret).mockResolvedValue('u123-typed');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 200 })),
+    );
+    const { default: Login } = await import('../src/commands/auth/login.js');
+
+    await Login.run([], { root: projectRoot });
+
+    expect(vi.mocked(promptSecret)).toHaveBeenCalledWith(
+      expect.stringContaining('https://dashboard.uptimerobot.com/integrations'),
+    );
+  });
+
   it('fails clearly when no API key can be resolved', async () => {
     const request = vi.fn(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', request);
