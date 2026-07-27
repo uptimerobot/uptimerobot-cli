@@ -1,0 +1,140 @@
+name: Release
+
+# Publishes @uptimerobot/cli to npm when a GitHub Release is published.
+#
+# Authentication is npm Trusted Publishing (OIDC): no tokens are stored
+# anywhere. npm verifies this workflow's identity and attaches a provenance
+# attestation that cryptographically links the published tarball to this
+# repository, commit, and workflow run.
+#
+# Release flow: bump the version and update CHANGELOG.md on `main`, then publish
+# a GitHub Release for tag vX.Y.Z. That event triggers this workflow.
+#
+# Build and publish are deliberately separate jobs. Dependency install and the
+# build run in `build`, which has NO id-token, so no third-party code executes
+# while the OIDC publish credential exists. Only `publish` holds id-token:write,
+# and it installs nothing — it publishes the prebuilt artifact with scripts off.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22.x, 24.x]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.26.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm openapi:check
+
+  build:
+    name: Build release artifact
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Release commit must be on main
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "${{ github.sha }}" origin/main \
+            || { echo "::error::release commit ${{ github.sha }} is not on main; releases must be cut from main"; exit 1; }
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.26.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.x
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Tag must match package.json version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          ver="${TAG#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$ver" != "$pkg" ]; then
+            echo "::error::release tag $TAG does not match package.json version $pkg"
+            exit 1
+          fi
+
+      - run: pnpm build
+
+      - name: Upload built dist
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest # trusted publishing requires a cloud-hosted runner
+    environment: release # approval gate; add reviewers in repo settings
+    permissions:
+      id-token: write # OIDC: trusted publishing + provenance
+      contents: read
+    steps:
+      # Only the repo's own tracked files (package.json, bin/, README, LICENSE,
+      # openapi/) plus the prebuilt dist/ artifact are present here. No
+      # dependency install and no build run in this job, so nothing untrusted
+      # executes while the OIDC publish credential is live.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.x # >= 22.14 required for OIDC
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1. Pin it so a toolchain bump can't
+      # break release day; bump this line deliberately.
+      - name: Pin an OIDC-capable npm
+        run: npm install -g npm@11.6.2 --ignore-scripts
+
+      - name: Download built dist
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist
+
+      # --ignore-scripts skips the prepack build (dist/ is already built and
+      # downloaded above). No NODE_AUTH_TOKEN: OIDC supplies a short-lived,
+      # workflow-scoped credential and attaches provenance automatically;
+      # publishConfig already forces public access and the npmjs registry.
+      - name: Publish to npm
+        run: npm publish --provenance --access public --ignore-scripts
