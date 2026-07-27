@@ -258,6 +258,12 @@ describe('authentication', () => {
     );
   });
 
+  it('tells the user where to create an API key in the command description', async () => {
+    const { default: Login } = await import('../src/commands/auth/login.js');
+
+    expect(Login.description).toContain('https://dashboard.uptimerobot.com/integrations');
+  });
+
   it('fails clearly when no API key can be resolved', async () => {
     const request = vi.fn(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', request);
