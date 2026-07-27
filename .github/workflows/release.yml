@@ -121,7 +121,7 @@ jobs:
       # Trusted publishing needs npm >= 11.5.1. Pin it so a toolchain bump can't
       # break release day; bump this line deliberately.
       - name: Pin an OIDC-capable npm
-        run: npm install -g npm@11.6.2
+        run: npm install -g npm@11.6.2 --ignore-scripts
 
       - name: Download built dist
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
