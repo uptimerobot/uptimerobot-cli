@@ -10,6 +10,11 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `uptimerobot help` prints the same command overview as `uptimerobot --help`,
+  which previously failed with `INVALID_INPUT`.
+
 ## [0.1.0] - 2026-07-24
 
 ### Added

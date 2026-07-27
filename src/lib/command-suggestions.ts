@@ -10,6 +10,7 @@ export const HANDWRITTEN_COMMANDS = [
   'auth logout',
   'auth status',
   'auth whoami',
+  'help',
   'monitors schema',
   'user get',
 ] as const;
