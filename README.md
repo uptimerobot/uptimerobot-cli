@@ -94,6 +94,7 @@ uptimerobot monitors delete 797054213 --confirm
 Help is available at every level of the command tree:
 
 ```sh
+uptimerobot help
 uptimerobot monitors --help
 uptimerobot monitors create --help
 uptimerobot monitors create keyword --help
