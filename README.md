@@ -144,13 +144,16 @@ Dry-run output contains the final method, path, content type, and body. Recogniz
 
 Interactive terminals use tables by default. Piped, redirected, and agent-driven commands use normalized JSON by default.
 
-| Option           | Output                           |
-| ---------------- | -------------------------------- |
-| `--json`         | Normalized JSON                  |
-| `--format jsonl` | One normalized resource per line |
-| `--format table` | Human-readable table             |
-| `--format plain` | Headerless, tab-separated rows   |
-| `--raw`          | Untouched API response as JSON   |
+| Option             | Output                               |
+| ------------------ | ------------------------------------ |
+| `--json`           | Normalized JSON                      |
+| `--format jsonl`   | One normalized resource per line     |
+| `--format table`   | Human-readable table                 |
+| `--format plain`   | Headerless, tab-separated rows       |
+| `--raw`            | Untouched API response as JSON       |
+| `--reveal-secrets` | Credential-like fields shown in full |
+
+Recognizable credential fields in a response, such as `httpPassword`, print as `[REDACTED]` in every format, and a stderr notice names what was hidden. Pass `--reveal-secrets` to print the values instead. `--raw` skips redaction along with the rest of normalization.
 
 Set `UPTIMEROBOT_OUTPUT` to `json`, `jsonl`, `table`, or `plain` to choose a default. Use `--agent` or `UPTIMEROBOT_AGENT=1` to identify agent execution explicitly. A truthy `CI` environment variable identifies CI execution independently.
 

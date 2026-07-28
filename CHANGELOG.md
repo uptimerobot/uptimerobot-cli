@@ -14,12 +14,19 @@ may change in minor releases.
 
 - `uptimerobot skills install` confirms and launches the external `npx skills`
   installer for the UptimeRobot AI skill collection.
+- `--reveal-secrets` prints credential fields in a response instead of
+  redacting them.
 - `uptimerobot help <command-or-topic>` prints that command's or topic's help,
   matching `uptimerobot <command-or-topic> --help`. It previously failed with
   `INVALID_INPUT`.
 
 ### Fixed
 
+- Recognizable credential fields in a response, such as `httpPassword`, are
+  redacted in JSON, JSONL, table, and plain output; they previously printed in
+  cleartext, so credentials reached CI logs and agent transcripts. A stderr
+  notice names the redacted fields. `--raw` stays unredacted as an explicit
+  escape hatch.
 - Unknown-command errors name the command the way the CLI accepts it. A miss
   such as `uptimerobot monitors lst` reported `command monitors:lst not found`,
   suggesting a colon syntax the CLI does not accept, in both machine and human
