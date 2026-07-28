@@ -49,6 +49,12 @@ may change in minor releases.
   such as `uptimerobot monitors lst` reported `command monitors:lst not found`,
   suggesting a colon syntax the CLI does not accept, in both machine and human
   output.
+- `uptimerobot monitors --help` describes the `monitors create` topic as
+  "Create a monitor of a given type" instead of borrowing the summary of its
+  first subcommand ("Create a monitor (API)"), which made the topic look like
+  it only created API monitors. `monitors stats response-time` is now described
+  explicitly too, so `monitors stats --help` distinguishes the topic from the
+  command of the same name.
 
 ## [0.2.0] - 2026-07-28
 
