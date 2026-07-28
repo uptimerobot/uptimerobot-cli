@@ -10,6 +10,11 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `uptimerobot skills install` confirms and launches the external `npx skills`
+  installer for the UptimeRobot AI skill collection.
+
 ### Fixed
 
 - `monitors bulk pause`, `monitors bulk start`, and `monitors bulk update` now

@@ -12,6 +12,7 @@ export const HANDWRITTEN_COMMANDS = [
   'auth whoami',
   'help',
   'monitors schema',
+  'skills install',
 ] as const;
 const commands = [
   ...Object.keys(operations).map((commandId) => commandId.replaceAll(':', ' ')),
