@@ -139,6 +139,13 @@ export interface SeedContextSummary {
   heartbeats: number;
   /** Count per reason, e.g. { loopback: 3 }. Reasons that did not fire are absent. */
   rejectedByReason: Record<string, number>;
+  /**
+   * True when a scanner stopped at its budget, so the lists below are a prefix
+   * of what the repository holds rather than all of it. A truncated scan that
+   * reads as complete is worse than no scan: it turns "nothing else to monitor"
+   * into a claim nobody checked.
+   */
+  truncated: boolean;
 }
 
 /**
@@ -181,12 +188,16 @@ export async function scanRepository(
   repoRoot: string,
   options: ScanRepositoryOptions = {},
 ): Promise<SeedContext> {
+  let truncated = false;
+  const onTruncated = (): void => {
+    truncated = true;
+  };
   const [containers, routes, scheduled] = await Promise.all([
     scanContainers(repoRoot, options.containers ?? {}),
-    scanRoutes(repoRoot, options.routes ?? {}),
-    scanScheduled(repoRoot, options.scheduled ?? {}),
+    scanRoutes(repoRoot, { ...options.routes, onTruncated }),
+    scanScheduled(repoRoot, { ...options.scheduled, onTruncated }),
   ]);
-  return buildSeedContext(repoRoot, { containers, routes, scheduled });
+  return buildSeedContext(repoRoot, { containers, routes, scheduled }, { truncated });
 }
 
 /**
@@ -194,7 +205,11 @@ export async function scanRepository(
  * are already in hand. Exposed so callers and tests can exercise the rules
  * without a repository on disk.
  */
-export function buildSeedContext(repoRoot: string, findings: ScanFindings): SeedContext {
+export function buildSeedContext(
+  repoRoot: string,
+  findings: ScanFindings,
+  options: { truncated?: boolean } = {},
+): SeedContext {
   const accepted: ScanCandidate[] = [];
   const rejected: RejectedCandidate[] = [];
   const heartbeats: HeartbeatCandidate[] = [];
@@ -263,6 +278,7 @@ export function buildSeedContext(repoRoot: string, findings: ScanFindings): Seed
       rejected: uniqueRejected.length,
       heartbeats: heartbeats.length,
       rejectedByReason: countReasons(uniqueRejected),
+      truncated: options.truncated ?? false,
     },
     accepted: uniqueAccepted,
     rejected: uniqueRejected,
@@ -938,6 +954,15 @@ export function formatSeedContext(context: SeedContext): string {
       summary.heartbeats === 1 ? 'job' : 'jobs'
     }.`,
   ];
+
+  if (summary.truncated) {
+    lines.push(
+      '',
+      '> **This scan stopped early at its file budget, so the lists below are partial.**',
+      '> Treat "nothing else here" as unproven: search the rest of the tree yourself, and',
+      '> say in the report that the scan was truncated.',
+    );
+  }
 
   const groups: readonly { heading: string; target: CandidateTarget }[] = [
     { heading: 'URLs (check the host is public, then monitor as written)', target: 'url' },

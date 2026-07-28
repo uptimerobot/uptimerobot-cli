@@ -45,9 +45,18 @@ export interface ScanScheduledOptions {
   maxDepth?: number;
   /** Bytes a single file may hold before the scan declines to read it. Default 524288 (512 KiB). */
   maxFileBytes?: number;
-  /** Files the walk visits — read or not — before it stops. Default 5000. */
+  /** Files the walk can classify as job-bearing before it stops. Default 20000. */
   maxFiles?: number;
+  /** Called once if either budget ran out, so the caller can say the list is partial. */
+  onTruncated?: () => void;
 }
+
+/**
+ * How many directory entries the walk may examine per candidate it may keep.
+ * The file budget bounds reading; this bounds traversal, so a tree full of
+ * files nothing can classify cannot be walked without limit.
+ */
+const ENTRIES_PER_CANDIDATE = 20;
 
 interface ScanLimits {
   maxDepth: number;
@@ -58,7 +67,9 @@ interface ScanLimits {
 const DEFAULT_LIMITS: ScanLimits = {
   maxDepth: 16,
   maxFileBytes: 512 * 1024,
-  maxFiles: 5000,
+  // Sized so a large monorepo is covered end to end rather than truncated
+  // silently; see the same constant in ./routes.ts.
+  maxFiles: 20_000,
 };
 
 /**
@@ -90,7 +101,10 @@ export async function scanScheduled(
   const limits: ScanLimits = { ...DEFAULT_LIMITS, ...definedOptions(options) };
   const findings: ScheduledFinding[] = [];
 
-  for (const absolute of await collectFiles(repoRoot, limits)) {
+  const walked = await collectFiles(repoRoot, limits);
+  if (walked.truncated) options.onTruncated?.();
+
+  for (const absolute of walked.files) {
     const path = repoRelativePath(repoRoot, absolute);
     const kind = classifyFile(path);
     if (kind === undefined) continue;
@@ -133,8 +147,12 @@ function scanFile(kind: FileKind, path: string, text: string): readonly Schedule
  * Symbolic links are never followed: a link is the only cheap way for a
  * repository to point the scan outside itself or into a cycle.
  */
-async function collectFiles(repoRoot: string, limits: ScanLimits): Promise<readonly string[]> {
+async function collectFiles(
+  repoRoot: string,
+  limits: ScanLimits,
+): Promise<{ files: readonly string[]; truncated: boolean }> {
   const files: string[] = [];
+  let entryBudget = limits.maxFiles * ENTRIES_PER_CANDIDATE;
 
   const walk = async (directory: string, depth: number): Promise<void> => {
     let entries;
@@ -144,7 +162,8 @@ async function collectFiles(repoRoot: string, limits: ScanLimits): Promise<reado
       return;
     }
     for (const entry of [...entries].sort((left, right) => compare(left.name, right.name))) {
-      if (files.length >= limits.maxFiles) return;
+      if (files.length >= limits.maxFiles || entryBudget <= 0) return;
+      entryBudget -= 1;
       if (entry.isSymbolicLink()) continue;
       const absolute = join(directory, entry.name);
       if (entry.isDirectory()) {
@@ -156,12 +175,16 @@ async function collectFiles(repoRoot: string, limits: ScanLimits): Promise<reado
         await walk(absolute, depth + 1);
         continue;
       }
-      if (entry.isFile()) files.push(absolute);
+      if (!entry.isFile()) continue;
+      // Only a file something can classify is worth the budget. Charging every
+      // file let a tree of assets exhaust it before the walk reached a crontab.
+      if (classifyFile(repoRelativePath(repoRoot, absolute)) === undefined) continue;
+      files.push(absolute);
     }
   };
 
   await walk(repoRoot, 0);
-  return files;
+  return { files, truncated: files.length >= limits.maxFiles || entryBudget <= 0 };
 }
 
 function repoRelativePath(repoRoot: string, absolute: string): string {

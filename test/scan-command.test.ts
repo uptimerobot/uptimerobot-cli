@@ -89,6 +89,7 @@ describe('uptimerobot scan', () => {
       heartbeats: 1,
       rejected: 2,
       rejectedByReason: { 'container-internal': 1, loopback: 1 },
+      truncated: false,
     });
     // `/healthz` is recovered from the loopback compose healthcheck: the URL
     // stays skipped, the path it declares does not.

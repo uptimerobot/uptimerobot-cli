@@ -30,6 +30,59 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
 
+describe('scanScheduled — the file budget', () => {
+  /** Inert files that sort before anything a job could live in. */
+  function assets(count: number): Record<string, string> {
+    const files: Record<string, string> = {};
+    for (let index = 0; index < count; index += 1) {
+      files[`assets/aaa-${String(index).padStart(3, '0')}.txt`] = 'not a job';
+    }
+    return files;
+  }
+
+  it('spends the budget on files it can classify, not on assets', async () => {
+    const root = await makeRepo({
+      ...assets(40),
+      'zzz-deploy/crontab': '0 3 * * * /srv/app/bin/nightly\n',
+    });
+
+    const findings = await scanScheduled(root, { maxFiles: 5 });
+
+    expect(findings.map((finding) => finding.value)).toEqual(['0 3 * * *']);
+  });
+
+  it('reports truncation when the candidate budget runs out', async () => {
+    const files: Record<string, string> = {};
+    for (let index = 0; index < 10; index += 1) {
+      files[`jobs/crontab.${index}`] = `${index} 3 * * * /srv/app/bin/job-${index}\n`;
+    }
+    const root = await makeRepo(files);
+    let truncated = false;
+
+    await scanScheduled(root, {
+      maxFiles: 3,
+      onTruncated: () => {
+        truncated = true;
+      },
+    });
+
+    expect(truncated).toBe(true);
+  });
+
+  it('reports no truncation when the whole tree fits', async () => {
+    const root = await makeRepo({ ...assets(20), crontab: '0 3 * * * /srv/app/bin/nightly\n' });
+    let truncated = false;
+
+    await scanScheduled(root, {
+      onTruncated: () => {
+        truncated = true;
+      },
+    });
+
+    expect(truncated).toBe(false);
+  });
+});
+
 describe('scanScheduled — crontab files', () => {
   it('reads schedules, macros, and commands while ignoring comments and environment lines', async () => {
     const root = await makeRepo({

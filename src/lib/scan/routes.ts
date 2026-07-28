@@ -66,13 +66,38 @@ const HEALTH_SEGMENTS: ReadonlySet<string> = new Set([
 export interface ScanRoutesOptions {
   /** Bytes. Files larger than this are never read. Defaults to 512 KiB. */
   maxFileBytes?: number;
-  /** Files the walk may visit before it stops. Defaults to 5000. */
+  /** Files an extractor could read before the walk stops. Defaults to 20000. */
   maxFiles?: number;
+  /** Called once if either budget ran out, so the caller can say the list is partial. */
+  onTruncated?: () => void;
 }
 
-/** A whole-repository walk has to stay cheap enough to run inside `init`. */
-const DEFAULT_MAX_FILES = 5000;
+/**
+ * A whole-repository walk has to stay cheap enough to run inside `init`.
+ *
+ * Sized against a large real monorepo, where the whole tree fits inside this
+ * budget: covering it costs about two seconds and finds ~40% more candidates
+ * than the 5000 this started at, which truncated silently. Two seconds once,
+ * during setup, is worth a scan that reaches the end of the repository.
+ */
+const DEFAULT_MAX_FILES = 20_000;
 const DEFAULT_MAX_FILE_BYTES = 512 * 1024;
+
+/**
+ * How many directory entries the walk may look at per candidate it is allowed
+ * to keep. The file budget bounds the expensive half — opening and matching —
+ * but on its own it would let a repository of a million images be traversed in
+ * full, because none of them are ever charged for. This bounds the cheap half
+ * too, generously enough that only an enormous tree reaches it.
+ */
+const ENTRIES_PER_CANDIDATE = 20;
+
+interface WalkBudget {
+  /** Candidate files the walk may still queue. */
+  files: number;
+  /** Directory entries the walk may still examine. */
+  entries: number;
+}
 
 /**
  * Directories that never hold the routes a project serves. The walk also skips
@@ -157,10 +182,12 @@ export async function scanRoutes(
   options: ScanRoutesOptions = {},
 ): Promise<readonly RouteFinding[]> {
   const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
-  const budget = { remaining: Math.max(0, options.maxFiles ?? DEFAULT_MAX_FILES) };
+  const maxFiles = Math.max(0, options.maxFiles ?? DEFAULT_MAX_FILES);
+  const budget: WalkBudget = { files: maxFiles, entries: maxFiles * ENTRIES_PER_CANDIDATE };
 
   const paths: string[] = [];
   await collectFiles(repoRoot, budget, paths);
+  if (budget.files <= 0 || budget.entries <= 0) options.onTruncated?.();
 
   const findings: RouteFinding[] = [];
   for (const path of paths) {
@@ -178,12 +205,8 @@ export async function scanRoutes(
  * same tail off the same tree. Symlinks are never followed: a link can point
  * anywhere, including outside the repository.
  */
-async function collectFiles(
-  directory: string,
-  budget: { remaining: number },
-  files: string[],
-): Promise<void> {
-  if (budget.remaining <= 0) return;
+async function collectFiles(directory: string, budget: WalkBudget, files: string[]): Promise<void> {
+  if (budget.files <= 0 || budget.entries <= 0) return;
 
   let entries;
   try {
@@ -194,7 +217,8 @@ async function collectFiles(
 
   entries.sort((first, second) => compareStrings(first.name, second.name));
   for (const entry of entries) {
-    if (budget.remaining <= 0) return;
+    if (budget.files <= 0 || budget.entries <= 0) return;
+    budget.entries -= 1;
     if (entry.isSymbolicLink()) continue;
 
     const path = join(directory, entry.name);
@@ -208,12 +232,38 @@ async function collectFiles(
     }
     if (!entry.isFile()) continue;
 
-    budget.remaining -= 1;
     // Dotenv-style files are excluded here, before anything can open them, so
     // the scan never holds a secret value in memory.
     if (isDotenvFile(entry.name)) continue;
+    // Charged only for files an extractor could actually read. Charging every
+    // file instead let an asset-heavy tree — images, locales, generated JSON —
+    // exhaust the budget before the walk ever reached the source.
+    if (!isRouteCandidateFile(entry.name)) continue;
+    budget.files -= 1;
     files.push(path);
   }
+}
+
+/**
+ * Whether any extractor could read this file, judged from its name alone.
+ *
+ * A deliberate superset of what {@link collectFromFile} goes on to accept: the
+ * Next.js router checks need the file's directory, which the walk does not have
+ * here, so every `.tsx` passes rather than only those under a `pages` root.
+ * Being a superset is what keeps this a pure budgeting question — nothing is
+ * excluded here that the dispatch would have kept.
+ */
+function isRouteCandidateFile(name: string): boolean {
+  // A colocated test declares no real endpoint, and the dispatch drops it
+  // outright, so it should not cost budget either.
+  if (TEST_FILENAME.test(name)) return false;
+  if (NEXT_APP_FILENAME.test(name)) return true;
+  if (name === 'urls.py' || name === 'routes.rb') return true;
+
+  const extension = extname(name);
+  return (
+    NEXT_ROUTE_EXTENSIONS.has(extension) || SCRIPT_EXTENSIONS.has(extension) || extension === '.php'
+  );
 }
 
 /** Runs every extractor that applies to one file, appending to `findings`. */

@@ -112,6 +112,64 @@ describe('isHealthPath', () => {
   );
 });
 
+describe('scanRoutes: the file budget', () => {
+  /** `count` inert files that sort before anything a route could live in. */
+  function assets(count: number): Record<string, string> {
+    const files: Record<string, string> = {};
+    for (let index = 0; index < count; index += 1) {
+      files[`assets/aaa-${String(index).padStart(3, '0')}.txt`] = 'not a route';
+    }
+    return files;
+  }
+
+  // The walk is alphabetical, so an asset-heavy repository used to spend the
+  // whole budget before reaching the source tree and report "nothing here".
+  it('spends the budget on files an extractor could read, not on assets', async () => {
+    const root = await writeRepository({
+      ...assets(40),
+      'zzz-app/server.ts': "app.get('/health', handler);\n",
+    });
+
+    expect(summarize(await scanRoutes(root, { maxFiles: 5 }))).toEqual([
+      'express /health zzz-app/server.ts:1 method=GET',
+    ]);
+  });
+
+  it('reports truncation when the candidate budget runs out', async () => {
+    const files: Record<string, string> = {};
+    for (let index = 0; index < 10; index += 1) {
+      files[`src/server-${index}.ts`] = `app.get('/r${index}', handler);\n`;
+    }
+    const root = await writeRepository(files);
+    let truncated = false;
+
+    await scanRoutes(root, {
+      maxFiles: 3,
+      onTruncated: () => {
+        truncated = true;
+      },
+    });
+
+    expect(truncated).toBe(true);
+  });
+
+  it('reports no truncation when the whole tree fits', async () => {
+    const root = await writeRepository({
+      ...assets(20),
+      'src/server.ts': "app.get('/health', handler);\n",
+    });
+    let truncated = false;
+
+    await scanRoutes(root, {
+      onTruncated: () => {
+        truncated = true;
+      },
+    });
+
+    expect(truncated).toBe(false);
+  });
+});
+
 describe('scanRoutes: Next.js App Router', () => {
   it('derives paths from the directory tree, including every non-path segment', async () => {
     const root = await writeRepository(NEXT_APP_REPOSITORY);

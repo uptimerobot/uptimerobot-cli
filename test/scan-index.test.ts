@@ -563,6 +563,7 @@ describe('the seed-context document', () => {
       rejected: 1,
       heartbeats: 1,
       rejectedByReason: { loopback: 1 },
+      truncated: false,
     });
     // urls, then paths, then ports.
     expect(context.accepted.map((candidate) => candidate.target)).toEqual(['url', 'path', 'port']);
@@ -728,6 +729,33 @@ describe('health endpoint ranking', () => {
  * is the repository stating outright how the service proves it is up, and that
  * survives the host being unreachable.
  */
+describe('truncation is never silent', () => {
+  it('reports a complete walk as complete', async () => {
+    const root = await makeRepo({ 'src/server.ts': "app.get('/health', handler);\n" });
+    const context = await scanRepository(root);
+
+    expect(context.summary.truncated).toBe(false);
+    expect(formatSeedContext(context)).not.toContain('stopped early');
+  });
+
+  it('flags a walk that hit its budget, and says so in the document', async () => {
+    const files: Record<string, string> = {};
+    for (let index = 0; index < 10; index += 1) {
+      files[`src/server-${index}.ts`] = `app.get('/r${index}', handler);\n`;
+    }
+    const root = await makeRepo(files);
+
+    const context = await scanRepository(root, { routes: { maxFiles: 3 } });
+
+    expect(context.summary.truncated).toBe(true);
+    expect(formatSeedContext(context)).toContain('stopped early');
+  });
+
+  it('is false by default when findings are supplied directly', () => {
+    expect(seed({ routes: [route('/health')] }).summary.truncated).toBe(false);
+  });
+});
+
 describe('health path recovered from an unreachable healthcheck', () => {
   it('surfaces the path when the healthcheck host is loopback', () => {
     const context = seed({ containers: [healthcheck('http://localhost:3000/api/health')] });
