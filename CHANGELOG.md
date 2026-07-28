@@ -10,6 +10,23 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `--dry-run` on `status-pages create` and `status-pages update`. Both compile a
+  JSON request body, so the flag was missing only because it was gated on the
+  documented content type rather than on what the command can actually send.
+
+### Fixed
+
+- `status-pages create` and `status-pages update` now send `application/json`
+  unless `--file` is passed. They previously always sent `multipart/form-data`,
+  which flattened `monitorIds` and `tagIds` into repeated scalar fields — a
+  single ID was rejected with `monitorIds must be an array` — and collapsed
+  `customSettings` into one JSON string field, so pages were created empty and
+  unstyled.
+- With `--file`, arrays are now sent as `key[]` and nested objects as dotted
+  paths, so a logo or icon upload no longer corrupts the rest of the body.
+
 ## [0.2.0] - 2026-07-28
 
 ### Removed

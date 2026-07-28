@@ -1,32 +1,20 @@
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import type { OperationInput } from '../runtime/types.js';
+import { encodeFormBody, type FormFilePart } from './form-body.js';
 import { assignPath, isPlainRecord, valueAtPath } from './objects.js';
 import {
   cliRequestDefaults,
   curatedRequestBodyFields,
   requestCurationIssue,
 } from './request-curation.js';
+import { RequestInputError } from './request-input-error.js';
 import type {
   FlagValues,
   OperationBodyField,
   OperationDefinition,
   OperationValueSchema,
 } from './types.js';
-
-export class RequestInputError extends Error {
-  readonly code = 'INVALID_INPUT';
-  readonly exitCode = 2;
-
-  constructor(
-    readonly path: string,
-    readonly expected: string,
-    message = `Invalid ${path}: expected ${expected}.`,
-  ) {
-    super(message);
-    this.name = 'RequestInputError';
-  }
-}
 
 export function buildUrl(operation: OperationDefinition, input: OperationInput, apiUrl: URL): URL {
   let path = operation.path;
@@ -94,19 +82,23 @@ export async function buildRequestBody(
   applyRequestCuration(operation, objectBody);
   validateBodyFields(bodyFields, objectBody);
 
-  if (operation.contentTypes.includes('multipart/form-data')) {
-    const form = new FormData();
-    appendFormValues(form, objectBody);
-    for (const file of files) {
-      const [field, path] = splitAssignment(file, '--file');
-      const bytes = await readFile(path);
-      form.append(field, new Blob([bytes]), basename(path));
-    }
-    return form;
-  }
+  // Multipart exists only to carry file uploads. The operations that document
+  // it accept JSON too, and JSON is the only encoding that keeps numeric types,
+  // nested objects, and empty arrays intact — so it is the default.
+  if (files.length > 0) return encodeFormBody(objectBody, await readFileParts(files));
 
   headers.set('content-type', 'application/json');
   return JSON.stringify(objectBody);
+}
+
+async function readFileParts(files: readonly string[]): Promise<FormFilePart[]> {
+  return Promise.all(
+    files.map(async (file) => {
+      const [field, path] = splitAssignment(file, '--file');
+      const bytes = await readFile(path);
+      return { content: new Blob([bytes]), field, filename: basename(path) };
+    }),
+  );
 }
 
 function applyRequestCuration(operation: OperationDefinition, body: Record<string, unknown>): void {
@@ -115,17 +107,6 @@ function applyRequestCuration(operation: OperationDefinition, body: Record<strin
   }
   const issue = requestCurationIssue(operation, body);
   if (issue) throw new RequestInputError(issue.path, issue.expected);
-}
-
-function appendFormValues(form: FormData, values: Record<string, unknown>): void {
-  for (const [key, value] of Object.entries(values)) {
-    if (Array.isArray(value)) value.forEach((item) => form.append(key, stringifyFormValue(item)));
-    else if (value !== undefined && value !== null) form.append(key, stringifyFormValue(value));
-  }
-}
-
-function stringifyFormValue(value: unknown): string {
-  return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
 async function readBodyFlag(value: string): Promise<unknown> {
