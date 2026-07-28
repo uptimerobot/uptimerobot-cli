@@ -1,10 +1,7 @@
 import { createServer } from 'node:http';
-import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { runInteractiveCli } from './helpers/run-interactive-cli.js';
 import { cliEnvironment, cliVersion, runCli } from './helpers/run-cli.js';
-
-const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 
 describe('destructive actions', () => {
   it('compiles a destructive JSON request with --dry-run without confirmation or authentication', async () => {
@@ -109,14 +106,18 @@ describe('destructive actions', () => {
       if (!address || typeof address === 'string') throw new Error('Test server did not bind');
 
       try {
-        const result = await runInteractiveCli(['monitors', 'delete', '42'], 'n\n', {
-          UPTIMEROBOT_AGENT: '0',
-          UPTIMEROBOT_API_KEY: 'u123-secret',
-          UPTIMEROBOT_DEV_API_URL: `http://127.0.0.1:${address.port}/v3`,
-        });
+        const result = await runInteractiveCli(
+          ['monitors', 'delete', '42'],
+          [{ input: 'n\n', waitFor: 'Continue? [y/N] ' }],
+          {
+            UPTIMEROBOT_AGENT: '0',
+            UPTIMEROBOT_API_KEY: 'u123-secret',
+            UPTIMEROBOT_DEV_API_URL: `http://127.0.0.1:${address.port}/v3`,
+          },
+        );
 
         expect({
-          prompted: result.includes('Delete a monitor. Continue? [y/N]'),
+          prompted: result.output.includes('Delete a monitor. Continue? [y/N]'),
           requestCount,
         }).toEqual({
           prompted: true,
@@ -128,47 +129,3 @@ describe('destructive actions', () => {
     },
   );
 });
-
-async function runInteractiveCli(
-  args: string[],
-  input: string,
-  env: Record<string, string>,
-): Promise<string> {
-  const command = [process.execPath, 'bin/run.js', ...args];
-  const executable = process.platform === 'darwin' ? '/usr/bin/expect' : 'script';
-  const scriptArgs =
-    process.platform === 'darwin'
-      ? [
-          '-c',
-          `set timeout 10\nspawn -noecho ${command.map(tclQuote).join(' ')}\nexpect -re {Continue\\? \\[y/N\\]}\nsend -- "${input.replace('\n', '\\r')}"\nexpect eof`,
-        ]
-      : ['-q', '-e', '-c', command.map(shellQuote).join(' '), '/dev/null'];
-
-  return new Promise((resolve, reject) => {
-    const child = spawn(executable, scriptArgs, {
-      cwd: projectRoot,
-      env: { ...process.env, ...env },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    let output = '';
-    let answered = false;
-    child.stdout.setEncoding('utf8').on('data', (chunk) => {
-      output += chunk;
-      if (!answered && output.includes('[y/N]')) {
-        answered = true;
-        child.stdin.write(input);
-      }
-    });
-    child.stderr.setEncoding('utf8').on('data', (chunk) => (output += chunk));
-    child.once('error', reject);
-    child.once('close', () => resolve(output));
-  });
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-function tclQuote(value: string): string {
-  return `{${value.replaceAll('\\', '\\\\').replaceAll('}', '\\}')}}`;
-}

@@ -116,6 +116,9 @@
           }
         }
       },
+      "skills": {
+        "description": "Install UptimeRobot AI skills"
+      },
       "status-pages": {
         "description": "Manage public status pages",
         "subtopics": {

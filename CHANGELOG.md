@@ -12,6 +12,8 @@ may change in minor releases.
 
 ### Added
 
+- `uptimerobot skills install` confirms and launches the external `npx skills`
+  installer for the UptimeRobot AI skill collection.
 - `--reveal-secrets` prints credential fields in a response instead of
   redacting them.
 
