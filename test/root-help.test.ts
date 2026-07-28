@@ -26,4 +26,10 @@ describe('root help', () => {
 
     expect(result.stdout.replace(/\s+/g, ' ')).toContain('help Display help for uptimerobot');
   });
+
+  it('lists AI skill installation in the overview', async () => {
+    const result = await runCli(['--help']);
+
+    expect(result.stdout.replace(/\s+/g, ' ')).toContain('skills Install UptimeRobot AI skills');
+  });
 });
