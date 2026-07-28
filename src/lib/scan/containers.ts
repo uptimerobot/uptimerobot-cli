@@ -18,6 +18,7 @@ import { readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import { LineCounter, isMap, isNode, isScalar, isSeq, parseDocument } from 'yaml';
 import type { ScanFinding } from './finding.js';
+import { DEFAULT_MAX_FILE_BYTES, compareStrings as compareText } from './support.js';
 
 export type { ScanEvidence } from './finding.js';
 
@@ -49,7 +50,7 @@ export interface ContainerScanLimits {
 export const DEFAULT_CONTAINER_SCAN_LIMITS: ContainerScanLimits = {
   maxDepth: 8,
   maxEntries: 5_000,
-  maxFileBytes: 512 * 1_024,
+  maxFileBytes: DEFAULT_MAX_FILE_BYTES,
   maxFiles: 200,
 };
 
@@ -661,8 +662,4 @@ function compareFindings(left: ContainerFinding, right: ContainerFinding): numbe
     compareText(left.value, right.value) ||
     compareText(left.kind, right.kind)
   );
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }

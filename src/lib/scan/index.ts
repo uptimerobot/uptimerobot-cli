@@ -28,6 +28,7 @@
 import { isIP, isIPv6 } from 'node:net';
 import { type ContainerScanLimits, scanContainers } from './containers.js';
 import type { ScanEvidence, ScanFinding } from './finding.js';
+import { compareStrings as compare } from './support.js';
 import { type ScanRoutesOptions, isHealthPath, scanRoutes } from './routes.js';
 import { type ScanScheduledOptions, scanScheduled } from './scheduled.js';
 
@@ -924,11 +925,6 @@ function compareHeartbeats(left: HeartbeatCandidate, right: HeartbeatCandidate):
 
 function compareEvidence(left: ScanEvidence, right: ScanEvidence): number {
   return compare(left.file, right.file) || left.line - right.line;
-}
-
-/** Byte-order comparison; locale-aware sorting would not be reproducible. */
-function compare(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 // --- Rendering -------------------------------------------------------------

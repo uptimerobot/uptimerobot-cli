@@ -12,8 +12,15 @@
  */
 
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { extname, join, relative, sep } from 'node:path';
+import { extname, join } from 'node:path';
 import type { ScanFinding } from './finding.js';
+import {
+  DEFAULT_MAX_CANDIDATE_FILES,
+  DEFAULT_MAX_FILE_BYTES,
+  ENTRIES_PER_CANDIDATE,
+  compareStrings,
+  repoRelativePath,
+} from './support.js';
 
 export type { ScanEvidence } from './finding.js';
 
@@ -72,26 +79,6 @@ export interface ScanRoutesOptions {
   /** Called once if either budget ran out, so the caller can say the list is partial. */
   onTruncated?: () => void;
 }
-
-/**
- * A whole-repository walk has to stay cheap enough to run inside `init`.
- *
- * Sized against a large real monorepo, where the whole tree fits inside this
- * budget: covering it costs about two seconds and finds ~40% more candidates
- * than the 5000 this started at, which truncated silently. Two seconds once,
- * during setup, is worth a scan that reaches the end of the repository.
- */
-const DEFAULT_MAX_FILES = 20_000;
-const DEFAULT_MAX_FILE_BYTES = 512 * 1024;
-
-/**
- * How many directory entries the walk may look at per candidate it is allowed
- * to keep. The file budget bounds the expensive half — opening and matching —
- * but on its own it would let a repository of a million images be traversed in
- * full, because none of them are ever charged for. This bounds the cheap half
- * too, generously enough that only an enormous tree reaches it.
- */
-const ENTRIES_PER_CANDIDATE = 20;
 
 interface WalkBudget {
   /** Candidate files the walk may still queue. */
@@ -211,7 +198,7 @@ export async function scanRoutes(
   options: ScanRoutesOptions = {},
 ): Promise<readonly RouteFinding[]> {
   const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
-  const maxFiles = Math.max(0, options.maxFiles ?? DEFAULT_MAX_FILES);
+  const maxFiles = Math.max(0, options.maxFiles ?? DEFAULT_MAX_CANDIDATE_FILES);
   const budget: WalkBudget = { files: maxFiles, entries: maxFiles * ENTRIES_PER_CANDIDATE };
 
   const paths: string[] = [];
@@ -704,10 +691,6 @@ async function readTextFile(path: string, maxFileBytes: number): Promise<string 
   }
 }
 
-function repoRelativePath(repoRoot: string, path: string): string {
-  return relative(repoRoot, path).split(sep).join('/');
-}
-
 function lineStartOffsets(text: string): number[] {
   const offsets = [0];
   for (let index = text.indexOf('\n'); index !== -1; index = text.indexOf('\n', index + 1)) {
@@ -762,10 +745,4 @@ function detailKey(detail: Readonly<Record<string, string>> | undefined): string
     .sort(([first], [second]) => compareStrings(first, second))
     .map(([key, value]) => `${key}=${value}`)
     .join(',');
-}
-
-/** Byte-order comparison; locale-aware sorting would not be reproducible. */
-function compareStrings(first: string, second: string): number {
-  if (first === second) return 0;
-  return first < second ? -1 : 1;
 }

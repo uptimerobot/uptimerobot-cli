@@ -1,8 +1,15 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { join, relative, sep } from 'node:path';
+import { join } from 'node:path';
 import { LineCounter, isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import { isSensitiveFieldName } from '../sensitive-fields.js';
 import type { ScanFinding } from './finding.js';
+import {
+  DEFAULT_MAX_CANDIDATE_FILES,
+  DEFAULT_MAX_FILE_BYTES,
+  ENTRIES_PER_CANDIDATE,
+  compareStrings as compare,
+  repoRelativePath,
+} from './support.js';
 
 /**
  * Finds the scheduled and recurring work committed into a repository, so
@@ -51,13 +58,6 @@ export interface ScanScheduledOptions {
   onTruncated?: () => void;
 }
 
-/**
- * How many directory entries the walk may examine per candidate it may keep.
- * The file budget bounds reading; this bounds traversal, so a tree full of
- * files nothing can classify cannot be walked without limit.
- */
-const ENTRIES_PER_CANDIDATE = 20;
-
 interface ScanLimits {
   maxDepth: number;
   maxFileBytes: number;
@@ -66,10 +66,10 @@ interface ScanLimits {
 
 const DEFAULT_LIMITS: ScanLimits = {
   maxDepth: 16,
-  maxFileBytes: 512 * 1024,
+  maxFileBytes: DEFAULT_MAX_FILE_BYTES,
   // Sized so a large monorepo is covered end to end rather than truncated
   // silently; see the same constant in ./routes.ts.
-  maxFiles: 20_000,
+  maxFiles: DEFAULT_MAX_CANDIDATE_FILES,
 };
 
 /**
@@ -189,10 +189,6 @@ async function collectFiles(
 
   await walk(repoRoot, 0);
   return { files, truncated: files.length >= limits.maxFiles || entryBudget <= 0 };
-}
-
-function repoRelativePath(repoRoot: string, absolute: string): string {
-  return relative(repoRoot, absolute).split(sep).join('/');
 }
 
 /**
@@ -976,11 +972,6 @@ function emptyToUndefined(value: string | undefined): string | undefined {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function compare(left: string, right: string): number {
-  if (left < right) return -1;
-  return left > right ? 1 : 0;
 }
 
 /** Drops explicit `undefined` values so they do not overwrite a default. */
