@@ -16,6 +16,9 @@ may change in minor releases.
   installer for the UptimeRobot AI skill collection.
 - `--reveal-secrets` prints credential fields in a response instead of
   redacting them.
+- `--dry-run` on `status-pages create` and `status-pages update`. Both compile a
+  JSON request body, so the flag was missing only because it was gated on the
+  documented content type rather than on what the command can actually send.
 - `uptimerobot help <command-or-topic>` prints that command's or topic's help,
   matching `uptimerobot <command-or-topic> --help`. It previously failed with
   `INVALID_INPUT`.
@@ -34,6 +37,14 @@ may change in minor releases.
   on stdout; the failed entries are now also reported in the error envelope's
   `details` on stderr, with exit code `1` (`BULK_FAILED`) when every item
   failed and `3` (`BULK_PARTIAL_FAILURE`) when only some did.
+- `status-pages create` and `status-pages update` now send `application/json`
+  unless `--file` is passed. They previously always sent `multipart/form-data`,
+  which flattened `monitorIds` and `tagIds` into repeated scalar fields — a
+  single ID was rejected with `monitorIds must be an array` — and collapsed
+  `customSettings` into one JSON string field, so pages were created empty and
+  unstyled.
+- With `--file`, arrays are now sent as `key[]` and nested objects as dotted
+  paths, so a logo or icon upload no longer corrupts the rest of the body.
 - Unknown-command errors name the command the way the CLI accepts it. A miss
   such as `uptimerobot monitors lst` reported `command monitors:lst not found`,
   suggesting a colon syntax the CLI does not accept, in both machine and human

@@ -19,7 +19,8 @@ import { enrichOperationParserError } from './operation-parser-error.js';
 import { redactSecrets } from './redact-secrets.js';
 import { curatedRequestBodyField, curatedRequestExampleBody } from './request-curation.js';
 import { synthesizedRequestExample } from './request-example.js';
-import { buildRequestBody, buildUrl, RequestInputError } from './request.js';
+import { buildRequestBody, buildUrl } from './request.js';
+import { RequestInputError } from './request-input-error.js';
 import { redactRequestPreview } from './request-preview.js';
 import type {
   FlagValues,
@@ -51,14 +52,13 @@ export function createOperationCommand(
             description: 'JSON request body, @file, or - for stdin',
             helpValue: '<json|@file|->',
           }),
-          ...(operation.contentTypes.includes('application/json')
-            ? {
-                'dry-run': Flags.boolean({
-                  description:
-                    'Compile and validate the request as JSON without authentication or networking',
-                }),
-              }
-            : {}),
+          // Every operation with a request body compiles that body as JSON
+          // unless --file forces multipart, so --dry-run is always offered
+          // here; the guard in run() rejects the multipart case.
+          'dry-run': Flags.boolean({
+            description:
+              'Compile and validate the request as JSON without authentication or networking',
+          }),
           ...(operation.contentTypes.includes('multipart/form-data')
             ? {
                 file: Flags.string({
