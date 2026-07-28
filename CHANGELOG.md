@@ -10,6 +10,8 @@ may change in minor releases.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-28
+
 ### Removed
 
 - The `user get` alias. Use `uptimerobot user me` instead — `user get` was a
@@ -71,6 +73,7 @@ may change in minor releases.
 - Redirects are followed manually and the origin is re-checked at every hop
   before credentials are attached; cross-origin redirects are refused.
 
-[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.0...v0.1.2
 [0.1.0]: https://github.com/uptimerobot/uptimerobot-cli/releases/tag/v0.1.0
