@@ -15,6 +15,7 @@ import { BaseCommand } from './base-command.js';
 import { flagName } from './flag-name.js';
 import { detectInvocationMode, isCI, requestConfirmation } from './invocation.js';
 import { enrichOperationParserError } from './operation-parser-error.js';
+import { redactSecrets } from './redact-secrets.js';
 import { curatedRequestBodyField, curatedRequestExampleBody } from './request-curation.js';
 import { synthesizedRequestExample } from './request-example.js';
 import { buildRequestBody, buildUrl, RequestInputError } from './request.js';
@@ -111,6 +112,9 @@ export function createOperationCommand(
     }),
     raw: Flags.boolean({
       description: 'Emit the untouched API response as JSON; implies --format json',
+    }),
+    'reveal-secrets': Flags.boolean({
+      description: 'Show credential-like response fields instead of redacting them',
     }),
     ...requestBodyFlags,
     ...bodyFieldFlags,
@@ -326,17 +330,36 @@ Canonical command: ${options.canonicalCommand}`
       }
 
       const normalized = flags.raw === true ? payload : normalizeResult(payload);
-      const output = formatOutput(outputFormat, normalized, {
+      // Redacted before rendering, so column selection, truncation, and JSONL
+      // splitting all operate on the redacted values. --raw stays untouched.
+      const redaction =
+        flags.raw === true || flags['reveal-secrets'] === true
+          ? undefined
+          : redactSecrets(normalized);
+      const presented = redaction === undefined ? normalized : redaction.value;
+      const output = formatOutput(outputFormat, presented, {
         allColumns: flags.all === true,
         columns: requestedColumns ?? (flags.all === true ? undefined : defaultColumns),
       });
       if (output !== undefined) this.log(output);
-      const notice = paginationNotice(outputFormat, normalized);
+      const notice = paginationNotice(outputFormat, presented);
       if (notice) this.logToStderr(notice.message);
+      if (redaction !== undefined && redaction.redacted.length > 0) {
+        this.logToStderr(redactionNotice(redaction.redacted));
+      }
     }
   }
 
   return OperationCommand as typeof Command;
+}
+
+const NOTICE_PATH_LIMIT = 3;
+
+function redactionNotice(paths: readonly string[]): string {
+  const shown = paths.slice(0, NOTICE_PATH_LIMIT);
+  const remainder = paths.length - shown.length;
+  const list = remainder > 0 ? `${shown.join(', ')}, and ${remainder} more` : shown.join(', ');
+  return `Redacted credential-like response fields: ${list}. Re-run with --reveal-secrets to show them.`;
 }
 
 function flagForBodyField(field: OperationBodyField) {

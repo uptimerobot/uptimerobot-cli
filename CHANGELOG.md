@@ -14,6 +14,16 @@ may change in minor releases.
 
 - `uptimerobot skills install` confirms and launches the external `npx skills`
   installer for the UptimeRobot AI skill collection.
+- `--reveal-secrets` prints credential fields in a response instead of
+  redacting them.
+
+### Fixed
+
+- Recognizable credential fields in a response, such as `httpPassword`, are
+  redacted in JSON, JSONL, table, and plain output; they previously printed in
+  cleartext, so credentials reached CI logs and agent transcripts. A stderr
+  notice names the redacted fields. `--raw` stays unredacted as an explicit
+  escape hatch.
 
 ### Fixed
 
