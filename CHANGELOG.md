@@ -10,6 +10,16 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- `monitors bulk pause`, `monitors bulk start`, and `monitors bulk update` now
+  exit non-zero when the API reports failed items. These endpoints answer
+  HTTP 201 regardless of the per-monitor outcome, so a run in which every item
+  failed previously exited `0` with nothing on stderr. The results still print
+  on stdout; the failed entries are now also reported in the error envelope's
+  `details` on stderr, with exit code `1` (`BULK_FAILED`) when every item
+  failed and `3` (`BULK_PARTIAL_FAILURE`) when only some did.
+
 ## [0.2.0] - 2026-07-28
 
 ### Removed

@@ -1,6 +1,7 @@
 import { Args, Command, Flags } from '@oclif/core';
 import { createApiClient } from '../api/client.js';
 import { exitCodeFor, normalizeApiError } from '../api/errors.js';
+import { bulkFailure, bulkFailureError, bulkFailureExitCode } from '../output/bulk-failure.js';
 import { columnsFor, parseColumnsFlag } from '../output/columns.js';
 import { normalizeResult } from '../output/normalize-result.js';
 import { paginationNotice } from '../output/pagination-notice.js';
@@ -331,6 +332,9 @@ Canonical command: ${options.canonicalCommand}`
         columns: requestedColumns ?? (flags.all === true ? undefined : defaultColumns),
       });
       if (output !== undefined) this.log(output);
+      // Reported after the results are on stdout, so callers keep the per-item detail.
+      const failure = bulkFailure(payload);
+      if (failure) return this.fail(bulkFailureError(failure), bulkFailureExitCode(failure));
       const notice = paginationNotice(outputFormat, normalized);
       if (notice) this.logToStderr(notice.message);
     }
