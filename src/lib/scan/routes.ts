@@ -19,9 +19,10 @@ export type { ScanEvidence } from './finding.js';
 
 /**
  * One route definition. `kind` is 'next-app' | 'next-pages' | 'django' |
- * 'rails' | 'express' | 'nestjs' | 'laravel', `value` is the route path as
- * written or derived, e.g. '/api/health' — always slash-prefixed, and never
- * carrying a host — and `detail` holds extras such as { method: 'GET' }.
+ * 'rails' | 'express' | 'nestjs' | 'laravel' | 'astro' | 'nuxt' | 'sveltekit' |
+ * 'pages-router', `value` is the route path as written or derived, e.g.
+ * '/api/health' — always slash-prefixed, and never carrying a host — and
+ * `detail` holds extras such as { method: 'GET' }.
  */
 export type RouteFinding = ScanFinding;
 
@@ -119,6 +120,30 @@ const SKIPPED_DIRECTORIES = new Set([
 
 const NEXT_ROUTE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx']);
 const SCRIPT_EXTENSIONS = new Set(['.cjs', '.cts', '.js', '.mjs', '.mts', '.ts']);
+
+/**
+ * What a `pages/` directory routes, beyond Next.js's own extensions.
+ *
+ * A static-site generator addresses `pages/` exactly as the Next.js pages
+ * router does — `index` is its directory, `_`-prefixed files are private — so
+ * the derivation is shared and only the file extension differs. The kind is
+ * taken from the extension so the document still says which generator it is;
+ * Markdown is deliberately generic, since half a dozen generators route it.
+ */
+const PAGES_KIND_BY_EXTENSION: ReadonlyMap<string, string> = new Map([
+  ['.astro', 'astro'],
+  ['.md', 'pages-router'],
+  ['.mdx', 'pages-router'],
+  ['.vue', 'nuxt'],
+]);
+
+/**
+ * SvelteKit routes by directory under `src/routes`, marking the routable file
+ * `+page.*` — closer to the Next.js app router than to its pages router. The
+ * optional `@layout` suffix resets which layout wraps the page; it never
+ * changes the URL.
+ */
+const SVELTEKIT_FILENAME = /^\+page(?:@[\w-]*)?\.(?:js|svelte|ts)$/;
 
 const NEXT_APP_FILENAME = /^(page|route)\.(?:js|jsx|ts|tsx)$/;
 /** Declarations and colocated tests share the router extensions but never route. */
@@ -257,12 +282,15 @@ function isRouteCandidateFile(name: string): boolean {
   // A colocated test declares no real endpoint, and the dispatch drops it
   // outright, so it should not cost budget either.
   if (TEST_FILENAME.test(name)) return false;
-  if (NEXT_APP_FILENAME.test(name)) return true;
+  if (NEXT_APP_FILENAME.test(name) || SVELTEKIT_FILENAME.test(name)) return true;
   if (name === 'urls.py' || name === 'routes.rb') return true;
 
   const extension = extname(name);
   return (
-    NEXT_ROUTE_EXTENSIONS.has(extension) || SCRIPT_EXTENSIONS.has(extension) || extension === '.php'
+    NEXT_ROUTE_EXTENSIONS.has(extension) ||
+    PAGES_KIND_BY_EXTENSION.has(extension) ||
+    SCRIPT_EXTENSIONS.has(extension) ||
+    extension === '.php'
   );
 }
 
@@ -284,8 +312,11 @@ async function collectFromFile(
   if (TEST_FILENAME.test(name)) return;
 
   const appRoot = NEXT_APP_FILENAME.test(name) ? routerRootIndex(segments, 'app') : -1;
+  const routesPage = SVELTEKIT_FILENAME.test(name);
+  const svelteRoot = routesPage ? routerRootIndex(segments, 'routes') : -1;
+  const pagesKind = pagesRouterKind(extension);
   const pagesRoot =
-    NEXT_ROUTE_EXTENSIONS.has(extension) && !NON_ROUTE_FILENAME.test(name)
+    pagesKind !== undefined && !NON_ROUTE_FILENAME.test(name)
       ? routerRootIndex(segments, 'pages')
       : -1;
   const isDjango = name === 'urls.py';
@@ -294,7 +325,17 @@ async function collectFromFile(
   const isPhp = extension === '.php';
   const isAppRouteHandler = appRoot !== -1 && name.startsWith('route.');
 
-  if (appRoot === -1 && pagesRoot === -1 && !isDjango && !isRails && !isScript && !isPhp) return;
+  if (
+    appRoot === -1 &&
+    pagesRoot === -1 &&
+    svelteRoot === -1 &&
+    !isDjango &&
+    !isRails &&
+    !isScript &&
+    !isPhp
+  ) {
+    return;
+  }
 
   // Next.js routes are derived from the path alone, so an oversized page still
   // reports; only the extractors that need text depend on a successful read.
@@ -308,7 +349,10 @@ async function collectFromFile(
   if (appRoot !== -1) {
     collectNextApp(segments, appRoot, file, isAppRouteHandler, text, lineAt, findings);
   }
-  if (pagesRoot !== -1) collectNextPages(segments, pagesRoot, file, findings);
+  if (pagesRoot !== -1 && pagesKind !== undefined) {
+    collectNextPages(segments, pagesRoot, file, pagesKind, findings);
+  }
+  if (svelteRoot !== -1) collectSvelteKit(segments, svelteRoot, file, findings);
   if (text === undefined) return;
   if (isDjango) collectDjango(text, file, lineAt, findings);
   if (isRails) collectRails(text, file, lineAt, findings);
@@ -370,15 +414,47 @@ function collectNextPages(
   segments: readonly string[],
   rootIndex: number,
   file: string,
+  kind: string,
   findings: RouteFinding[],
 ): void {
   const value = nextPagesRoutePath(segments, rootIndex);
   if (value === undefined) return;
   findings.push({
-    kind: 'next-pages',
+    kind,
     value,
     evidence: { file, line: 1 },
     detail: { type: value === '/api' || value.startsWith('/api/') ? 'api' : 'page' },
+  });
+}
+
+/**
+ * The kind a `pages/` file reports under, or undefined when the extension does
+ * not route at all. Next.js keeps `next-pages`; a static-site generator is
+ * named by its own extension so the document does not claim it is Next.js.
+ */
+function pagesRouterKind(extension: string): string | undefined {
+  if (NEXT_ROUTE_EXTENSIONS.has(extension)) return 'next-pages';
+  return PAGES_KIND_BY_EXTENSION.get(extension);
+}
+
+/**
+ * A SvelteKit `+page.*`, whose URL is the directory chain below `src/routes`.
+ * Route groups — `(marketing)` — organise files without appearing in the URL,
+ * which is exactly the Next.js app-router rule, so that derivation is reused.
+ */
+function collectSvelteKit(
+  segments: readonly string[],
+  rootIndex: number,
+  file: string,
+  findings: RouteFinding[],
+): void {
+  const value = nextAppRoutePath(segments, rootIndex);
+  if (value === undefined) return;
+  findings.push({
+    kind: 'sveltekit',
+    value,
+    evidence: { file, line: 1 },
+    detail: { type: 'page' },
   });
 }
 
@@ -572,7 +648,7 @@ function composeNestPath(prefix: string, methodPath: string): string {
  * the outermost match is used, which covers a bare `apps/web/app`.
  * Returns -1 when the file is not inside such a tree.
  */
-function routerRootIndex(segments: readonly string[], root: 'app' | 'pages'): number {
+function routerRootIndex(segments: readonly string[], root: 'app' | 'pages' | 'routes'): number {
   let outermost = -1;
   let anchored = -1;
   for (const [index, segment] of segments.slice(0, -1).entries()) {

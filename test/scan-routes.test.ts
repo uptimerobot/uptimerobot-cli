@@ -248,6 +248,73 @@ describe('scanRoutes: Next.js Pages Router', () => {
   });
 });
 
+describe('scanRoutes: static-site generators', () => {
+  it('derives Astro pages from the pages root', async () => {
+    const root = await writeRepository({
+      'src/pages/index.astro': '---\n---\n<h1>Home</h1>\n',
+      'src/pages/pricing.astro': '<h1>Pricing</h1>\n',
+      'src/pages/blog/[slug].astro': '<h1>Post</h1>\n',
+    });
+
+    expect(summarize(await scanRoutes(root))).toEqual([
+      'astro /blog/[slug] src/pages/blog/[slug].astro:1 type=page',
+      'astro / src/pages/index.astro:1 type=page',
+      'astro /pricing src/pages/pricing.astro:1 type=page',
+    ]);
+  });
+
+  it('derives Nuxt pages from .vue files', async () => {
+    const root = await writeRepository({
+      'pages/index.vue': '<template><h1>Home</h1></template>\n',
+      'pages/pricing.vue': '<template><h1>Pricing</h1></template>\n',
+    });
+
+    expect(summarize(await scanRoutes(root))).toEqual([
+      'nuxt / pages/index.vue:1 type=page',
+      'nuxt /pricing pages/pricing.vue:1 type=page',
+    ]);
+  });
+
+  it('derives Markdown pages, which several generators route directly', async () => {
+    const root = await writeRepository({
+      'src/pages/about.md': '# About\n',
+      'src/pages/guides/start.mdx': '# Start\n',
+    });
+
+    expect(summarize(await scanRoutes(root))).toEqual([
+      'pages-router /about src/pages/about.md:1 type=page',
+      'pages-router /guides/start src/pages/guides/start.mdx:1 type=page',
+    ]);
+  });
+
+  it('derives SvelteKit routes from +page files under src/routes', async () => {
+    const root = await writeRepository({
+      'src/routes/+page.svelte': '<h1>Home</h1>\n',
+      'src/routes/about/+page.svelte': '<h1>About</h1>\n',
+      'src/routes/(marketing)/pricing/+page.svelte': '<h1>Pricing</h1>\n',
+    });
+
+    // Byte order, so `(marketing)` and `+page` sort ahead of `about/`.
+    expect(summarize(await scanRoutes(root))).toEqual([
+      'sveltekit /pricing src/routes/(marketing)/pricing/+page.svelte:1 type=page',
+      'sveltekit / src/routes/+page.svelte:1 type=page',
+      'sveltekit /about src/routes/about/+page.svelte:1 type=page',
+    ]);
+  });
+
+  it('still keeps a Next.js page in the same tree on its own kind', async () => {
+    const root = await writeRepository({
+      'src/pages/index.astro': '<h1>Home</h1>\n',
+      'src/pages/legacy.tsx': 'export default function L() {}\n',
+    });
+
+    expect(summarize(await scanRoutes(root))).toEqual([
+      'astro / src/pages/index.astro:1 type=page',
+      'next-pages /legacy src/pages/legacy.tsx:1 type=page',
+    ]);
+  });
+});
+
 describe('scanRoutes: Django', () => {
   it('captures path and re_path literals and ignores lookalike calls', async () => {
     const root = await writeRepository(DJANGO_REPOSITORY);
