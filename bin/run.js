@@ -15,6 +15,8 @@ if (!nodeVersionSupported) {
 
 const { flush, handle, run } = await import('@oclif/core');
 const { commandSuggestion } = await import('../dist/lib/command-suggestions.js');
+const { isUnknownCommandMessage, withConfiguredCommandId } =
+  await import('../dist/lib/command-id.js');
 const { errorEnvelope, exitCodeForError, machineOutputRequested, wasErrorHandled } =
   await import('../dist/lib/cli-errors.js');
 
@@ -23,14 +25,12 @@ try {
   await flush();
 } catch (error) {
   await flush();
-  const suggestion = commandSuggestion(process.argv.slice(2));
-  if (
-    suggestion &&
-    typeof error === 'object' &&
-    error !== null &&
-    /^command .+ not found$/.test(error.message ?? '')
-  ) {
-    error.suggestions = [`uptimerobot ${suggestion}`];
+  if (typeof error === 'object' && error !== null && isUnknownCommandMessage(error.message ?? '')) {
+    // oclif names the command with its colon-joined internal id; report it the
+    // way the CLI accepts it, so the message is a syntax the user can retype.
+    error.message = withConfiguredCommandId(error.message);
+    const suggestion = commandSuggestion(process.argv.slice(2));
+    if (suggestion) error.suggestions = [`uptimerobot ${suggestion}`];
   }
   if (wasErrorHandled(error)) {
     process.exitCode = exitCodeForError(error);

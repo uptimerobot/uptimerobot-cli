@@ -101,6 +101,8 @@ uptimerobot monitors create keyword --help
 uptimerobot incidents comments create --help
 ```
 
+`uptimerobot help <command-or-topic>` is equivalent to the `--help` flag, so `uptimerobot help monitors create` and `uptimerobot monitors create --help` print the same page.
+
 Monitor creation commands expose only the fields relevant to their type and supply the API monitor type automatically. Command help includes accepted values, required fields, defaults, constraints, and examples from the packaged API contract.
 
 Typed flags cover normal use. Full API request bodies remain available when needed:

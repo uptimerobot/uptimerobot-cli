@@ -32,6 +32,35 @@ describe('machine-readable CLI errors', () => {
     });
   });
 
+  it('reports a multi-segment unknown command with the configured separator', async () => {
+    const machine = await runCli(['monitors', 'lst', '--json']);
+    const human = await runCli(['monitors', 'lst', '--format', 'table'], { NO_COLOR: '1' });
+
+    expect({ ...machine, stderr: JSON.parse(machine.stderr) }).toEqual({
+      exitCode: 2,
+      stderr: {
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'command monitors lst not found',
+          suggestions: ['uptimerobot monitors list'],
+        },
+      },
+      stdout: '',
+    });
+    expect(human.stderr).toContain('Error: command monitors lst not found');
+    expect(human.stderr).not.toContain('monitors:lst');
+  });
+
+  it('renders topic help for help <topic> instead of an unknown-command error', async () => {
+    const result = await runCli(['help', 'monitors'], { NO_COLOR: '1' });
+    const topic = await runCli(['monitors', '--help'], { NO_COLOR: '1' });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toBe(topic.stdout);
+    expect(result.stdout).toContain('Manage monitors and statistics');
+  });
+
   it('suggests a close command miss in machine and human output', async () => {
     const machine = await runCli(['auth', 'who-am-i']);
     const human = await runCli(['auth', 'who-am-i', '--format', 'table'], { NO_COLOR: '1' });

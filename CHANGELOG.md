@@ -10,6 +10,19 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `uptimerobot help <command-or-topic>` prints that command's or topic's help,
+  matching `uptimerobot <command-or-topic> --help`. It previously failed with
+  `INVALID_INPUT`.
+
+### Fixed
+
+- Unknown-command errors name the command the way the CLI accepts it. A miss
+  such as `uptimerobot monitors lst` reported `command monitors:lst not found`,
+  suggesting a colon syntax the CLI does not accept, in both machine and human
+  output.
+
 ## [0.2.0] - 2026-07-28
 
 ### Removed
