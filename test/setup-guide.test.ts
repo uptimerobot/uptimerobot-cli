@@ -56,8 +56,27 @@ describe('renderSetupGuide', () => {
     ['the prefer-a-public-route remedy', 'Prefer a public alternative'],
     ['the user-supplied-credential path via existing flags', '--auth-type HTTP_BASIC'],
     ['the custom-header remedy naming the header form', 'X-Health-Token'],
+    ['the coverage principle that replaced the one-or-two rule', 'distinct failure mode'],
+    ['what counts as an independent failure', 'a different critical dependency'],
+    ['the collapse rule for near-duplicates', 'one template are one monitor'],
+    ['the one-heartbeat-per-job rule', 'one heartbeat per job'],
+    ['heartbeats being the cheapest coverage', 'cheapest coverage'],
+    ['an inventory example that proposes every job', 'every job gets a heartbeat'],
+    ['the burden-of-proof on proposing few', 'you are under-proposing'],
   ])('states %s', (_label, substring) => {
     expect(guide).toContain(substring);
+  });
+
+  // The cap was never the real limit — this prose was. A run that restores it
+  // silently undoes the whole point of raising the ceiling.
+  it('no longer tells the agent to propose only one or two monitors', () => {
+    expect(guide).not.toContain('one or two that prove the system works');
+    expect(guide).not.toContain('does not want 60 monitors');
+  });
+
+  it('no longer models an inventory that proposes a fraction of each surface', () => {
+    expect(guide).not.toContain('25 URLs in the sitemap, 2 proposed');
+    expect(guide).not.toContain('Cron: 3\njobs, 1 proposed');
   });
 
   it('defaults the monitor cap to 50', () => {
