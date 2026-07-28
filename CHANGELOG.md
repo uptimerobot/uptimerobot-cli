@@ -24,9 +24,6 @@ may change in minor releases.
   cleartext, so credentials reached CI logs and agent transcripts. A stderr
   notice names the redacted fields. `--raw` stays unredacted as an explicit
   escape hatch.
-
-### Fixed
-
 - `uptimerobot monitors --help` describes the `monitors create` topic as
   "Create a monitor of a given type" instead of borrowing the summary of its
   first subcommand ("Create a monitor (API)"), which made the topic look like
