@@ -111,8 +111,16 @@
           "bulk": {
             "description": "Run bulk monitor actions"
           },
+          "create": {
+            "description": "Create a monitor of a given type"
+          },
           "stats": {
-            "description": "Query monitor statistics"
+            "description": "Query monitor statistics",
+            "subtopics": {
+              "response-time": {
+                "description": "Query response time statistics overall or by region"
+              }
+            }
           }
         }
       },
