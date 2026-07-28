@@ -98,7 +98,11 @@ export async function scanScheduled(
   repoRoot: string,
   options: ScanScheduledOptions = {},
 ): Promise<readonly ScheduledFinding[]> {
-  const limits: ScanLimits = { ...DEFAULT_LIMITS, ...definedOptions(options) };
+  const limits: ScanLimits = {
+    maxDepth: options.maxDepth ?? DEFAULT_LIMITS.maxDepth,
+    maxFileBytes: options.maxFileBytes ?? DEFAULT_LIMITS.maxFileBytes,
+    maxFiles: options.maxFiles ?? DEFAULT_LIMITS.maxFiles,
+  };
   const findings: ScheduledFinding[] = [];
 
   const walked = await collectFiles(repoRoot, limits);
@@ -572,21 +576,17 @@ function scanSourcePatterns(path: string, text: string): readonly ScheduledFindi
   const findings: ScheduledFinding[] = [];
 
   for (const { kind, pattern, read } of SOURCE_PATTERNS) {
-    pattern.lastIndex = 0;
-    let match = pattern.exec(text);
-    while (match !== null) {
+    for (const match of text.matchAll(pattern)) {
       const parsed = read(match);
-      if (parsed !== undefined && !isCommentedOut(text, match.index)) {
-        findings.push({
-          detail: buildDetail({
-            name: parsed.name ?? (kind === 'bullmq' ? bullmqJobName(text, match.index) : undefined),
-          }),
-          evidence: { file: path, line: lineAt(text, match.index) },
-          kind,
-          value: parsed.value,
-        });
-      }
-      match = pattern.exec(text);
+      if (parsed === undefined || isCommentedOut(text, match.index)) continue;
+      findings.push({
+        detail: buildDetail({
+          name: parsed.name ?? (kind === 'bullmq' ? bullmqJobName(text, match.index) : undefined),
+        }),
+        evidence: { file: path, line: lineAt(text, match.index) },
+        kind,
+        value: parsed.value,
+      });
     }
   }
 
@@ -595,14 +595,8 @@ function scanSourcePatterns(path: string, text: string): readonly ScheduledFindi
 
 function bullmqJobName(text: string, index: number): string | undefined {
   const window = text.slice(Math.max(index - BULLMQ_NAME_LOOKBACK, 0), index);
-  BULLMQ_JOB_NAME.lastIndex = 0;
-  let name: string | undefined;
-  let match = BULLMQ_JOB_NAME.exec(window);
-  while (match !== null) {
-    name = emptyToUndefined(match[2]);
-    match = BULLMQ_JOB_NAME.exec(window);
-  }
-  return name;
+  // The nearest name behind the schedule wins, so the last match in the window.
+  return emptyToUndefined([...window.matchAll(BULLMQ_JOB_NAME)].at(-1)?.[2]);
 }
 
 /**
@@ -643,20 +637,16 @@ function scanNestSchedule(path: string, text: string): readonly ScheduledFinding
   if (!text.includes('@nestjs/schedule')) return [];
 
   const findings: ScheduledFinding[] = [];
-  NEST_SCHEDULE_DECORATOR.lastIndex = 0;
-  let match = NEST_SCHEDULE_DECORATOR.exec(text);
-  while (match !== null) {
+  for (const match of text.matchAll(NEST_SCHEDULE_DECORATOR)) {
     const value = nestScheduleValue(match[1] ?? '', match[2] ?? '');
-    if (value !== undefined && !isCommentedOut(text, match.index)) {
-      const rest = text.slice(match.index + match[0].length);
-      findings.push({
-        detail: buildDetail({ name: NEST_METHOD_NAME.exec(rest)?.[1] }),
-        evidence: { file: path, line: lineAt(text, match.index) },
-        kind: 'nestjs-schedule',
-        value,
-      });
-    }
-    match = NEST_SCHEDULE_DECORATOR.exec(text);
+    if (value === undefined || isCommentedOut(text, match.index)) continue;
+    const rest = text.slice(match.index + match[0].length);
+    findings.push({
+      detail: buildDetail({ name: NEST_METHOD_NAME.exec(rest)?.[1] }),
+      evidence: { file: path, line: lineAt(text, match.index) },
+      kind: 'nestjs-schedule',
+      value,
+    });
   }
 
   return findings;
@@ -753,25 +743,20 @@ function scanCeleryBeatSchedule(path: string, text: string): readonly ScheduledF
 /** `app.add_periodic_task(crontab(hour=7), send_report.s(), name='weekly report')`. */
 function scanCeleryPeriodicTasks(path: string, text: string): readonly ScheduledFinding[] {
   const findings: ScheduledFinding[] = [];
-  CELERY_PERIODIC_CALL.lastIndex = 0;
-  let match = CELERY_PERIODIC_CALL.exec(text);
-
-  while (match !== null) {
+  for (const match of text.matchAll(CELERY_PERIODIC_CALL)) {
     const open = match.index + match[0].length - 1;
     const args = readCallArguments(text, open) ?? [];
     const schedule = args[0];
-    if (schedule !== undefined && schedule !== '' && !isCommentedOut(text, match.index)) {
-      findings.push({
-        detail: buildDetail({
-          name: keywordArgument(args, 'name'),
-          task: args[1],
-        }),
-        evidence: { file: path, line: lineAt(text, match.index) },
-        kind: 'celery-beat',
-        value: schedule,
-      });
-    }
-    match = CELERY_PERIODIC_CALL.exec(text);
+    if (schedule === undefined || schedule === '' || isCommentedOut(text, match.index)) continue;
+    findings.push({
+      detail: buildDetail({
+        name: keywordArgument(args, 'name'),
+        task: args[1],
+      }),
+      evidence: { file: path, line: lineAt(text, match.index) },
+      kind: 'celery-beat',
+      value: schedule,
+    });
   }
 
   return findings;
@@ -999,8 +984,3 @@ function compare(left: string, right: string): number {
 }
 
 /** Drops explicit `undefined` values so they do not overwrite a default. */
-function definedOptions(options: ScanScheduledOptions): Partial<ScanLimits> {
-  return Object.fromEntries(
-    Object.entries(options).filter(([, value]) => value !== undefined),
-  ) as Partial<ScanLimits>;
-}
