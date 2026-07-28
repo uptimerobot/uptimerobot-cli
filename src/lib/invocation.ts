@@ -1,6 +1,5 @@
 import { emitKeypressEvents } from 'node:readline';
 import { createInterface } from 'node:readline/promises';
-import type { OperationDefinition } from './types.js';
 
 export type ExecutionEnvironment = 'ci' | 'local';
 export type InvocationMode = 'agent' | 'human';
@@ -32,14 +31,15 @@ export function detectInvocationMode(
   return agentFlag || agentEnvironmentDetected(env) ? 'agent' : 'human';
 }
 
-export async function requestConfirmation(
-  operation: OperationDefinition,
-  mode: InvocationMode,
-): Promise<boolean> {
-  if (mode === 'agent' || !process.stdin.isTTY || !process.stdout.isTTY) return false;
+export function confirmationAvailable(mode: InvocationMode): boolean {
+  return mode === 'human' && process.stdin.isTTY === true && process.stdout.isTTY === true;
+}
+
+export async function requestConfirmation(summary: string, mode: InvocationMode): Promise<boolean> {
+  if (!confirmationAvailable(mode)) return false;
   const reader = createInterface({ input: process.stdin, output: process.stderr });
   try {
-    const answer = await reader.question(`${operation.summary}. Continue? [y/N] `);
+    const answer = await reader.question(`${summary}. Continue? [y/N] `);
     return /^(y|yes)$/i.test(answer.trim());
   } finally {
     reader.close();
