@@ -1000,15 +1000,36 @@ export function formatSeedContext(context: SeedContext): string {
 
   lines.push('', '## Scheduled jobs (heartbeat candidates)', '');
   if (context.heartbeats.length === 0) lines.push('None.');
-  for (const heartbeat of context.heartbeats) {
-    const schedule = heartbeat.schedule === '' ? 'no schedule declared' : heartbeat.schedule;
-    const label = heartbeat.name === undefined ? '' : ` ${heartbeat.name}`;
+
+  // A job that declares a schedule is a fact; one inferred from a script's name
+  // is a guess. They are kept apart because the difference decides whether a
+  // heartbeat is safe to create: a heartbeat nothing pings alerts forever.
+  const declared = context.heartbeats.filter((heartbeat) => heartbeat.schedule !== '');
+  const inferred = context.heartbeats.filter((heartbeat) => heartbeat.schedule === '');
+  const split = declared.length > 0 && inferred.length > 0;
+
+  if (split) lines.push('### Declared schedules', '');
+  for (const heartbeat of declared) lines.push(heartbeatLine(heartbeat));
+
+  if (inferred.length > 0) {
+    if (split) lines.push('', '### Inferred from a name', '');
     lines.push(
-      `- \`${schedule}\` — ${heartbeat.kind}${label} — ${citation(heartbeat.evidence)}${detailSuffix(heartbeat.detail)}`,
+      '> These name recurring work but declare no schedule, and nothing here proves a',
+      '> scheduler runs them. Before proposing a heartbeat for one,',
+      '> confirm something runs it on a schedule, and on what interval — a heartbeat',
+      '> nothing pings alerts forever.',
+      '',
     );
+    for (const heartbeat of inferred) lines.push(heartbeatLine(heartbeat));
   }
 
   return `${lines.join('\n')}\n`;
+}
+
+function heartbeatLine(heartbeat: HeartbeatCandidate): string {
+  const schedule = heartbeat.schedule === '' ? 'no schedule declared' : heartbeat.schedule;
+  const label = heartbeat.name === undefined ? '' : ` ${heartbeat.name}`;
+  return `- \`${schedule}\` — ${heartbeat.kind}${label} — ${citation(heartbeat.evidence)}${detailSuffix(heartbeat.detail)}`;
 }
 
 function candidateLine(candidate: ScanCandidate): string {

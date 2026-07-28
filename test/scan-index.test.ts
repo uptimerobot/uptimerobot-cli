@@ -729,6 +729,36 @@ describe('health endpoint ranking', () => {
  * is the repository stating outright how the service proves it is up, and that
  * survives the host being unreachable.
  */
+describe('heartbeats: a declared schedule is not the same claim as an inferred one', () => {
+  const declared: ScanFinding = {
+    kind: 'crontab',
+    value: '0 3 * * *',
+    evidence: { file: 'deploy/crontab', line: 4 },
+    detail: { command: './bin/nightly' },
+  };
+  const inferred: ScanFinding = {
+    kind: 'npm-script',
+    value: '',
+    evidence: { file: 'package.json', line: 9 },
+    detail: { command: 'node worker.js', name: 'worker' },
+  };
+
+  it('groups the two apart and warns about the inferred ones', () => {
+    const rendered = formatSeedContext(seed({ scheduled: [declared, inferred] }));
+
+    expect(rendered).toContain('### Declared schedules');
+    expect(rendered).toContain('### Inferred from a name');
+    expect(rendered).toContain('confirm something runs it on a schedule');
+  });
+
+  it('adds no inferred section when every job declares a schedule', () => {
+    const rendered = formatSeedContext(seed({ scheduled: [declared] }));
+
+    expect(rendered).not.toContain('### Inferred from a name');
+    expect(rendered).not.toContain('### Declared schedules');
+  });
+});
+
 describe('truncation is never silent', () => {
   it('reports a complete walk as complete', async () => {
     const root = await makeRepo({ 'src/server.ts': "app.get('/health', handler);\n" });
