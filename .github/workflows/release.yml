@@ -134,5 +134,13 @@ jobs:
       # downloaded above). No NODE_AUTH_TOKEN: OIDC supplies a short-lived,
       # workflow-scoped credential and attaches provenance automatically;
       # publishConfig already forces public access and the npmjs registry.
+      # A GitHub pre-release publishes to the `next` dist-tag so it never
+      # becomes the default `latest` that a bare `npm install` resolves to.
       - name: Publish to npm
-        run: npm publish --provenance --access public --ignore-scripts
+        env:
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          tag=latest
+          if [ "$PRERELEASE" = "true" ]; then tag=next; fi
+          echo "Publishing @uptimerobot/cli to dist-tag: $tag"
+          npm publish --provenance --access public --ignore-scripts --tag "$tag"
