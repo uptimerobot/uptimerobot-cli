@@ -268,7 +268,7 @@ Canonical command: ${options.canonicalCommand}`
       }
 
       if (operation.destructive && flags.confirm !== true) {
-        const confirmed = await requestConfirmation(operation, mode);
+        const confirmed = await requestConfirmation(operation.summary, mode);
         if (!confirmed) {
           const error = {
             code: 'CONFIRMATION_REQUIRED',

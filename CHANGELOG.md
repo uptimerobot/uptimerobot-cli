@@ -12,6 +12,8 @@ may change in minor releases.
 
 ### Added
 
+- `uptimerobot skills install` confirms and launches the external `npx skills`
+  installer for the UptimeRobot AI skill collection.
 - `--dry-run` on `status-pages create` and `status-pages update`. Both compile a
   JSON request body, so the flag was missing only because it was gated on the
   documented content type rather than on what the command can actually send.

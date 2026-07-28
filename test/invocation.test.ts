@@ -1,6 +1,34 @@
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
-import { isCI, promptSecret } from '../src/lib/invocation.js';
+import { isCI, promptSecret, requestConfirmation } from '../src/lib/invocation.js';
+
+const stdinDescriptor = Object.getOwnPropertyDescriptor(process, 'stdin');
+const stdoutDescriptor = Object.getOwnPropertyDescriptor(process, 'stdout');
+const stderrDescriptor = Object.getOwnPropertyDescriptor(process, 'stderr');
+
+afterEach(() => {
+  if (stdinDescriptor) Object.defineProperty(process, 'stdin', stdinDescriptor);
+  if (stdoutDescriptor) Object.defineProperty(process, 'stdout', stdoutDescriptor);
+  if (stderrDescriptor) Object.defineProperty(process, 'stderr', stderrDescriptor);
+});
+
+function fakeTerminal() {
+  const stdin = new PassThrough();
+  Object.defineProperty(stdin, 'isTTY', { value: true });
+  Object.assign(stdin, { setRawMode: () => stdin });
+  const stdout = new PassThrough();
+  Object.defineProperty(stdout, 'isTTY', { value: true });
+  let errText = '';
+  const stderr = new PassThrough();
+  Object.defineProperty(stderr, 'isTTY', { value: true });
+  stderr.on('data', (chunk) => {
+    errText += chunk.toString();
+  });
+  Object.defineProperty(process, 'stdin', { configurable: true, value: stdin });
+  Object.defineProperty(process, 'stdout', { configurable: true, value: stdout });
+  Object.defineProperty(process, 'stderr', { configurable: true, value: stderr });
+  return { stdin, stderrText: () => errText };
+}
 
 describe('invocation context', () => {
   const originalCI = process.env.CI;
@@ -23,30 +51,37 @@ describe('invocation context', () => {
   });
 });
 
-describe('promptSecret', () => {
-  const stdinDescriptor = Object.getOwnPropertyDescriptor(process, 'stdin');
-  const stderrDescriptor = Object.getOwnPropertyDescriptor(process, 'stderr');
+describe('requestConfirmation', () => {
+  it('accepts an explicit yes answer', async () => {
+    const { stdin, stderrText } = fakeTerminal();
 
-  afterEach(() => {
-    if (stdinDescriptor) Object.defineProperty(process, 'stdin', stdinDescriptor);
-    if (stderrDescriptor) Object.defineProperty(process, 'stderr', stderrDescriptor);
+    const answer = requestConfirmation('Run npx skills add uptimerobot/ai', 'human');
+    stdin.write('yes\n');
+
+    await expect(answer).resolves.toBe(true);
+    expect(stderrText()).toContain('Run npx skills add uptimerobot/ai. Continue? [y/N] ');
   });
 
-  function fakeTerminal() {
-    const stdin = new PassThrough();
-    Object.defineProperty(stdin, 'isTTY', { value: true });
-    Object.assign(stdin, { setRawMode: () => stdin });
-    let errText = '';
-    const stderr = new PassThrough();
-    Object.defineProperty(stderr, 'isTTY', { value: true });
-    stderr.on('data', (chunk) => {
-      errText += chunk.toString();
-    });
-    Object.defineProperty(process, 'stdin', { configurable: true, value: stdin });
-    Object.defineProperty(process, 'stderr', { configurable: true, value: stderr });
-    return { stdin, stderrText: () => errText };
-  }
+  it('declines any answer other than yes', async () => {
+    const { stdin } = fakeTerminal();
 
+    const answer = requestConfirmation('Run npx skills add uptimerobot/ai', 'human');
+    stdin.write('n\n');
+
+    await expect(answer).resolves.toBe(false);
+  });
+
+  it('does not prompt an agent', async () => {
+    const { stderrText } = fakeTerminal();
+
+    await expect(requestConfirmation('Run npx skills add uptimerobot/ai', 'agent')).resolves.toBe(
+      false,
+    );
+    expect(stderrText()).toBe('');
+  });
+});
+
+describe('promptSecret', () => {
   it('masks the entered secret and resolves it on return', async () => {
     const { stdin, stderrText } = fakeTerminal();
 
