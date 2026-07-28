@@ -13,8 +13,10 @@ describe('response redaction', () => {
     );
   });
 
-  async function serve(payload: unknown): Promise<string> {
-    const server = createServer((_request, response) => {
+  async function serve(payload: unknown, statusCode = 200): Promise<string> {
+    const server = createServer((request, response) => {
+      request.resume();
+      response.statusCode = statusCode;
       response.setHeader('content-type', 'application/json');
       response.end(JSON.stringify(payload));
     });
@@ -83,6 +85,125 @@ describe('response redaction', () => {
     expect({ exitCode: result.exitCode, stdout: result.stdout }).toEqual({
       exitCode: 0,
       stdout: '1\t[REDACTED]\n',
+    });
+  });
+
+  it('redacts credential fields on every JSONL line', async () => {
+    const apiUrl = await serve({
+      data: [
+        { id: 1, friendlyName: 'checkout-api', httpPassword: SECRET },
+        { id: 2, friendlyName: 'status-page', apiToken: 'second-secret' },
+      ],
+    });
+
+    const redacted = await runCli(['monitors', 'list', '--format', 'jsonl'], environment(apiUrl));
+    const revealed = await runCli(
+      ['monitors', 'list', '--format', 'jsonl', '--reveal-secrets'],
+      environment(apiUrl),
+    );
+
+    expect(redacted.stdout).not.toContain(SECRET);
+    expect(redacted.stdout).not.toContain('second-secret');
+    expect(redacted).toEqual({
+      exitCode: 0,
+      stderr:
+        'Redacted credential-like response fields: items[0].httpPassword, items[1].apiToken. ' +
+        'Re-run with --reveal-secrets to show them.\n',
+      stdout:
+        '{"id":1,"friendlyName":"checkout-api","httpPassword":"[REDACTED]"}\n' +
+        '{"id":2,"friendlyName":"status-page","apiToken":"[REDACTED]"}\n',
+    });
+    // Proves the redacted assertion above is not vacuous: the fields really do
+    // reach JSONL output, one resource per line.
+    expect(revealed).toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout:
+        '{"id":1,"friendlyName":"checkout-api","httpPassword":"supersecret"}\n' +
+        '{"id":2,"friendlyName":"status-page","apiToken":"second-secret"}\n',
+    });
+  });
+
+  it('redacts a single resource fetched by ID', async () => {
+    const monitor = {
+      id: 7,
+      friendlyName: 'checkout-api',
+      httpUsername: 'admin',
+      httpPassword: SECRET,
+    };
+    const apiUrl = await serve(monitor);
+
+    const redacted = await runCli(['monitors', 'get', '7', '--json'], environment(apiUrl));
+    const revealed = await runCli(
+      ['monitors', 'get', '7', '--json', '--reveal-secrets'],
+      environment(apiUrl),
+    );
+    const raw = await runCli(['monitors', 'get', '7', '--raw'], environment(apiUrl));
+
+    expect(redacted.stdout).not.toContain(SECRET);
+    expect(redacted).toEqual({
+      exitCode: 0,
+      stderr:
+        'Redacted credential-like response fields: httpPassword. ' +
+        'Re-run with --reveal-secrets to show them.\n',
+      // httpUsername is not a credential suffix, so it stays visible.
+      stdout:
+        '{"id":7,"friendlyName":"checkout-api","httpUsername":"admin","httpPassword":"[REDACTED]"}\n',
+    });
+    expect(revealed.stdout).toContain(SECRET);
+    expect({ ...revealed, stdout: JSON.parse(revealed.stdout) }).toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: monitor,
+    });
+    expect(raw.stdout).toContain(SECRET);
+    expect({ ...raw, stdout: JSON.parse(raw.stdout) }).toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: monitor,
+    });
+  });
+
+  it('redacts the resource returned by a create', async () => {
+    const created = { id: 99, friendlyName: 'checkout-api', httpPassword: SECRET };
+    const apiUrl = await serve(created, 201);
+    const args = [
+      'monitors',
+      'create',
+      'http',
+      '--name',
+      'checkout-api',
+      '--url',
+      'https://checkout.example.com',
+      '--interval',
+      '60',
+      '--timeout',
+      '30',
+    ];
+
+    const redacted = await runCli([...args, '--json'], environment(apiUrl));
+    const revealed = await runCli([...args, '--json', '--reveal-secrets'], environment(apiUrl));
+    const raw = await runCli([...args, '--raw'], environment(apiUrl));
+
+    expect(redacted.stdout).not.toContain(SECRET);
+    expect(redacted).toEqual({
+      exitCode: 0,
+      stderr:
+        'Redacted credential-like response fields: httpPassword. ' +
+        'Re-run with --reveal-secrets to show them.\n',
+      stdout: '{"id":99,"friendlyName":"checkout-api","httpPassword":"[REDACTED]"}\n',
+    });
+    expect(revealed.stdout).toContain(SECRET);
+    expect({ ...revealed, stdout: JSON.parse(revealed.stdout) }).toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: created,
+    });
+    expect(raw.stdout).toContain(SECRET);
+    expect({ ...raw, stdout: JSON.parse(raw.stdout) }).toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: created,
     });
   });
 
