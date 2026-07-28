@@ -40,8 +40,8 @@ describe('renderSetupGuide', () => {
       'the read-only probing allowance for user-confirmed-public URLs',
       'Read-only probing of a URL the user has confirmed is public is allowed',
     ],
-    ['static-site generators in the frameworks-it-misses list', 'static-site generators'],
-    ['a concrete static-site generator example', 'SvelteKit'],
+    ['the generators that emit no per-page file, which the scan cannot see', 'Hugo, Jekyll'],
+    ['how to enumerate a site the scan cannot walk', 'sitemap*.xml'],
     ['the base-URL-first rule', 'Ask the user for the base URL first'],
     ['the default cap rule', 'Cap at 50 monitors per run'],
     ['the confirm-before-create rule', 'before creating any monitor'],
@@ -63,8 +63,20 @@ describe('renderSetupGuide', () => {
     ['heartbeats being the cheapest coverage', 'cheapest coverage'],
     ['an inventory example that proposes every job', 'every job gets a heartbeat'],
     ['the burden-of-proof on proposing few', 'you are under-proposing'],
+    ['Laravel and NestJS among the frameworks the scan covers', 'NestJS and Laravel'],
+    ['the static-site generators the scan now covers', 'Astro, Nuxt and SvelteKit'],
+    ['the unresolved-prefix caveat for the frameworks that have one', 'unresolved prefix'],
+    ['the carve-out for heartbeats with no declared schedule', 'no schedule declared'],
+    ['paging the duplicate pre-check', '--cursor'],
+    ['the truncated-scan instruction', 'stopped early'],
   ])('states %s', (_label, substring) => {
     expect(guide).toContain(substring);
+  });
+
+  // The scan detects these; telling the agent to go find them by hand wastes a
+  // turn and undercuts evidence that is already good.
+  it('no longer claims Laravel routes are undetected', () => {
+    expect(guide).not.toContain('Laravel, Spring, Phoenix');
   });
 
   // The cap was never the real limit — this prose was. A run that restores it
@@ -133,7 +145,7 @@ describe('renderSetupGuide', () => {
     expect(guide).toContain('RouterModule.register(');
     expect(guide).toContain('@UseGuards');
     // The coverage wording no longer implies NestJS is undetected.
-    expect(guide).toContain('NestJS is detected but shallow');
+    expect(guide).toContain('NestJS (`setGlobalPrefix`, `RouterModule`)');
   });
 
   it('drops the pre-flight readiness probe entirely', () => {

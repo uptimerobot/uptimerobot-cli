@@ -982,14 +982,13 @@ export function formatSeedContext(context: SeedContext): string {
     for (const candidate of members) lines.push(`- ${candidateLine(candidate)}`);
   }
 
-  // NestJS paths are emitted controller-relative: the scanner never resolves the
-  // app's global prefix or RouterModule module→path mounting, so a path here is
-  // not an edge-reachable URL and must not read as verified.
-  if (context.accepted.some((candidate) => candidate.kind === 'nestjs')) {
-    lines.push(
-      '',
-      '> NestJS (`nestjs`) paths above are controller-relative — the global prefix (`setGlobalPrefix`), its `exclude` list, and `RouterModule.register()` module→path mounting are NOT resolved here. Resolve each into its real, edge-reachable URL before trusting it, or skip it.',
-    );
+  // Several frameworks mount a route file or group under a prefix the scanner
+  // never composes, so the path above is not the edge-reachable URL. Saying so
+  // per framework matters: a monitor on an unprefixed path 404s forever, which
+  // is indistinguishable from a real outage.
+  for (const [kind, caveat] of UNRESOLVED_PREFIX_CAVEATS) {
+    if (context.accepted.some((candidate) => candidate.kind === kind))
+      lines.push('', `> ${caveat}`);
   }
 
   lines.push('', '## Skipped, and why', '');
@@ -1025,6 +1024,31 @@ export function formatSeedContext(context: SeedContext): string {
 
   return `${lines.join('\n')}\n`;
 }
+
+/**
+ * What each framework leaves unresolved, keyed by finding kind. The scanner
+ * reads route declarations one file at a time; the mounting that decides the
+ * real URL lives somewhere else entirely, and composing it is a job for whoever
+ * can read the whole application.
+ */
+const UNRESOLVED_PREFIX_CAVEATS: ReadonlyMap<string, string> = new Map([
+  [
+    'nestjs',
+    'NestJS (`nestjs`) paths above are controller-relative — the global prefix (`setGlobalPrefix`), its `exclude` list, and `RouterModule.register()` module→path mounting are NOT resolved here. Resolve each into its real, edge-reachable URL before trusting it, or skip it.',
+  ],
+  [
+    'laravel',
+    'Laravel (`laravel`) paths above are as written in the route file — the `routes/api.php` → `/api` prefix and any `Route::prefix(...)->group(...)` around them are NOT resolved here. Compose the real URL before trusting it.',
+  ],
+  [
+    'django',
+    'Django (`django`) paths above are relative to their own `urls.py` — the prefix a parent `include(...)` mounts them under is NOT resolved here. Follow the include chain to the real URL before trusting it.',
+  ],
+  [
+    'rails',
+    'Rails (`rails`) paths above are as written in `config/routes.rb` — any enclosing `scope`, `namespace`, or `constraints` block is NOT resolved here. Compose the real URL before trusting it.',
+  ],
+]);
 
 function heartbeatLine(heartbeat: HeartbeatCandidate): string {
   const schedule = heartbeat.schedule === '' ? 'no schedule declared' : heartbeat.schedule;

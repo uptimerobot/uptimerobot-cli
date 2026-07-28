@@ -729,6 +729,45 @@ describe('health endpoint ranking', () => {
  * is the repository stating outright how the service proves it is up, and that
  * survives the host being unreachable.
  */
+describe('unresolved framework prefixes are called out, not just for NestJS', () => {
+  function routeOf(kind: string, value: string, file: string): ScanFinding {
+    return { kind, value, evidence: { file, line: 2 }, detail: { method: 'GET' } };
+  }
+
+  it('warns that a Laravel path may be missing its file and group prefix', () => {
+    const rendered = formatSeedContext(
+      seed({ routes: [routeOf('laravel', '/health', 'routes/api.php')] }),
+    );
+
+    expect(rendered).toContain('Route::prefix(');
+    expect(rendered).toContain('routes/api.php');
+  });
+
+  it('warns that a Django path may be mounted by include()', () => {
+    const rendered = formatSeedContext(
+      seed({ routes: [routeOf('django', '/summary/', 'orders/urls.py')] }),
+    );
+
+    expect(rendered).toContain('include(');
+  });
+
+  it('warns that a Rails path may sit under a scope or namespace', () => {
+    const rendered = formatSeedContext(
+      seed({ routes: [routeOf('rails', '/orders', 'config/routes.rb')] }),
+    );
+
+    expect(rendered).toContain('namespace');
+  });
+
+  it('keeps the NestJS wording for NestJS alone', () => {
+    const rendered = formatSeedContext(
+      seed({ routes: [routeOf('laravel', '/health', 'routes/api.php')] }),
+    );
+
+    expect(rendered).not.toContain('controller-relative');
+  });
+});
+
 describe('heartbeats: a declared schedule is not the same claim as an inferred one', () => {
   const declared: ScanFinding = {
     kind: 'crontab',
