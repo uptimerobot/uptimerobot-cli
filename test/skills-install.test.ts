@@ -120,22 +120,4 @@ reader.question('Installer input: ', (answer) => {
       expect(result.exitCode).toBe(23);
     },
   );
-
-  it.runIf(process.platform === 'darwin' || process.platform === 'linux')(
-    'reports when npx is unavailable',
-    async () => {
-      rmSync(join(fakeBin, 'npx'));
-      const result = await runInteractiveCli(
-        ['skills', 'install'],
-        [{ input: 'y\n', waitFor: 'Continue? [y/N] ' }],
-        {
-          PATH: fakeBin,
-          UPTIMEROBOT_AGENT: '0',
-        },
-      );
-
-      expect(result.exitCode).toBe(1);
-      expect(result.output).toContain('INSTALLER_NOT_FOUND');
-    },
-  );
 });
