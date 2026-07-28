@@ -252,7 +252,7 @@ export function buildSeedContext(
         );
       } else {
         rejected.push({ ...candidate, ...verdict.rejection });
-        const recovered = recoveredHealthPath(finding);
+        const recovered = recoveredHealthPath(candidate);
         if (recovered !== undefined) accepted.push(recovered);
       }
     }
@@ -379,17 +379,8 @@ function judgeRoute(finding: ScanFinding, cronPaths: ReadonlyMap<string, ScanEvi
     };
   }
 
-  const placeholder = placeholderIn(finding.value);
-  if (placeholder !== undefined) {
-    return {
-      target,
-      rejection: {
-        reason: 'dynamic-path',
-        matched: placeholder,
-        message: `"${finding.value}" carries the placeholder "${placeholder}", so no single URL answers it; substitute a real value before monitoring it.`,
-      },
-    };
-  }
+  const placeholder = placeholderRejection(finding.value);
+  if (placeholder !== undefined) return { target, rejection: placeholder };
 
   return { target };
 }
@@ -420,7 +411,6 @@ function judgeComposePort(finding: ScanFinding): Verdict {
     return internal(
       finding.value,
       `Port ${finding.value} is a container port with no published host port, so nothing outside the container reaches it.`,
-      target,
     );
   }
 
@@ -472,17 +462,8 @@ function judgeRedirect(
   const scheduled = scheduledRejection(finding.value, cronPaths);
   if (scheduled !== undefined) return { target, rejection: scheduled };
 
-  const placeholder = placeholderIn(finding.value);
-  if (placeholder !== undefined) {
-    return {
-      target,
-      rejection: {
-        reason: 'dynamic-path',
-        matched: placeholder,
-        message: `"${finding.value}" carries the placeholder "${placeholder}", so no single URL answers it; substitute a real value before monitoring it.`,
-      },
-    };
-  }
+  const placeholder = placeholderRejection(finding.value);
+  if (placeholder !== undefined) return { target, rejection: placeholder };
 
   const destination = detail.destination ?? detail.dest ?? detail.to;
   if (destination === undefined || !ABSOLUTE_URL.test(destination)) return { target };
@@ -501,8 +482,23 @@ function judgeRedirect(
   };
 }
 
-function internal(value: string, message: string, target: CandidateTarget = 'port'): Verdict {
-  return { target, rejection: { reason: 'container-internal', matched: value, message } };
+function internal(value: string, message: string): Verdict {
+  return { target: 'port', rejection: { reason: 'container-internal', matched: value, message } };
+}
+
+/**
+ * The rejection a placeholder in `value` earns, or undefined when there is
+ * none. Shared by the two judges that meet placeholders, so the sentence a user
+ * reads is written once.
+ */
+function placeholderRejection(value: string): Rejection | undefined {
+  const placeholder = placeholderIn(value);
+  if (placeholder === undefined) return undefined;
+  return {
+    reason: 'dynamic-path',
+    matched: placeholder,
+    message: `"${value}" carries the placeholder "${placeholder}", so no single URL answers it; substitute a real value before monitoring it.`,
+  };
 }
 
 function scheduledRejection(
@@ -741,18 +737,28 @@ function mappedIpv4(groups: readonly number[]): readonly number[] | undefined {
 }
 
 /**
- * The host a URL or bare `host:port` names. Values that start with `/` are
- * paths and name no host, so they get nothing back.
+ * A probe value parsed as a URL, with a scheme assumed when it names none.
+ * Values that start with `/` are paths and address nothing, so they parse to
+ * nothing. Keeping this in one place is what makes {@link hostOf} and
+ * {@link pathOf} agree about what a value means, rather than agreeing by hand.
  */
-function hostOf(value: string): string | undefined {
+function probeUrl(value: string): URL | undefined {
   const text = value.trim();
   if (text === '' || text.startsWith('/')) return undefined;
   try {
-    const { hostname } = new URL(ABSOLUTE_URL.test(text) ? text : `http://${text}`);
-    return hostname === '' ? undefined : hostname;
+    return new URL(ABSOLUTE_URL.test(text) ? text : `http://${text}`);
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The host a URL or bare `host:port` names. Empty for values like `foo://`,
+ * which parse but address no host.
+ */
+function hostOf(value: string): string | undefined {
+  const hostname = probeUrl(value)?.hostname;
+  return hostname === undefined || hostname === '' ? undefined : hostname;
 }
 
 // --- Heartbeats ------------------------------------------------------------
@@ -862,34 +868,22 @@ function healthRank(candidate: ScanCandidate): number {
  * scan has not already found, and a path with an unresolved `${VAR}` in it,
  * which no single URL answers.
  */
-function recoveredHealthPath(finding: ScanFinding): ScanCandidate | undefined {
-  if (!HEALTHCHECK_KINDS.has(finding.kind)) return undefined;
+function recoveredHealthPath(candidate: ScanCandidate): ScanCandidate | undefined {
+  if (!HEALTHCHECK_KINDS.has(candidate.kind)) return undefined;
 
-  const path = pathOf(finding.value);
+  const path = pathOf(candidate.value);
   if (path === undefined || path === '/') return undefined;
   if (placeholderIn(path) !== undefined) return undefined;
 
-  return {
-    target: 'path',
-    value: path,
-    kind: finding.kind,
-    source: 'containers',
-    evidence: finding.evidence,
-    ...(finding.detail === undefined ? {} : { detail: finding.detail }),
-    health: true,
-  };
+  // Built from the candidate the caller already assembled, so a new field on
+  // ScanCandidate cannot be silently missing here.
+  return { ...candidate, target: 'path', value: path, health: true };
 }
 
-/** The path a probe URL names, parsed the same way {@link hostOf} parses its host. */
+/** The path a probe URL names. Empty for values like `git+ssh://host`. */
 function pathOf(value: string): string | undefined {
-  const text = value.trim();
-  if (text === '' || text.startsWith('/')) return undefined;
-  try {
-    const { pathname } = new URL(ABSOLUTE_URL.test(text) ? text : `http://${text}`);
-    return pathname === '' ? undefined : pathname;
-  } catch {
-    return undefined;
-  }
+  const pathname = probeUrl(value)?.pathname;
+  return pathname === undefined || pathname === '' ? undefined : pathname;
 }
 
 /** Container probes that name a URL: the image declares these ARE the health check. */
