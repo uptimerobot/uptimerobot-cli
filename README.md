@@ -159,7 +159,22 @@ Set `UPTIMEROBOT_OUTPUT` to `json`, `jsonl`, `table`, or `plain` to choose a def
 
 Normalized collection JSON contains `items` and `nextCursor`. The CLI does not follow pagination automatically; pass a returned cursor through `--cursor` for the next page. Collection commands also support `--columns` and `--all`. Column selection never changes JSON, JSONL, or raw output, and `--all` may expose sensitive API fields.
 
-Machine-readable failures are emitted as JSON on stderr while stdout remains empty.
+Machine-readable failures are emitted as JSON on stderr. Stdout remains empty, except for `monitors bulk` commands, which print their per-item results on stdout even when the operation failed.
+
+The exit code identifies the failure:
+
+| Exit code | Meaning                                                                             |
+| --------- | ----------------------------------------------------------------------------------- |
+| `0`       | Success                                                                             |
+| `1`       | Generic failure, including a bulk operation where every item failed (`BULK_FAILED`) |
+| `2`       | Invalid input                                                                       |
+| `3`       | Bulk operation where some items failed (`BULK_PARTIAL_FAILURE`)                     |
+| `4`       | Unauthenticated (HTTP 401)                                                          |
+| `5`       | Forbidden (HTTP 403)                                                                |
+| `6`       | Not found (HTTP 404)                                                                |
+| `7`       | Rate limited (HTTP 429)                                                             |
+
+`monitors bulk pause`, `monitors bulk start`, and `monitors bulk update` report per-monitor outcomes in an HTTP 201 response, so a failure is only visible in the body. The CLI inspects it and exits non-zero, listing the failed entries in the error envelope's `details`.
 
 ## Safety
 

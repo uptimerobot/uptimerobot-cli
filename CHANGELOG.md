@@ -27,6 +27,13 @@ may change in minor releases.
   cleartext, so credentials reached CI logs and agent transcripts. A stderr
   notice names the redacted fields. `--raw` stays unredacted as an explicit
   escape hatch.
+- `monitors bulk pause`, `monitors bulk start`, and `monitors bulk update` now
+  exit non-zero when the API reports failed items. These endpoints answer
+  HTTP 201 regardless of the per-monitor outcome, so a run in which every item
+  failed previously exited `0` with nothing on stderr. The results still print
+  on stdout; the failed entries are now also reported in the error envelope's
+  `details` on stderr, with exit code `1` (`BULK_FAILED`) when every item
+  failed and `3` (`BULK_PARTIAL_FAILURE`) when only some did.
 - Unknown-command errors name the command the way the CLI accepts it. A miss
   such as `uptimerobot monitors lst` reported `command monitors:lst not found`,
   suggesting a colon syntax the CLI does not accept, in both machine and human
