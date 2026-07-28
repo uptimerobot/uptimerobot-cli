@@ -101,8 +101,10 @@ export interface ScanCandidate {
   /** Extras carried through from the finding, e.g. { method: 'GET' }. */
   detail?: Record<string, string>;
   /**
-   * Set when the path reads as a health/liveness/readiness endpoint. Absent
-   * otherwise, so it never widens a candidate that is not one.
+   * Set when this is a health probe: a route whose path reads as one, or a
+   * container healthcheck, which the image declares outright. Absent otherwise,
+   * so it never widens a candidate that is not one. See
+   * {@link isHealthCandidate}.
    */
   health?: boolean;
 }
@@ -229,12 +231,9 @@ export function buildSeedContext(repoRoot: string, findings: ScanFindings): Seed
       };
       if (verdict.rejection === undefined) {
         // A health probe is the strongest thing to monitor, so it is marked
-        // here and surfaced first. Only a route path can be one: a port has no
-        // path, and a healthcheck URL is a probe the repository already runs.
+        // here and surfaced first.
         accepted.push(
-          source === 'routes' && isHealthPath(finding.value)
-            ? { ...candidate, health: true }
-            : candidate,
+          isHealthCandidate(finding, source) ? { ...candidate, health: true } : candidate,
         );
       } else rejected.push({ ...candidate, ...verdict.rejection });
     }
@@ -824,6 +823,27 @@ function compareAccepted(left: ScanCandidate, right: ScanCandidate): number {
  */
 function healthRank(candidate: ScanCandidate): number {
   return candidate.health === true ? 0 : 1;
+}
+
+/** Container probes that name a URL: the image declares these ARE the health check. */
+const HEALTHCHECK_KINDS: ReadonlySet<string> = new Set([
+  'compose-healthcheck',
+  'docker-healthcheck',
+]);
+
+/**
+ * Whether a finding is the kind of thing worth monitoring first.
+ *
+ * Two independent signals, because the evidence differs in strength. A route is
+ * a guess from its path — `/api/health` reads like a probe, so it is marked. A
+ * container healthcheck needs no guess at all: the repository has already
+ * declared that URL to be how the service proves it is up, whatever the path
+ * says, which is why it is marked on kind alone. It is also already a whole
+ * URL, so it is the rare candidate needing nothing from the user.
+ */
+function isHealthCandidate(finding: ScanFinding, source: ScanSource): boolean {
+  if (HEALTHCHECK_KINDS.has(finding.kind)) return true;
+  return source === 'routes' && isHealthPath(finding.value);
 }
 
 function compareRejected(left: RejectedCandidate, right: RejectedCandidate): number {

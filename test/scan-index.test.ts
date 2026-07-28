@@ -662,6 +662,45 @@ describe('health endpoint ranking', () => {
 
     expect(rendered).not.toContain('★ marks a likely health endpoint');
   });
+
+  // A container healthcheck is the repository declaring "this URL is how you
+  // know the service is up" — a stronger signal than any path-name guess, and
+  // already a whole URL, so it needs no base URL from the user.
+  it('marks a container healthcheck URL as a health candidate', () => {
+    const context = seed({ containers: [healthcheck('https://api.example.com/healthz')] });
+
+    expect(context.accepted[0]).toMatchObject({
+      value: 'https://api.example.com/healthz',
+      health: true,
+    });
+  });
+
+  it('marks a healthcheck whose URL path does not look health-like', () => {
+    const context = seed({ containers: [healthcheck('https://api.example.com/')] });
+
+    expect(context.accepted[0]?.health).toBe(true);
+  });
+
+  it('marks a compose healthcheck too, not just a Dockerfile one', () => {
+    const context = seed({
+      containers: [
+        {
+          kind: 'compose-healthcheck',
+          value: 'https://api.example.com/ping',
+          evidence: { file: 'docker-compose.yml', line: 9 },
+        },
+      ],
+    });
+
+    expect(context.accepted[0]?.health).toBe(true);
+  });
+
+  it('never marks a rejected healthcheck', () => {
+    const context = seed({ containers: [healthcheck('http://localhost:3000/healthz')] });
+
+    expect(context.accepted).toHaveLength(0);
+    expect(context.rejected[0]?.health).toBeUndefined();
+  });
 });
 
 describe('scanRepository', () => {
