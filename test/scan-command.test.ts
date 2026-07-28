@@ -84,15 +84,18 @@ describe('uptimerobot scan', () => {
     expect(context.schemaVersion).toBe(1);
     expect(context.repoRoot).toBe(root);
     expect(context.summary).toEqual({
-      accepted: 3,
-      findings: 6,
+      accepted: 4,
+      findings: 7,
       heartbeats: 1,
       rejected: 2,
       rejectedByReason: { 'container-internal': 1, loopback: 1 },
     });
+    // `/healthz` is recovered from the loopback compose healthcheck: the URL
+    // stays skipped, the path it declares does not.
     expect(context.accepted.map((candidate) => [candidate.target, candidate.value])).toEqual([
       ['url', 'https://status.example.com/healthz'],
       ['path', '/api/health'],
+      ['path', '/healthz'],
       ['port', '8080'],
     ]);
     expect(context.heartbeats.map((heartbeat) => heartbeat.schedule)).toEqual(['0 3 * * *']);
@@ -122,7 +125,7 @@ describe('uptimerobot scan', () => {
     const output = printed();
     expect(output).toContain('# Scan seed context (schema 1)');
     expect(output).toContain(`Repository: ${root}`);
-    expect(output).toContain('3 accepted, 2 skipped, 1 scheduled job.');
+    expect(output).toContain('4 accepted, 2 skipped, 1 scheduled job.');
     expect(output).toContain('## Skipped, and why');
     expect(output).toContain('**loopback**');
     expect(output).toContain('**container-internal**');
@@ -139,7 +142,7 @@ describe('uptimerobot scan', () => {
     const context = await Scan.run(['--json'], { root: projectRoot });
 
     expect(context.repoRoot).toBe(root);
-    expect(context.summary.accepted).toBe(3);
+    expect(context.summary.accepted).toBe(4);
   });
 
   it('needs no API key and never reaches the network', async () => {
@@ -151,7 +154,7 @@ describe('uptimerobot scan', () => {
 
     const context = await Scan.run([root, '--json'], { root: projectRoot });
 
-    expect(context.summary.accepted).toBe(3);
+    expect(context.summary.accepted).toBe(4);
     expect(request).not.toHaveBeenCalled();
   });
 

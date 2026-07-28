@@ -235,7 +235,11 @@ export function buildSeedContext(repoRoot: string, findings: ScanFindings): Seed
         accepted.push(
           isHealthCandidate(finding, verdict.target) ? { ...candidate, health: true } : candidate,
         );
-      } else rejected.push({ ...candidate, ...verdict.rejection });
+      } else {
+        rejected.push({ ...candidate, ...verdict.rejection });
+        const recovered = recoveredHealthPath(finding);
+        if (recovered !== undefined) accepted.push(recovered);
+      }
     }
   }
 
@@ -823,6 +827,53 @@ function compareAccepted(left: ScanCandidate, right: ScanCandidate): number {
  */
 function healthRank(candidate: ScanCandidate): number {
   return candidate.health === true ? 0 : 1;
+}
+
+/**
+ * The path of a container healthcheck whose URL was turned down, as a candidate
+ * in its own right — or undefined when there is nothing worth recovering.
+ *
+ * A healthcheck executes inside the container's own network namespace, so it is
+ * written against `localhost`, `127.0.0.1`, or a Compose service name almost
+ * without exception. Rejecting that URL is correct, and it stays rejected: no
+ * monitor can reach it. But the rejection is about the *host*, and the path is
+ * a separate fact that outlives it — the repository stating outright which path
+ * proves the service is up. Paired with a base URL the user confirms, that is
+ * the strongest candidate a scan can produce, so it is recovered here rather
+ * than lost to the skip list.
+ *
+ * Two things are not worth recovering: a bare `/`, which says nothing a route
+ * scan has not already found, and a path with an unresolved `${VAR}` in it,
+ * which no single URL answers.
+ */
+function recoveredHealthPath(finding: ScanFinding): ScanCandidate | undefined {
+  if (!HEALTHCHECK_KINDS.has(finding.kind)) return undefined;
+
+  const path = pathOf(finding.value);
+  if (path === undefined || path === '/') return undefined;
+  if (placeholderIn(path) !== undefined) return undefined;
+
+  return {
+    target: 'path',
+    value: path,
+    kind: finding.kind,
+    source: 'containers',
+    evidence: finding.evidence,
+    ...(finding.detail === undefined ? {} : { detail: finding.detail }),
+    health: true,
+  };
+}
+
+/** The path a probe URL names, parsed the same way {@link hostOf} parses its host. */
+function pathOf(value: string): string | undefined {
+  const text = value.trim();
+  if (text === '' || text.startsWith('/')) return undefined;
+  try {
+    const { pathname } = new URL(ABSOLUTE_URL.test(text) ? text : `http://${text}`);
+    return pathname === '' ? undefined : pathname;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Container probes that name a URL: the image declares these ARE the health check. */

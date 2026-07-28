@@ -713,11 +713,69 @@ describe('health endpoint ranking', () => {
     expect(context.accepted[0]).toMatchObject({ value: '/api/health', health: true });
   });
 
-  it('never marks a rejected healthcheck', () => {
+  it('never marks the rejected healthcheck URL itself', () => {
     const context = seed({ containers: [healthcheck('http://localhost:3000/healthz')] });
 
-    expect(context.accepted).toHaveLength(0);
+    expect(context.rejected[0]?.reason).toBe('loopback');
     expect(context.rejected[0]?.health).toBeUndefined();
+  });
+});
+
+/**
+ * A container healthcheck runs inside the container's own network namespace, so
+ * writing it against localhost is the only way to write one. Rejecting the URL
+ * is right — nobody can monitor `http://localhost:3000` — but the path it names
+ * is the repository stating outright how the service proves it is up, and that
+ * survives the host being unreachable.
+ */
+describe('health path recovered from an unreachable healthcheck', () => {
+  it('surfaces the path when the healthcheck host is loopback', () => {
+    const context = seed({ containers: [healthcheck('http://localhost:3000/api/health')] });
+
+    expect(context.rejected[0]).toMatchObject({
+      value: 'http://localhost:3000/api/health',
+      reason: 'loopback',
+    });
+    expect(context.accepted).toContainEqual(
+      expect.objectContaining({ target: 'path', value: '/api/health', health: true }),
+    );
+  });
+
+  it('recovers the path from a service-name host too', () => {
+    const context = seed({ containers: [healthcheck('http://api:9000/ready')] });
+
+    expect(context.accepted).toContainEqual(
+      expect.objectContaining({ target: 'path', value: '/ready', health: true }),
+    );
+  });
+
+  it('keeps the evidence of the healthcheck it came from', () => {
+    const context = seed({ containers: [healthcheck('http://127.0.0.1:8080/healthz')] });
+    const recovered = context.accepted.find((candidate) => candidate.value === '/healthz');
+
+    expect(recovered?.evidence).toEqual({ file: 'Dockerfile', line: 12 });
+    expect(recovered?.kind).toBe('docker-healthcheck');
+  });
+
+  it('recovers nothing when the probe only names a root path', () => {
+    const context = seed({ containers: [healthcheck('http://localhost:3000/')] });
+
+    expect(context.accepted).toHaveLength(0);
+  });
+
+  it('recovers nothing from a path carrying an unresolved placeholder', () => {
+    const context = seed({
+      containers: [healthcheck('http://localhost:3000/api/${VERSION}/health')],
+    });
+
+    expect(context.accepted).toHaveLength(0);
+  });
+
+  it('leaves an accepted public healthcheck as the single URL candidate', () => {
+    const context = seed({ containers: [healthcheck('https://api.example.com/healthz')] });
+
+    expect(context.accepted).toHaveLength(1);
+    expect(context.accepted[0]).toMatchObject({ target: 'url', health: true });
   });
 });
 
