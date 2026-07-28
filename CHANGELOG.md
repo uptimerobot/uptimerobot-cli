@@ -12,6 +12,8 @@ may change in minor releases.
 
 ### Added
 
+- `uptimerobot skills install` confirms and launches the external `npx skills`
+  installer for the UptimeRobot AI skill collection.
 - `uptimerobot help <command-or-topic>` prints that command's or topic's help,
   matching `uptimerobot <command-or-topic> --help`. It previously failed with
   `INVALID_INPUT`.

@@ -36,6 +36,16 @@ uptimerobot --version
 uptimerobot --help
 ```
 
+## AI agent skills
+
+Install the [UptimeRobot AI skills](https://github.com/uptimerobot/ai) for supported coding agents:
+
+```sh
+uptimerobot skills install
+```
+
+The CLI shows the exact external command and requires confirmation before handing the terminal to `npx skills`. `npx` may download and execute the third-party `skills` package, which can write skill files into your project or agent directories. The installer prompts for the skills, agents, and installation scope. In a non-interactive environment, run `npx skills add uptimerobot/ai` directly after reviewing it.
+
 ## Authentication
 
 [Create an API key](https://help.uptimerobot.com/en/articles/11620152-how-to-use-uptimerobot-s-api), then save it in your operating system's secure credential store:
