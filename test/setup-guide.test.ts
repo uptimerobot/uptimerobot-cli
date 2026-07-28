@@ -5,6 +5,22 @@ import { renderSetupGuide } from '../src/lib/agent-setup/setup-guide.js';
 const ON_PATH: CliInvocation = { command: 'uptimerobot', source: 'override' };
 const VIA_NPX: CliInvocation = { command: 'npx @uptimerobot/cli', source: 'npx' };
 
+/**
+ * The guide as one run of prose, every stretch of whitespace collapsed.
+ *
+ * The guide is built from an array of hand-wrapped source lines, so a sentence
+ * routinely spans two of them and renders with a newline in the middle. A
+ * substring assertion against the raw text is therefore hostage to where a line
+ * happens to wrap: a positive breaks the moment someone rewraps a paragraph,
+ * and — worse — a negative starts passing while the prose it forbids is still
+ * there. Collapsing whitespace first asserts what the guide *says* rather than
+ * how it is laid out. Assertions about exact command text stay on the raw
+ * string, where a wrapped shell line really is a defect.
+ */
+function prose(text: string): string {
+  return text.replaceAll(/\s+/g, ' ');
+}
+
 describe('renderSetupGuide', () => {
   const guide = renderSetupGuide(ON_PATH);
 
@@ -70,25 +86,25 @@ describe('renderSetupGuide', () => {
     ['paging the duplicate pre-check', '--cursor'],
     ['the truncated-scan instruction', 'stopped early'],
   ])('states %s', (_label, substring) => {
-    expect(guide).toContain(substring);
+    expect(prose(guide)).toContain(prose(substring));
   });
 
   // The scan detects these; telling the agent to go find them by hand wastes a
   // turn and undercuts evidence that is already good.
   it('no longer claims Laravel routes are undetected', () => {
-    expect(guide).not.toContain('Laravel, Spring, Phoenix');
+    expect(prose(guide)).not.toContain('Laravel, Spring, Phoenix');
   });
 
   // The cap was never the real limit — this prose was. A run that restores it
   // silently undoes the whole point of raising the ceiling.
   it('no longer tells the agent to propose only one or two monitors', () => {
-    expect(guide).not.toContain('one or two that prove the system works');
-    expect(guide).not.toContain('does not want 60 monitors');
+    expect(prose(guide)).not.toContain('one or two that prove the system works');
+    expect(prose(guide)).not.toContain('does not want 60 monitors');
   });
 
   it('no longer models an inventory that proposes a fraction of each surface', () => {
-    expect(guide).not.toContain('25 URLs in the sitemap, 2 proposed');
-    expect(guide).not.toContain('Cron: 3\njobs, 1 proposed');
+    expect(prose(guide)).not.toContain('25 URLs in the sitemap, 2 proposed');
+    expect(prose(guide)).not.toContain('Cron: 3 jobs, 1 proposed');
   });
 
   it('defaults the monitor cap to 50', () => {
@@ -149,7 +165,7 @@ describe('renderSetupGuide', () => {
   });
 
   it('drops the pre-flight readiness probe entirely', () => {
-    expect(guide).not.toContain('Before you start');
+    expect(prose(guide)).not.toContain('Before you start');
     expect(guide).not.toContain('monitors list --limit 1');
     expect(guide).not.toContain('--version');
   });
