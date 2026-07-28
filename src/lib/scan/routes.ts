@@ -118,22 +118,26 @@ const SKIPPED_DIRECTORIES = new Set([
   'vendor',
 ]);
 
-const NEXT_ROUTE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx']);
 const SCRIPT_EXTENSIONS = new Set(['.cjs', '.cts', '.js', '.mjs', '.mts', '.ts']);
 
 /**
- * What a `pages/` directory routes, beyond Next.js's own extensions.
+ * Every extension a `pages/` directory routes, and the kind it reports as.
  *
  * A static-site generator addresses `pages/` exactly as the Next.js pages
  * router does — `index` is its directory, `_`-prefixed files are private — so
- * the derivation is shared and only the file extension differs. The kind is
- * taken from the extension so the document still says which generator it is;
- * Markdown is deliberately generic, since half a dozen generators route it.
+ * the derivation is shared and only the extension differs. Next.js and the
+ * generators live in one map rather than a set plus a map, so adding an
+ * extension is one edit in one place. Markdown is deliberately generic, since
+ * half a dozen generators route it.
  */
 const PAGES_KIND_BY_EXTENSION: ReadonlyMap<string, string> = new Map([
   ['.astro', 'astro'],
+  ['.js', 'next-pages'],
+  ['.jsx', 'next-pages'],
   ['.md', 'pages-router'],
   ['.mdx', 'pages-router'],
+  ['.ts', 'next-pages'],
+  ['.tsx', 'next-pages'],
   ['.vue', 'nuxt'],
 ]);
 
@@ -287,7 +291,6 @@ function isRouteCandidateFile(name: string): boolean {
 
   const extension = extname(name);
   return (
-    NEXT_ROUTE_EXTENSIONS.has(extension) ||
     PAGES_KIND_BY_EXTENSION.has(extension) ||
     SCRIPT_EXTENSIONS.has(extension) ||
     extension === '.php'
@@ -314,7 +317,7 @@ async function collectFromFile(
   const appRoot = NEXT_APP_FILENAME.test(name) ? routerRootIndex(segments, 'app') : -1;
   const routesPage = SVELTEKIT_FILENAME.test(name);
   const svelteRoot = routesPage ? routerRootIndex(segments, 'routes') : -1;
-  const pagesKind = pagesRouterKind(extension);
+  const pagesKind = PAGES_KIND_BY_EXTENSION.get(extension);
   const pagesRoot =
     pagesKind !== undefined && !NON_ROUTE_FILENAME.test(name)
       ? routerRootIndex(segments, 'pages')
@@ -325,18 +328,11 @@ async function collectFromFile(
   const isPhp = extension === '.php';
   const isAppRouteHandler = appRoot !== -1 && name.startsWith('route.');
 
-  if (
-    appRoot === -1 &&
-    pagesRoot === -1 &&
-    svelteRoot === -1 &&
-    !isDjango &&
-    !isRails &&
-    !isScript &&
-    !isPhp
-  ) {
-    return;
-  }
-
+  // No early "does anything apply?" guard: a file nothing matches reads no text
+  // below, runs no extractor, and returns at the `text === undefined` check all
+  // the same. A guard here would only be a second registration list, silently
+  // disabling any extractor someone forgot to add to it.
+  //
   // Next.js routes are derived from the path alone, so an oversized page still
   // reports; only the extractors that need text depend on a successful read.
   const text =
@@ -425,16 +421,6 @@ function collectNextPages(
     evidence: { file, line: 1 },
     detail: { type: value === '/api' || value.startsWith('/api/') ? 'api' : 'page' },
   });
-}
-
-/**
- * The kind a `pages/` file reports under, or undefined when the extension does
- * not route at all. Next.js keeps `next-pages`; a static-site generator is
- * named by its own extension so the document does not claim it is Next.js.
- */
-function pagesRouterKind(extension: string): string | undefined {
-  if (NEXT_ROUTE_EXTENSIONS.has(extension)) return 'next-pages';
-  return PAGES_KIND_BY_EXTENSION.get(extension);
 }
 
 /**
