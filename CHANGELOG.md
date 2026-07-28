@@ -14,12 +14,19 @@ may change in minor releases.
 
 - `uptimerobot skills install` confirms and launches the external `npx skills`
   installer for the UptimeRobot AI skill collection.
+- `--reveal-secrets` prints credential fields in a response instead of
+  redacting them.
 - `--dry-run` on `status-pages create` and `status-pages update`. Both compile a
   JSON request body, so the flag was missing only because it was gated on the
   documented content type rather than on what the command can actually send.
 
 ### Fixed
 
+- Recognizable credential fields in a response, such as `httpPassword`, are
+  redacted in JSON, JSONL, table, and plain output; they previously printed in
+  cleartext, so credentials reached CI logs and agent transcripts. A stderr
+  notice names the redacted fields. `--raw` stays unredacted as an explicit
+  escape hatch.
 - `status-pages create` and `status-pages update` now send `application/json`
   unless `--file` is passed. They previously always sent `multipart/form-data`,
   which flattened `monitorIds` and `tagIds` into repeated scalar fields — a
