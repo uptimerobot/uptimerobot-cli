@@ -265,6 +265,25 @@ describe('status pages create', () => {
     expect(help.stdout).toContain('--dry-run');
     expect(help.stdout).toContain('--file=<field=path>');
   });
+
+  it('rejects --dry-run once --file makes the body multipart', async () => {
+    const logo = await writeTemporaryLogo();
+    const result = await runCli([
+      'status-pages',
+      'create',
+      '--set',
+      'friendlyName=Status',
+      '--set',
+      'monitorIds=[123]',
+      '--file',
+      `logo=${logo}`,
+      '--dry-run',
+    ]);
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('--dry-run only supports JSON request bodies.');
+  });
 });
 
 describe('status page operation shape', () => {
