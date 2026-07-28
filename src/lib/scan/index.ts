@@ -233,7 +233,7 @@ export function buildSeedContext(repoRoot: string, findings: ScanFindings): Seed
         // A health probe is the strongest thing to monitor, so it is marked
         // here and surfaced first.
         accepted.push(
-          isHealthCandidate(finding, source) ? { ...candidate, health: true } : candidate,
+          isHealthCandidate(finding, verdict.target) ? { ...candidate, health: true } : candidate,
         );
       } else rejected.push({ ...candidate, ...verdict.rejection });
     }
@@ -841,9 +841,12 @@ const HEALTHCHECK_KINDS: ReadonlySet<string> = new Set([
  * says, which is why it is marked on kind alone. It is also already a whole
  * URL, so it is the rare candidate needing nothing from the user.
  */
-function isHealthCandidate(finding: ScanFinding, source: ScanSource): boolean {
+function isHealthCandidate(finding: ScanFinding, target: CandidateTarget): boolean {
   if (HEALTHCHECK_KINDS.has(finding.kind)) return true;
-  return source === 'routes' && isHealthPath(finding.value);
+  // Keyed on what the value resolved to, not on which scanner produced it: a
+  // `/api/health` fronted by a platform rewrite is the same candidate as one
+  // declared in a route file.
+  return target === 'path' && isHealthPath(finding.value);
 }
 
 function compareRejected(left: RejectedCandidate, right: RejectedCandidate): number {

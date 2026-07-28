@@ -36,7 +36,11 @@ export type RouteFinding = ScanFinding;
 export function isHealthPath(path: string): boolean {
   const segments = path.toLowerCase().split('/').filter(Boolean);
   const last = segments.at(-1);
-  return last !== undefined && HEALTH_SEGMENTS.has(last);
+  if (last === undefined) return false;
+  // `health_check`, `health-check` and `_health` are the same endpoint wearing
+  // three conventions, so the separator is normalised away before the lookup
+  // rather than spelled out three times in the set.
+  return HEALTH_SEGMENTS.has(last.replaceAll('_', '-').replace(/^-+/, ''));
 }
 
 /** Final segments that name a health probe rather than a product surface. */
@@ -45,6 +49,7 @@ const HEALTH_SEGMENTS: ReadonlySet<string> = new Set([
   'health',
   'health-check',
   'healthcheck',
+  'healthy',
   'healthz',
   'heartbeat',
   'live',

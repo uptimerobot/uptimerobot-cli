@@ -695,6 +695,24 @@ describe('health endpoint ranking', () => {
     expect(context.accepted[0]?.health).toBe(true);
   });
 
+  // A health path proxied through a platform rewrite is the same candidate as
+  // one declared in a route file; which scanner saw it first is not a reason to
+  // rank it lower.
+  it('marks a health path that arrived from a platform rewrite', () => {
+    const context = seed({
+      containers: [
+        {
+          kind: 'vercel-rewrite',
+          value: '/api/health',
+          evidence: { file: 'vercel.json', line: 3 },
+          detail: { destination: '/api/internal-healthcheck' },
+        },
+      ],
+    });
+
+    expect(context.accepted[0]).toMatchObject({ value: '/api/health', health: true });
+  });
+
   it('never marks a rejected healthcheck', () => {
     const context = seed({ containers: [healthcheck('http://localhost:3000/healthz')] });
 

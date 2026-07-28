@@ -94,6 +94,12 @@ describe('isHealthPath', () => {
     '/actuator/health',
     '/HEALTH',
     '/api/Health/',
+    // Underscore spellings are as common as the hyphenated ones: `health_check`
+    // is Rails 7.1's and django-health-check's, `_health` is a Node/serverless
+    // convention.
+    '/health_check',
+    '/_health',
+    '/healthy',
   ])('marks %s as a health endpoint', (path) => {
     expect(isHealthPath(path)).toBe(true);
   });
