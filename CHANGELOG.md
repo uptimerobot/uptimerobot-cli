@@ -10,6 +10,11 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Removed
+
+- The `user get` alias. Use `uptimerobot user me` instead — `user get` was a
+  hand-written alias for the same `/v3/user/me` endpoint.
+
 ## [0.1.2] - 2026-07-27
 
 ### Added
