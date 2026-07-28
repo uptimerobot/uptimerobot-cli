@@ -19,6 +19,9 @@ may change in minor releases.
 - `--dry-run` on `status-pages create` and `status-pages update`. Both compile a
   JSON request body, so the flag was missing only because it was gated on the
   documented content type rather than on what the command can actually send.
+- `uptimerobot help <command-or-topic>` prints that command's or topic's help,
+  matching `uptimerobot <command-or-topic> --help`. It previously failed with
+  `INVALID_INPUT`.
 
 ### Fixed
 
@@ -42,6 +45,10 @@ may change in minor releases.
   unstyled.
 - With `--file`, arrays are now sent as `key[]` and nested objects as dotted
   paths, so a logo or icon upload no longer corrupts the rest of the body.
+- Unknown-command errors name the command the way the CLI accepts it. A miss
+  such as `uptimerobot monitors lst` reported `command monitors:lst not found`,
+  suggesting a colon syntax the CLI does not accept, in both machine and human
+  output.
 - `uptimerobot monitors --help` describes the `monitors create` topic as
   "Create a monitor of a given type" instead of borrowing the summary of its
   first subcommand ("Create a monitor (API)"), which made the topic look like

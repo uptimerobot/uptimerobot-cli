@@ -32,6 +32,68 @@ describe('machine-readable CLI errors', () => {
     });
   });
 
+  it('reports a multi-segment unknown command with the configured separator', async () => {
+    const machine = await runCli(['monitors', 'lst', '--json']);
+    const human = await runCli(['monitors', 'lst', '--format', 'table'], { NO_COLOR: '1' });
+
+    expect({ ...machine, stderr: JSON.parse(machine.stderr) }).toEqual({
+      exitCode: 2,
+      stderr: {
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'command monitors lst not found',
+          suggestions: ['uptimerobot monitors list'],
+        },
+      },
+      stdout: '',
+    });
+    expect(human.stderr).toContain('Error: command monitors lst not found');
+    expect(human.stderr).not.toContain('monitors:lst');
+  });
+
+  // oclif's other spelling, `Command <id> not found.`, is raised by Help#showHelp
+  // rather than Config#runCommand, and reaches the user through a different
+  // boundary depending on how help was requested: the --help flag is served
+  // outside any command, while `help ...` raises it inside one.
+  it.each([
+    { argv: ['help', 'monitors', 'nonsense'], boundary: 'the help command' },
+    { argv: ['monitors', 'nonsense', '--help'], boundary: 'the --help flag' },
+  ])('reports an unknown help subject from $boundary', async ({ argv }) => {
+    const machine = await runCli(argv);
+    const human = await runCli(argv, { NO_COLOR: '1', UPTIMEROBOT_OUTPUT: 'table' });
+
+    expect(JSON.parse(machine.stderr)).toEqual({
+      error: { code: 'INVALID_INPUT', message: 'Command monitors nonsense not found.' },
+    });
+    expect(human.stderr).toContain('Error: Command monitors nonsense not found.');
+    expect(human.stderr).not.toContain('monitors:nonsense');
+  });
+
+  it('leaves colons that are not topic separators alone', async () => {
+    const result = await runCli(['https://host:8080/path', '--json']);
+
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      error: {
+        code: 'INVALID_INPUT',
+        message: 'command https://host:8080/path not found',
+      },
+    });
+  });
+
+  it.each([
+    { subject: ['monitors'], title: 'a topic' },
+    { subject: ['monitors', 'create'], title: 'a multi-word topic' },
+    { subject: ['monitors', 'list'], title: 'a command' },
+  ])('renders help for $title instead of an unknown-command error', async ({ subject }) => {
+    const result = await runCli(['help', ...subject], { NO_COLOR: '1' });
+    const flag = await runCli([...subject, '--help'], { NO_COLOR: '1' });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).not.toBe('');
+    expect(result.stdout).toBe(flag.stdout);
+  });
+
   it('suggests a close command miss in machine and human output', async () => {
     const machine = await runCli(['auth', 'who-am-i']);
     const human = await runCli(['auth', 'who-am-i', '--format', 'table'], { NO_COLOR: '1' });
