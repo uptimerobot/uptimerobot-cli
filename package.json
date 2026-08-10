@@ -109,7 +109,7 @@
         "description": "Manage monitors and statistics",
         "subtopics": {
           "bulk": {
-            "description": "Run bulk monitor actions"
+            "description": "Run bulk monitor actions\n\nPause, start, and update are applied asynchronously: the API accepts the write and reports success immediately, and the change takes roughly 40-60 seconds to take effect. Poll `uptimerobot monitors get <id>` to confirm the new state."
           },
           "create": {
             "description": "Create a monitor of a given type"

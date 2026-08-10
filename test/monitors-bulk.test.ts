@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { CliResult } from './helpers/run-cli.js';
 import { runCli } from './helpers/run-cli.js';
 
 describe('monitors bulk', () => {
@@ -23,6 +24,30 @@ describe('monitors bulk', () => {
     if (!address || typeof address === 'string') throw new Error('Test server did not bind');
     return `http://127.0.0.1:${address.port}/v3`;
   }
+
+  // The endpoints report success per monitor before the change is applied and
+  // return no operation id, so the only way to know a bulk write landed is to
+  // re-read the monitors. Help is where a caller finds that out.
+  it('documents the apply delay in the help of every bulk command', async () => {
+    const [pause, start, update] = await Promise.all([
+      runCli(['monitors', 'bulk', 'pause', '--help']),
+      runCli(['monitors', 'bulk', 'start', '--help']),
+      runCli(['monitors', 'bulk', 'update', '--help']),
+    ]);
+    const documented = {
+      confirmsWithGet: true,
+      exitCode: 0,
+      namesTheDelay: true,
+      saysAccepted: true,
+      saysAsynchronous: true,
+    };
+
+    expect({
+      pause: describesAsyncApply(pause),
+      start: describesAsyncApply(start),
+      update: describesAsyncApply(update),
+    }).toEqual({ pause: documented, start: documented, update: documented });
+  });
 
   it('exits 1 when every item in the bulk operation failed', async () => {
     const payload = {
@@ -115,3 +140,16 @@ describe('monitors bulk', () => {
     });
   });
 });
+
+function describesAsyncApply(result: CliResult): Record<string, boolean | number> {
+  const help = result.stdout.replace(/\s+/g, ' ');
+  return {
+    confirmsWithGet: help.includes('`uptimerobot monitors get <id>`'),
+    exitCode: result.exitCode,
+    namesTheDelay: help.includes('roughly 40-60 seconds to take effect'),
+    saysAccepted: help.includes(
+      'accepts the write and reports "success" for every matched monitor immediately',
+    ),
+    saysAsynchronous: help.includes('Applied asynchronously.'),
+  };
+}
