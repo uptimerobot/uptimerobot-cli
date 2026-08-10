@@ -40,7 +40,7 @@ uptimerobot --help
 
 ```sh
 uptimerobot version --json
-# {"version":"0.3.0","platform":"darwin-arm64","node":"24.12.0"}
+# {"version":"0.4.0","platform":"darwin-arm64","node":"24.12.0"}
 ```
 
 ## AI agent skills
@@ -140,16 +140,7 @@ uptimerobot monitors create http --name checkout-api --set friendlyName=checkout
 
 ## Heartbeat monitors
 
-A heartbeat monitor stays silent until something pings it. Normalized output carries a derived `pingUrl` for that purpose:
-
-```sh
-uptimerobot monitors get 803704830 --json
-# {"type":"HEARTBEAT","id":803704830,"url":"997c8970…","pingUrl":"https://heartbeat.uptimerobot.com/m803704830-997c8970…"}
-```
-
-The URL is composed from the monitor's `id` and `url`, where `url` carries the monitor's token rather than a target address. Set `UPTIMEROBOT_HEARTBEAT_URL` to point at a different host. The field is derived by the CLI, not returned by the API, so `--raw` does not include it.
-
-Both are secrets — anyone holding the ping URL can report the heartbeat on your behalf, so a leaked one keeps a dead service looking alive — and both are redacted by default:
+A heartbeat monitor stays silent until something pings it, so normalized output carries a derived `pingUrl` — the address that job should call. Both it and the `url` it is built from are secrets, so both are redacted unless you ask for them:
 
 ```sh
 uptimerobot monitors get 803704830 --json
@@ -159,7 +150,9 @@ uptimerobot monitors get 803704830 --json --reveal-secrets
 # {"type":"HEARTBEAT","id":803704830,"url":"997c8970…","pingUrl":"https://heartbeat.uptimerobot.com/m803704830-997c8970…"}
 ```
 
-Reach for `--reveal-secrets` when wiring up the job that pings it, which is normally once per monitor. `url` on every other monitor type is a target address, not a secret, and is never redacted.
+Reach for `--reveal-secrets` when wiring up the job that pings it, which is normally once per monitor. Anyone holding the ping URL can report the heartbeat on your behalf, so a leaked one keeps a dead service looking alive with no alert raised. `url` on every other monitor type is a target address, not a secret, and is never redacted.
+
+The URL is composed from the monitor's `id` and `url`, where `url` carries the monitor's token rather than a target address. Set `UPTIMEROBOT_HEARTBEAT_URL` to point at a different host. The field is derived by the CLI, not returned by the API, so `--raw` does not include it.
 
 ## Validate before sending
 

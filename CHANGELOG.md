@@ -10,6 +10,8 @@ may change in minor releases.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-10
+
 ### Added
 
 - Heartbeat monitors carry a derived `pingUrl` in normalized output. The API
@@ -24,7 +26,7 @@ may change in minor releases.
   generated from it and defaults to `false`.
 - `uptimerobot version` reports the CLI version, platform, and Node.js runtime
   through the normal output flags, so `uptimerobot version --json` answers
-  `{"version":"0.3.0","platform":"darwin-arm64","node":"24.12.0"}`. The bare
+  `{"version":"0.4.0","platform":"darwin-arm64","node":"24.12.0"}`. The bare
   `--version` flag is handled inside oclif before any command runs and keeps
   printing the single human line it always has; asserting a minimum version in
   CI no longer means parsing that sentence.
@@ -187,7 +189,8 @@ may change in minor releases.
 - Redirects are followed manually and the origin is re-checked at every hop
   before credentials are attached; cross-origin redirects are refused.
 
-[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.0...v0.1.2
