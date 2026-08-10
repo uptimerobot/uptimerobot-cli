@@ -11,10 +11,11 @@ import { AGENT_TARGET_DEFINITIONS } from '../lib/agent-setup/registry.js';
 import { renderSetupGuide } from '../lib/agent-setup/setup-guide.js';
 import { AGENT_SETUP_TAG } from '../lib/agent-setup/tag.js';
 import type { AgentTarget } from '../lib/agent-targets.js';
-import { AGENT_TARGETS, detectAgentTargets } from '../lib/agent-targets.js';
+import { AGENT_TARGETS, DEFAULT_AGENT_TARGET, detectAgentTargets } from '../lib/agent-targets.js';
 import { AuthenticationError, PRODUCTION_API_URL, resolveApiKey } from '../lib/auth.js';
 import { BaseCommand } from '../lib/base-command.js';
-import { detectInvocationMode } from '../lib/invocation.js';
+import type { SelectionChoice } from '../lib/invocation.js';
+import { detectInvocationMode, promptSelection } from '../lib/invocation.js';
 import type { SeedContext } from '../lib/scan/index.js';
 import { formatSeedContext, scanRepository } from '../lib/scan/index.js';
 import { resolveFormat } from '../output/resolve-format.js';
@@ -120,7 +121,7 @@ interface InitOutput {
   verifyCommand: string;
 }
 
-interface InitUninstallOutput {
+interface InitCleanOutput {
   repoRoot: string;
   seedContext: { outcome: MarkedFileRemoval; path: string };
   setupGuide: { outcome: MarkedFileRemoval; path: string };
@@ -138,7 +139,7 @@ export default class Init extends BaseCommand {
 The repository is scanned for endpoints and scheduled jobs and the result is written to ${SEED_CONTEXT_FILE_NAME} at the project root, for your agent to read. The scan is pure pattern matching: it reaches no network, runs nothing, and never reads .env values.
 
 Precedence:
-- --uninstall is terminal: it removes previously planted configuration, exits, and cannot be combined with --target or --no-agent. It only removes local files, so it needs no API key.
+- --clean is terminal: it removes previously planted configuration, exits, and cannot be combined with --target or --no-agent. It only removes local files, so it needs no API key.
 - --target and --no-agent are mutually exclusive.
 - --json implies non-interactive, exactly like --yes.
 - Without --target, a non-interactive run that cannot resolve exactly one agent fails and lists the detected candidates instead of prompting or guessing.
@@ -169,29 +170,29 @@ Precedence:
     target: Flags.option({ options: AGENT_TARGETS })({
       description: 'Coding agent to set up for',
     }),
-    uninstall: Flags.boolean({
-      description: 'Remove previously planted configuration, then exit',
+    clean: Flags.boolean({
+      description: 'Remove the files a previous run wrote, then exit',
       exclusive: ['no-agent', 'target'],
     }),
     yes: Flags.boolean({ description: 'Never prompt; run non-interactively' }),
   };
   static override summary = 'Set up this repository and a coding agent to use UptimeRobot';
 
-  async run(): Promise<InitOutput | InitUninstallOutput> {
+  async run(): Promise<InitOutput | InitCleanOutput> {
     const { flags } = await this.parse(Init);
     const root = resolve(process.cwd());
-    // Resolved before the uninstall branch because both modes report through
+    // Resolved before the clean branch because both modes report through
     // the same envelope, and neither of these reads anything but flags and the
     // environment.
     const mode = detectInvocationMode(flags.agent === true);
     const format = resolveFormat({ json: flags.json }, mode);
     const machineOutput = format === 'json' || format === 'jsonl';
 
-    if (flags.uninstall === true) {
-      // Terminal mode: uninstalling never falls through to setup. It runs
+    if (flags.clean === true) {
+      // Terminal mode: cleaning never falls through to setup. It runs
       // before the authentication gate because it only removes locally
       // planted files, so a logged-out caller can still clean up.
-      return this.uninstall(root, machineOutput);
+      return this.clean(root, machineOutput);
     }
 
     // Authentication is resolved before anything is scanned or written, so a
@@ -219,28 +220,31 @@ Precedence:
     if (target === undefined && flags['no-agent'] !== true) {
       const candidates = await detectAgentTargets();
       if (candidates.length === 1) {
+        // One agent on the machine is not a question worth asking.
         target = candidates[0];
-      } else if (!interactive) {
+      } else if (interactive) {
+        // Several agents, or none: which one to set up is genuinely the user's
+        // call, so ask rather than deciding for them. Claude Code is only the
+        // pre-selected answer, not the silent one.
+        target = await promptSelection(
+          'Which coding agent should set this up?',
+          agentChoices(candidates),
+          { default: preferredTarget(candidates) ?? DEFAULT_AGENT_TARGET, mode },
+        );
+      } else {
+        // No one to ask — under --json, --yes, a pipe, CI or an agent runtime.
+        // Prefer Claude Code if it is here; otherwise the list below explains.
+        target = preferredTarget(candidates);
+      }
+      if (target === undefined) {
         return this.fail(
           {
             code: 'TARGET_REQUIRED',
             details: { candidates },
             expected: `one of: ${AGENT_TARGETS.join(', ')}`,
-            message:
-              candidates.length === 0
-                ? 'No coding agent was detected. Pass --target <name> or --no-agent; a non-interactive run never guesses.'
-                : `More than one coding agent was detected (${candidates.join(', ')}). Pass --target <name> or --no-agent; a non-interactive run never guesses.`,
+            message: chooseTargetMessage(candidates),
           },
           2,
-        );
-      } else {
-        return this.fail(
-          {
-            code: 'NOT_IMPLEMENTED',
-            message:
-              'Interactive agent selection is not implemented yet. Pass --target <name> or --no-agent.',
-          },
-          1,
         );
       }
     }
@@ -377,7 +381,7 @@ Precedence:
       `${SEED_BEGIN_PREFIX} version=${this.config.pjson.version} schema=${context.schemaVersion} -->`,
       '',
       `Generated by \`${formatInvocation(invocation, 'init')}\`; rerun it to regenerate, or remove`,
-      `this file with \`${formatInvocation(invocation, 'init --uninstall')}\`. Edits are overwritten.`,
+      `this file with \`${formatInvocation(invocation, 'init --clean')}\`. Edits are overwritten.`,
       '',
       formatSeedContext(context).trimEnd(),
       '',
@@ -396,7 +400,7 @@ Precedence:
       `${SETUP_BEGIN_PREFIX} version=${this.config.pjson.version} -->`,
       '',
       `Generated by \`${formatInvocation(invocation, 'init')}\`; rerun it to regenerate, or remove`,
-      `this file with \`${formatInvocation(invocation, 'init --uninstall')}\`. Edits are overwritten.`,
+      `this file with \`${formatInvocation(invocation, 'init --clean')}\`. Edits are overwritten.`,
       '',
       renderSetupGuide(invocation, { maxMonitors }).trimEnd(),
       '',
@@ -410,7 +414,7 @@ Precedence:
    * sitting at that name without our marker is somebody else's, and silently
    * deleting it would be worse than leaving it behind.
    */
-  private removeSeedContext(root: string): Promise<InitUninstallOutput['seedContext']> {
+  private removeSeedContext(root: string): Promise<InitCleanOutput['seedContext']> {
     return this.removeMarkedFile(
       join(root, SEED_CONTEXT_FILE_NAME),
       SEED_BEGIN_PREFIX,
@@ -419,7 +423,7 @@ Precedence:
   }
 
   /** The guide, on the same terms as the scan: removed only when it is ours. */
-  private removeSetupGuide(root: string): Promise<InitUninstallOutput['setupGuide']> {
+  private removeSetupGuide(root: string): Promise<InitCleanOutput['setupGuide']> {
     return this.removeMarkedFile(
       join(root, SETUP_GUIDE_FILE_NAME),
       SETUP_BEGIN_PREFIX,
@@ -432,11 +436,11 @@ Precedence:
    * was planted: cleaning up a repository that was never set up is the
    * expected case, not an error.
    */
-  private async uninstall(root: string, machineOutput: boolean): Promise<InitUninstallOutput> {
+  private async clean(root: string, machineOutput: boolean): Promise<InitCleanOutput> {
     // Target-independent, so it also cleans up after a caller who set one
     // agent up and has since switched to another.
     const report = await this.attempt(() => uninstallSkills({ cwd: root }));
-    const output: InitUninstallOutput = {
+    const output: InitCleanOutput = {
       repoRoot: root,
       seedContext: await this.removeSeedContext(root),
       setupGuide: await this.removeSetupGuide(root),
@@ -448,7 +452,7 @@ Precedence:
     };
 
     if (machineOutput) this.log(JSON.stringify(output));
-    else for (const line of uninstallLines(output)) this.log(line);
+    else for (const line of cleanLines(output)) this.log(line);
     return output;
   }
 
@@ -620,7 +624,54 @@ function nextSteps(target: AgentTarget | undefined, invocation: CliInvocation): 
   ];
 }
 
-function uninstallLines(output: InitUninstallOutput): readonly string[] {
+/**
+ * The agent to set up when the caller named none, or undefined when the
+ * machine has not made the choice obvious.
+ *
+ * Claude Code wins whenever it is present, because the whole flow is built
+ * around it. Failing that, a single detected agent is unambiguous on its own.
+ * Nothing detected, or several with no Claude Code among them, is a decision
+ * this command has no basis to make — see {@link chooseTargetMessage}.
+ */
+function preferredTarget(candidates: readonly AgentTarget[]): AgentTarget | undefined {
+  if (candidates.includes(DEFAULT_AGENT_TARGET)) return DEFAULT_AGENT_TARGET;
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+/**
+ * The selector's list: every supported agent, with the ones this machine
+ * actually looks set up for called out, so a detected agent is easy to spot
+ * without hiding the others.
+ */
+function agentChoices(candidates: readonly AgentTarget[]): readonly SelectionChoice<AgentTarget>[] {
+  return AGENT_TARGETS.map((agent) => ({
+    name: candidates.includes(agent) ? `${agent} (detected)` : agent,
+    value: agent,
+  }));
+}
+
+/**
+ * What to say when there is no obvious agent. Refusing is not enough on its
+ * own: the caller needs the list of things they are choosing between, spelled
+ * as the flags that pick them, plus the way out if they want no agent at all.
+ */
+function chooseTargetMessage(candidates: readonly AgentTarget[]): string {
+  const opening =
+    candidates.length === 0
+      ? 'No coding agent was detected.'
+      : `Several coding agents were detected (${candidates.join(', ')}) and none of them is ${DEFAULT_AGENT_TARGET}.`;
+  return [
+    `${opening} Choose one:`,
+    '',
+    ...AGENT_TARGETS.map((agent) => `  uptimerobot init --target ${agent}`),
+    '',
+    'Or skip agent setup entirely and write the files only:',
+    '',
+    '  uptimerobot init --no-agent',
+  ].join('\n');
+}
+
+function cleanLines(output: InitCleanOutput): readonly string[] {
   const lines: string[] = [];
   if (output.skills.outcome === 'removed') {
     lines.push(

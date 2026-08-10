@@ -22,6 +22,17 @@ export const AGENT_TARGETS = ['claude-code', 'codex', 'cursor', 'opencode', 'gem
 
 export type AgentTarget = (typeof AGENT_TARGETS)[number];
 
+/**
+ * The agent `init` leans towards when detection leaves a choice open.
+ *
+ * The setup flow is written and tested against Claude Code — it is the only
+ * target with a confirmed launch command — so it is the sensible pre-selection
+ * and the sensible answer when nobody can be asked. It is never a silent
+ * override: an explicit `--target` wins, a machine with exactly one agent gets
+ * that agent, and a user at a terminal with several is asked outright.
+ */
+export const DEFAULT_AGENT_TARGET = 'claude-code' satisfies AgentTarget;
+
 /** Reports every agent the current machine and repository look set up for. */
 export async function detectAgentTargets(
   cwd: string = process.cwd(),

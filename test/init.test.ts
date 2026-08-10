@@ -35,6 +35,16 @@ vi.mock('../src/lib/agent-targets.js', async (importOriginal) => {
   return { ...original, detectAgentTargets: vi.fn(original.detectAgentTargets) };
 });
 
+/**
+ * The selector is spied on rather than replaced: the real implementation
+ * returns undefined off a terminal, so every non-interactive test behaves
+ * exactly as it did before this seam existed.
+ */
+vi.mock('../src/lib/invocation.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../src/lib/invocation.js')>();
+  return { ...original, promptSelection: vi.fn(original.promptSelection) };
+});
+
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const STORED_CREDENTIAL = 'com.uptimerobot.cli:default:api-key';
 const SIGNUP_URL = 'https://uptimerobot.com/signUp';
@@ -96,6 +106,11 @@ describe('init', () => {
     ({ detectAgentTargets } = await import('../src/lib/agent-targets.js'));
     vi.mocked(detectAgentTargets).mockReset();
     vi.mocked(detectAgentTargets).mockResolvedValue([]);
+    // Module-level vi.fn mocks keep their calls across tests, so this one is
+    // cleared too — otherwise `mock.calls[0]` is whatever an earlier test did.
+    const { promptSelection } = await import('../src/lib/invocation.js');
+    vi.mocked(promptSelection).mockReset();
+    vi.mocked(promptSelection).mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -146,36 +161,32 @@ describe('init', () => {
   it('uninstalls without any credential because it only removes local files', async () => {
     const { default: Init } = await import('../src/commands/init.js');
 
-    await expect(Init.run(['--uninstall', '--json'], { root: projectRoot })).resolves.toMatchObject(
-      {
-        seedContext: { outcome: 'absent' },
-        skills: { agentsFile: null, outcome: 'absent' },
-      },
-    );
+    await expect(Init.run(['--clean', '--json'], { root: projectRoot })).resolves.toMatchObject({
+      seedContext: { outcome: 'absent' },
+      skills: { agentsFile: null, outcome: 'absent' },
+    });
     expect(keyring.size).toBe(0);
   });
 
-  it('stops after --uninstall instead of continuing into setup', async () => {
+  it('stops after --clean instead of continuing into setup', async () => {
     keyring.set(STORED_CREDENTIAL, 'u123-stored');
     const { default: Init } = await import('../src/commands/init.js');
 
-    await expect(Init.run(['--uninstall', '--json'], { root: projectRoot })).resolves.toMatchObject(
-      {
-        repoRoot: repository,
-      },
-    );
+    await expect(Init.run(['--clean', '--json'], { root: projectRoot })).resolves.toMatchObject({
+      repoRoot: repository,
+    });
     expect(vi.mocked(detectAgentTargets)).not.toHaveBeenCalled();
     expect(await readdir(repository)).toEqual([]);
   });
 
   it.each([
     {
-      args: ['--uninstall', '--target', 'cursor'],
-      reason: '--target=cursor cannot also be provided when using --uninstall',
+      args: ['--clean', '--target', 'cursor'],
+      reason: '--target=cursor cannot also be provided when using --clean',
     },
     {
-      args: ['--uninstall', '--no-agent'],
-      reason: '--no-agent=true cannot also be provided when using --uninstall',
+      args: ['--clean', '--no-agent'],
+      reason: '--no-agent=true cannot also be provided when using --clean',
     },
     {
       args: ['--target', 'cursor', '--no-agent'],
@@ -206,42 +217,61 @@ describe('init', () => {
     });
   });
 
-  it('lists the detected candidates instead of guessing under --json', async () => {
+  // Ambiguity used to be a hard stop. Claude Code is the default the flow is
+  // written around, so when it is one of the detected agents it wins rather
+  // than making the caller arbitrate.
+  it('prefers Claude Code when several agents are detected', async () => {
     keyring.set(STORED_CREDENTIAL, 'u123-stored');
     vi.mocked(detectAgentTargets).mockResolvedValue(['claude-code', 'cursor']);
     const { default: Init } = await import('../src/commands/init.js');
 
-    await expect(Init.run(['--json'], { root: projectRoot })).rejects.toMatchObject({
-      cliError: {
-        code: 'TARGET_REQUIRED',
-        details: { candidates: ['claude-code', 'cursor'] },
-        expected: 'one of: claude-code, codex, cursor, opencode, gemini',
-        message: expect.stringContaining('claude-code, cursor'),
-      },
-      oclif: { exit: 2 },
+    await expect(Init.run(['--json'], { root: projectRoot })).resolves.toMatchObject({
+      target: 'claude-code',
     });
   });
 
-  it('leaves agent selection to a prompt on an interactive terminal', async () => {
+  // At a terminal, several agents is a real question — Claude Code is only the
+  // pre-selected answer, not one made silently on the user's behalf.
+  it('asks rather than assuming when several agents are detected at a terminal', async () => {
     keyring.set(STORED_CREDENTIAL, 'u123-stored');
+    vi.mocked(detectAgentTargets).mockResolvedValue(['claude-code', 'cursor']);
+    const { promptSelection } = await import('../src/lib/invocation.js');
+    vi.mocked(promptSelection).mockResolvedValue('cursor');
     const restoreTerminal = stubTerminal();
     try {
       const { default: Init } = await import('../src/commands/init.js');
 
-      await expect(Init.run([], { root: projectRoot })).rejects.toMatchObject({
-        cliError: {
-          code: 'NOT_IMPLEMENTED',
-          message: expect.stringContaining('Interactive agent selection'),
-        },
-        oclif: { exit: 1 },
+      await expect(Init.run(['--no-launch'], { root: projectRoot })).resolves.toMatchObject({
+        target: 'cursor',
       });
+      expect(vi.mocked(promptSelection).mock.calls[0]?.[2]?.default).toBe('claude-code');
     } finally {
       restoreTerminal();
     }
   });
 
-  it.each(['--yes', '--json'])('makes %s non-interactive on a terminal', async (flag) => {
+  it('never asks when the machine has exactly one agent', async () => {
     keyring.set(STORED_CREDENTIAL, 'u123-stored');
+    vi.mocked(detectAgentTargets).mockResolvedValue(['cursor']);
+    const { promptSelection } = await import('../src/lib/invocation.js');
+    const restoreTerminal = stubTerminal();
+    try {
+      const { default: Init } = await import('../src/commands/init.js');
+
+      await expect(Init.run(['--no-launch'], { root: projectRoot })).resolves.toMatchObject({
+        target: 'cursor',
+      });
+      expect(vi.mocked(promptSelection)).not.toHaveBeenCalled();
+    } finally {
+      restoreTerminal();
+    }
+  });
+
+  // Restored guard: a machine-readable or unattended run must never block on a
+  // prompt, even when stdout happens to be a terminal.
+  it.each(['--yes', '--json'])('never prompts under %s, even on a terminal', async (flag) => {
+    keyring.set(STORED_CREDENTIAL, 'u123-stored');
+    const { promptSelection } = await import('../src/lib/invocation.js');
     const restoreTerminal = stubTerminal();
     try {
       const { default: Init } = await import('../src/commands/init.js');
@@ -250,9 +280,129 @@ describe('init', () => {
         cliError: { code: 'TARGET_REQUIRED', details: { candidates: [] } },
         oclif: { exit: 2 },
       });
+      expect(vi.mocked(promptSelection)).not.toHaveBeenCalled();
     } finally {
       restoreTerminal();
     }
+  });
+
+  it('still prefers Claude Code without a terminal to ask at', async () => {
+    keyring.set(STORED_CREDENTIAL, 'u123-stored');
+    vi.mocked(detectAgentTargets).mockResolvedValue(['claude-code', 'codex', 'gemini']);
+    const { default: Init } = await import('../src/commands/init.js');
+
+    await expect(Init.run(['--json'], { root: projectRoot })).resolves.toMatchObject({
+      target: 'claude-code',
+    });
+  });
+
+  it('still takes a single detected agent that is not Claude Code', async () => {
+    keyring.set(STORED_CREDENTIAL, 'u123-stored');
+    vi.mocked(detectAgentTargets).mockResolvedValue(['cursor']);
+    const { default: Init } = await import('../src/commands/init.js');
+
+    await expect(Init.run(['--json'], { root: projectRoot })).resolves.toMatchObject({
+      target: 'cursor',
+    });
+  });
+
+  // Nothing detected, or several without Claude Code among them: there is no
+  // safe guess left, so say what the choices are instead of just refusing.
+  it.each([
+    ['nothing is detected', [] as const],
+    ['several are detected without Claude Code', ['codex', 'cursor'] as const],
+  ])('lists every option when %s', async (_label, candidates) => {
+    keyring.set(STORED_CREDENTIAL, 'u123-stored');
+    vi.mocked(detectAgentTargets).mockResolvedValue([...candidates]);
+    const { default: Init } = await import('../src/commands/init.js');
+
+    await expect(Init.run(['--json'], { root: projectRoot })).rejects.toMatchObject({
+      cliError: {
+        code: 'TARGET_REQUIRED',
+        details: { candidates: [...candidates] },
+        expected: 'one of: claude-code, codex, cursor, opencode, gemini',
+        message: expect.stringContaining('--target claude-code'),
+      },
+      oclif: { exit: 2 },
+    });
+  });
+
+  it('asks at a terminal instead of failing, and uses what was picked', async () => {
+    keyring.set(STORED_CREDENTIAL, 'u123-stored');
+    const { promptSelection } = await import('../src/lib/invocation.js');
+    vi.mocked(promptSelection).mockResolvedValue('codex');
+    const restoreTerminal = stubTerminal();
+    try {
+      const { default: Init } = await import('../src/commands/init.js');
+
+      await expect(Init.run(['--no-launch'], { root: projectRoot })).resolves.toMatchObject({
+        target: 'codex',
+      });
+
+      // Every agent is offered, with the detected ones marked and Claude Code
+      // pre-selected.
+      const [, choices, options] = vi.mocked(promptSelection).mock.calls[0] ?? [];
+      expect(choices?.map((choice) => choice.value)).toEqual([
+        'claude-code',
+        'codex',
+        'cursor',
+        'opencode',
+        'gemini',
+      ]);
+      expect(options?.default).toBe('claude-code');
+    } finally {
+      restoreTerminal();
+    }
+  });
+
+  it('marks the agents it detected in the list it offers', async () => {
+    keyring.set(STORED_CREDENTIAL, 'u123-stored');
+    vi.mocked(detectAgentTargets).mockResolvedValue(['codex', 'cursor']);
+    const { promptSelection } = await import('../src/lib/invocation.js');
+    vi.mocked(promptSelection).mockResolvedValue('cursor');
+    const restoreTerminal = stubTerminal();
+    try {
+      const { default: Init } = await import('../src/commands/init.js');
+      await Init.run(['--no-launch'], { root: projectRoot });
+
+      const names = vi.mocked(promptSelection).mock.calls[0]?.[1].map((choice) => choice.name);
+      expect(names).toContain('codex (detected)');
+      expect(names).toContain('cursor (detected)');
+      expect(names).toContain('gemini');
+    } finally {
+      restoreTerminal();
+    }
+  });
+
+  it('falls back to the printed list when the user backs out of the prompt', async () => {
+    keyring.set(STORED_CREDENTIAL, 'u123-stored');
+    const { promptSelection } = await import('../src/lib/invocation.js');
+    vi.mocked(promptSelection).mockResolvedValue(undefined);
+    const restoreTerminal = stubTerminal();
+    try {
+      const { default: Init } = await import('../src/commands/init.js');
+
+      await expect(Init.run([], { root: projectRoot })).rejects.toMatchObject({
+        cliError: { code: 'TARGET_REQUIRED' },
+        oclif: { exit: 2 },
+      });
+    } finally {
+      restoreTerminal();
+    }
+  });
+
+  it('names every supported agent and the opt-out in that message', async () => {
+    keyring.set(STORED_CREDENTIAL, 'u123-stored');
+    const { default: Init } = await import('../src/commands/init.js');
+
+    const failure = await Init.run(['--json'], { root: projectRoot }).catch(
+      (error: { cliError: { message: string } }) => error.cliError.message,
+    );
+
+    for (const target of ['claude-code', 'codex', 'cursor', 'opencode', 'gemini']) {
+      expect(failure).toContain(`--target ${target}`);
+    }
+    expect(failure).toContain('--no-agent');
   });
 
   it('accepts a single detected agent without prompting', async () => {
@@ -415,7 +565,7 @@ describe('init', () => {
     try {
       const { default: Init } = await import('../src/commands/init.js');
 
-      await expect(Init.run(['--uninstall'], { root: projectRoot })).resolves.toMatchObject({
+      await expect(Init.run(['--clean'], { root: projectRoot })).resolves.toMatchObject({
         setupGuide: { outcome: 'kept' },
       });
       expect(logged.join('\n')).toContain('it was not written by `uptimerobot init`');
@@ -544,17 +694,15 @@ describe('init', () => {
     const { default: Init } = await import('../src/commands/init.js');
     await Init.run(['--target', 'codex', '--json'], { root: projectRoot });
 
-    await expect(Init.run(['--uninstall', '--json'], { root: projectRoot })).resolves.toMatchObject(
-      {
-        seedContext: { outcome: 'removed' },
-        setupGuide: { outcome: 'removed' },
-        skills: {
-          agentsFile: join(repository, 'AGENTS.md'),
-          outcome: 'removed',
-          removedFile: true,
-        },
+    await expect(Init.run(['--clean', '--json'], { root: projectRoot })).resolves.toMatchObject({
+      seedContext: { outcome: 'removed' },
+      setupGuide: { outcome: 'removed' },
+      skills: {
+        agentsFile: join(repository, 'AGENTS.md'),
+        outcome: 'removed',
+        removedFile: true,
       },
-    );
+    });
     expect(await readdir(repository)).toEqual([]);
   });
 
@@ -564,7 +712,7 @@ describe('init', () => {
     try {
       const { default: Init } = await import('../src/commands/init.js');
 
-      await expect(Init.run(['--uninstall'], { root: projectRoot })).resolves.toMatchObject({
+      await expect(Init.run(['--clean'], { root: projectRoot })).resolves.toMatchObject({
         seedContext: { outcome: 'kept' },
       });
       expect(logged.join('\n')).toContain('it was not written by `uptimerobot init`');
@@ -575,7 +723,7 @@ describe('init', () => {
   });
 
   it('routes a precedence failure through the machine error envelope', async () => {
-    const result = await runCli(['init', '--uninstall', '--target', 'cursor', '--json']);
+    const result = await runCli(['init', '--clean', '--target', 'cursor', '--json']);
 
     expect(result.exitCode).toBe(2);
     expect(result.stdout).toBe('');
@@ -583,7 +731,7 @@ describe('init', () => {
       error: {
         code: 'INVALID_INPUT',
         message: expect.stringContaining(
-          '--target=cursor cannot also be provided when using --uninstall',
+          '--target=cursor cannot also be provided when using --clean',
         ),
       },
     });
@@ -594,7 +742,7 @@ describe('init', () => {
     const help = result.stdout.replace(/\s+/g, ' ');
 
     expect(result.exitCode).toBe(0);
-    expect(help).toContain('--uninstall is terminal');
+    expect(help).toContain('--clean is terminal');
     expect(help).toContain('--target and --no-agent are mutually exclusive');
     expect(help).toContain('--json implies non-interactive, exactly like --yes');
     expect(help).toContain('lists the detected candidates instead of prompting or guessing');
