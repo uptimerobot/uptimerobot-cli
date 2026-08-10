@@ -36,6 +36,13 @@ uptimerobot --version
 uptimerobot --help
 ```
 
+`--version` prints one human-readable line. The `version` command reports the same facts through the normal output flags, so a script asserting a minimum version reads a field instead of parsing a sentence:
+
+```sh
+uptimerobot version --json
+# {"version":"1.0.0","platform":"darwin-arm64","node":"24.12.0"}
+```
+
 ## AI agent skills
 
 Install the [UptimeRobot AI skills](https://github.com/uptimerobot/ai) for supported coding agents:
@@ -123,6 +130,30 @@ uptimerobot monitors update 797054213 --set interval=120
 uptimerobot monitors create http --body - < monitor.json
 ```
 
+`--body` is a base document, and typed flags and `--set` are applied on top of it. Those two are peers, so giving the same field a different value with both is an error rather than a silent win for one of them:
+
+```sh
+uptimerobot monitors create http --name checkout-api --set friendlyName=checkout
+# INVALID_INPUT: friendlyName received conflicting values:
+#   --name checkout-api and --set friendlyName=checkout. Pass only one.
+```
+
+## Heartbeat monitors
+
+A heartbeat monitor stays silent until something pings it, so normalized output carries a derived `pingUrl` — the address that job should call. Both it and the `url` it is built from are secrets, so both are redacted unless you ask for them:
+
+```sh
+uptimerobot monitors get 803704830 --json
+# {"type":"HEARTBEAT","id":803704830,"url":"[REDACTED]","pingUrl":"[REDACTED]"}
+
+uptimerobot monitors get 803704830 --json --reveal-secrets
+# {"type":"HEARTBEAT","id":803704830,"url":"997c8970…","pingUrl":"https://heartbeat.uptimerobot.com/m803704830-997c8970…"}
+```
+
+Reach for `--reveal-secrets` when wiring up the job that pings it, which is normally once per monitor. Anyone holding the ping URL can report the heartbeat on your behalf, so a leaked one keeps a dead service looking alive with no alert raised. `url` on every other monitor type is a target address, not a secret, and is never redacted.
+
+The URL is composed from the monitor's `id` and `url`, where `url` carries the monitor's token rather than a target address. Set `UPTIMEROBOT_HEARTBEAT_URL` to point at a different host. The field is derived by the CLI, not returned by the API, so `--raw` does not include it.
+
 ## Validate before sending
 
 Inspect a monitor request contract or print a validated example without credentials or network access:
@@ -167,14 +198,28 @@ The exit code identifies the failure:
 | --------- | ----------------------------------------------------------------------------------- |
 | `0`       | Success                                                                             |
 | `1`       | Generic failure, including a bulk operation where every item failed (`BULK_FAILED`) |
-| `2`       | Invalid input                                                                       |
+| `2`       | Invalid input, rejected either locally or by the API (HTTP 400 or 422)              |
 | `3`       | Bulk operation where some items failed (`BULK_PARTIAL_FAILURE`)                     |
 | `4`       | Unauthenticated (HTTP 401)                                                          |
 | `5`       | Forbidden (HTTP 403)                                                                |
 | `6`       | Not found (HTTP 404)                                                                |
 | `7`       | Rate limited (HTTP 429)                                                             |
+| `8`       | Conflict with the current state (HTTP 409)                                          |
+
+Exit code `2` covers both a request the CLI rejected before sending and one the API rejected as invalid, so it always means the input is wrong. Along with `8`, it says the request will not succeed as sent and should be changed rather than repeated; `1` and `7` are the failures a plain retry may clear.
+
+The error envelope's `code` is `HTTP_<status>` whenever `status` is present, and a CLI symbol such as `INVALID_INPUT` or `AUTH_REQUIRED` otherwise, so `status` distinguishes a failure the API reported from one the CLI raised. When the API supplies an error code of its own it is passed through verbatim as `apiCode` and is never interpreted; it is not part of the CLI's contract, because the API does not currently document those codes:
+
+```sh
+uptimerobot monitors get 999999999 --json
+# {"error":{"apiCode":"000-004","code":"HTTP_404","message":"Monitor not found","status":404}}
+```
+
+Branch on `code` or `status`. Read `apiCode` only for diagnostics, and use `--raw` for the untouched API response.
 
 `monitors bulk pause`, `monitors bulk start`, and `monitors bulk update` report per-monitor outcomes in an HTTP 201 response, so a failure is only visible in the body. The CLI inspects it and exits non-zero, listing the failed entries in the error envelope's `details`.
+
+Those three commands report acceptance rather than completion. The API answers `success` for every matched monitor as soon as the write is accepted; it carries no operation id, and nothing in the response distinguishes queued from applied. Exit code `0` therefore means the request was accepted, not that the monitors have changed. A pipeline that pauses monitors before a deploy should confirm with `uptimerobot monitors get <id>` before it continues.
 
 ## Safety
 

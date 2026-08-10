@@ -356,6 +356,15 @@ export const operations = {
         "example": "Investigating the issue...",
         "maxLength": 10000,
         "type": "string"
+      },
+      {
+        "flag": "publish-on-status-page",
+        "path": "publishOnStatusPage",
+        "required": false,
+        "default": false,
+        "description": "Whether the comment is published on the status page",
+        "example": true,
+        "type": "boolean"
       }
     ]
   },
@@ -474,6 +483,15 @@ export const operations = {
         "example": "Issue has been identified and fix is in progress...",
         "maxLength": 10000,
         "type": "string"
+      },
+      {
+        "flag": "publish-on-status-page",
+        "path": "publishOnStatusPage",
+        "required": false,
+        "default": false,
+        "description": "Whether the comment is published on the status page",
+        "example": true,
+        "type": "boolean"
       }
     ]
   },

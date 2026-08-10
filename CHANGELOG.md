@@ -10,6 +10,81 @@ may change in minor releases.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-10
+
+First stable release. The public contract stated above — the command tree and
+flags, machine-readable output shapes, error codes, exit codes, and environment
+variables — is from here on covered by semantic versioning, so changing it
+requires a major release. Everything below was landed deliberately before that
+freeze; each entry is a change that would otherwise have needed a 2.0.
+
+### Added
+
+- Heartbeat monitors carry a derived `pingUrl` in normalized output. The API
+  returns the ingredients without naming the result — `url` holds the token and
+  the endpoint is `<host>/m<id>-<token>` — so the URL a heartbeat must receive
+  could previously only be obtained from the dashboard. Set
+  `UPTIMEROBOT_HEARTBEAT_URL` to override the host. Derived, not authoritative:
+  `--raw` is unaffected, and this gives way to the API field once it exists.
+- `--publish-on-status-page` on `incidents comments create` and
+  `incidents comments update`, controlling whether a comment appears on the
+  status page. The field was added to the published API contract; the flag is
+  generated from it and defaults to `false`.
+- `uptimerobot version` reports the CLI version, platform, and Node.js runtime
+  through the normal output flags, so `uptimerobot version --json` answers
+  `{"version":"1.0.0","platform":"darwin-arm64","node":"24.12.0"}`. The bare
+  `--version` flag is handled inside oclif before any command runs and keeps
+  printing the single human line it always has; asserting a minimum version in
+  CI no longer means parsing that sentence.
+
+### Changed
+
+- The error envelope's `code` is now always `HTTP_<status>` for a failure the
+  API reported, and the upstream code is passed through verbatim as `apiCode`.
+  It previously reported whichever code the API happened to include and fell
+  back to `HTTP_<status>` only when there was none, so the same failure was
+  spelled `000-004` on one endpoint and `HTTP_404` on another, and the spelling
+  could change without a CLI release. Those codes are documented nowhere in the
+  API contract, so `apiCode` is diagnostic only; branch on `code` or `status`.
+- A typed flag and `--set` that give the same request body field different
+  values now fail with `INVALID_INPUT` and exit 2, naming the field and both
+  values. Previously `--set` won silently and the typed flag was discarded.
+  Passing both with the same value is still accepted. `--body` is unchanged: it
+  is a base document that typed flags and `--set` may both override.
+- A request the API rejects as invalid now exits `2`, the code locally caught
+  invalid input already used, instead of the generic `1`. HTTP 400 and HTTP 422
+  both map to it. HTTP 409 takes a new exit code `8`, because a conflict is a
+  well-formed request that only the current server state refuses. Previously all
+  three were indistinguishable from a transient fault, so a script could not
+  tell "the input is wrong, do not repeat it" from "retrying may help". Exit
+  code `1` stays the generic fallback for everything not mapped to a code of its
+  own, including a bulk operation in which every item failed (`BULK_FAILED`).
+- `monitors bulk pause`, `monitors bulk start`, and `monitors bulk update`
+  document in their help, and in the `monitors bulk` topic help, that these
+  writes report acceptance rather than completion: the API answers `success`
+  for every matched monitor as soon as the write is accepted, returns no
+  operation id, and offers nothing that distinguishes queued from applied, so
+  `monitors get` is the only way to confirm the new state. Behaviour is
+  unchanged; a pipeline that paused monitors before a deploy could otherwise
+  start deploying while they were still live.
+
+### Fixed
+
+- A heartbeat monitor's `url` and derived `pingUrl` are redacted in responses.
+  `url` carries the token its ping endpoint is built from, so anyone holding
+  either can report the heartbeat and keep a dead service looking alive with no
+  alert raised — and a single `monitors list` previously put every heartbeat
+  token on the account into CI logs and agent transcripts. Redaction is keyed on
+  the monitor rather than the field name, so `url` on every other type still
+  prints as the target address it is. `--reveal-secrets` shows both, and `--raw`
+  is unchanged.
+- A reader that closes stdout early, as `| head`, `| head -c`, and `| grep -q`
+  do, no longer produces a `Detected unsettled top-level await` warning on
+  stderr and exit code 13. The CLI now treats the broken pipe as the end of its
+  output and exits 0, or with the exit code the command had already decided on.
+  Output delivered before the reader left is unchanged, and a failure is still
+  reported on stderr.
+
 ## [0.3.0] - 2026-07-29
 
 ### Added
@@ -121,7 +196,8 @@ may change in minor releases.
 - Redirects are followed manually and the origin is re-checked at every hop
   before credentials are attached; cross-origin redirects are refused.
 
-[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.0...v0.1.2

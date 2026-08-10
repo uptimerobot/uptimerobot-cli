@@ -1,6 +1,6 @@
 {
   "name": "@uptimerobot/cli",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Official UptimeRobot CLI — manage uptime monitors, incidents, status pages, and alert contacts from your terminal, scripts, or CI.",
   "keywords": [
     "uptimerobot",
@@ -109,7 +109,7 @@
         "description": "Manage monitors and statistics",
         "subtopics": {
           "bulk": {
-            "description": "Run bulk monitor actions"
+            "description": "Run bulk monitor actions\n\nPause, start, and update report acceptance, not completion: the API answers success as soon as the write is accepted and carries no operation id. Confirm with `uptimerobot monitors get <id>` before depending on the new state."
           },
           "create": {
             "description": "Create a monitor of a given type"

@@ -14,6 +14,8 @@ import { InputValidationError, validateInput } from '../runtime/validate-input.j
 import { AuthenticationError, resolveApiKey } from './auth.js';
 import { BaseCommand } from './base-command.js';
 import { flagName } from './flag-name.js';
+import { curatedCommandDescription } from './help-curation.js';
+import { withDerivedFields } from './response-curation.js';
 import { detectInvocationMode, isCI, requestConfirmation } from './invocation.js';
 import { enrichOperationParserError } from './operation-parser-error.js';
 import { redactSecrets } from './redact-secrets.js';
@@ -76,6 +78,7 @@ export function createOperationCommand(
         }
       : {};
   const defaultColumns = columnsFor(operation.commandId);
+  const description = curatedCommandDescription(operation);
   const bodyFieldFlags = Object.fromEntries(
     (operation.requestBodyFields ?? []).map((field) => [
       field.flag,
@@ -127,10 +130,10 @@ export function createOperationCommand(
   class OperationCommand extends BaseCommand {
     static override args = commandArgs;
     static override description = options.canonicalCommand
-      ? `${operation.description ?? operation.summary}
+      ? `${description}
 
 Canonical command: ${options.canonicalCommand}`
-      : (operation.description ?? operation.summary);
+      : description;
     static override examples = examplesFor(operation);
     static override flags = commandFlags;
     static override summary = operation.summary;
@@ -330,7 +333,8 @@ Canonical command: ${options.canonicalCommand}`
         return this.fail(apiError, exitCodeFor(response.status));
       }
 
-      const normalized = flags.raw === true ? payload : normalizeResult(payload);
+      // --raw is the untouched API response, so derived fields stay out of it.
+      const normalized = flags.raw === true ? payload : withDerivedFields(normalizeResult(payload));
       // Redacted before rendering, so column selection, truncation, and JSONL
       // splitting all operate on the redacted values. --raw stays untouched.
       const redaction =
