@@ -63,11 +63,15 @@ export async function buildRequestBody(
   }
 
   const objectBody = toObject(bodyValue);
+  const typedAssignments = new Map<string, TypedAssignment>();
   for (const field of bodyFields) {
     const value = flags[field.flag];
-    if (value !== undefined) assignPath(objectBody, field.path, parseBodyField(field, value));
+    if (value === undefined) continue;
+    const parsed = parseBodyField(field, value);
+    assignPath(objectBody, field.path, parsed);
+    typedAssignments.set(field.path, { flag: field.flag, value: parsed });
   }
-  for (const assignment of assignments) assignValue(objectBody, assignment);
+  for (const assignment of assignments) assignValue(objectBody, assignment, typedAssignments);
   for (const [path, value] of Object.entries(operation.requestBodyDefaults ?? {})) {
     const supplied = valueAtPath(objectBody, path);
     if (supplied !== undefined && supplied !== value) {
@@ -137,9 +141,39 @@ function toObject(value: unknown): Record<string, unknown> {
   return structuredClone(value);
 }
 
-function assignValue(target: Record<string, unknown>, assignment: string): void {
+/** A body field already written by a typed flag, kept so --set can spot a clash. */
+interface TypedAssignment {
+  flag: string;
+  value: unknown;
+}
+
+function assignValue(
+  target: Record<string, unknown>,
+  assignment: string,
+  typedAssignments: ReadonlyMap<string, TypedAssignment>,
+): void {
   const [path, rawValue] = splitAssignment(assignment, '--set');
-  assignPath(target, path, parseValue(rawValue));
+  const value = parseValue(rawValue);
+  // --body is a base that both typed flags and --set layer onto, but those two
+  // are peers: when they name the same field nothing says which one was meant,
+  // so the old last-one-wins silently discarded the typed flag.
+  const typed = typedAssignments.get(path);
+  if (typed !== undefined && !sameValue(typed.value, value)) {
+    throw new RequestInputError(
+      path,
+      'a single value',
+      `${path} received conflicting values: --${typed.flag} ${describeValue(typed.value)} and --set ${path}=${describeValue(value)}. Pass only one.`,
+    );
+  }
+  assignPath(target, path, value);
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function describeValue(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
 function splitAssignment(value: string, flag: string): [string, string] {
