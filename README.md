@@ -149,7 +149,17 @@ uptimerobot monitors get 803704830 --json
 
 The URL is composed from the monitor's `id` and `url`, where `url` carries the monitor's token rather than a target address. Set `UPTIMEROBOT_HEARTBEAT_URL` to point at a different host. The field is derived by the CLI, not returned by the API, so `--raw` does not include it.
 
-Treat the ping URL as a secret: anyone holding it can report the heartbeat on your behalf.
+Both are secrets — anyone holding the ping URL can report the heartbeat on your behalf, so a leaked one keeps a dead service looking alive — and both are redacted by default:
+
+```sh
+uptimerobot monitors get 803704830 --json
+# {"type":"HEARTBEAT","id":803704830,"url":"[REDACTED]","pingUrl":"[REDACTED]"}
+
+uptimerobot monitors get 803704830 --json --reveal-secrets
+# {"type":"HEARTBEAT","id":803704830,"url":"997c8970…","pingUrl":"https://heartbeat.uptimerobot.com/m803704830-997c8970…"}
+```
+
+Reach for `--reveal-secrets` when wiring up the job that pings it, which is normally once per monitor. `url` on every other monitor type is a target address, not a secret, and is never redacted.
 
 ## Validate before sending
 

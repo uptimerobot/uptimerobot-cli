@@ -61,6 +61,14 @@ may change in minor releases.
 
 ### Fixed
 
+- A heartbeat monitor's `url` and derived `pingUrl` are redacted in responses.
+  `url` carries the token its ping endpoint is built from, so anyone holding
+  either can report the heartbeat and keep a dead service looking alive with no
+  alert raised — and a single `monitors list` previously put every heartbeat
+  token on the account into CI logs and agent transcripts. Redaction is keyed on
+  the monitor rather than the field name, so `url` on every other type still
+  prints as the target address it is. `--reveal-secrets` shows both, and `--raw`
+  is unchanged.
 - A reader that closes stdout early, as `| head`, `| head -c`, and `| grep -q`
   do, no longer produces a `Detected unsettled top-level await` warning on
   stderr and exit code 13. The CLI now treats the broken pipe as the end of its
