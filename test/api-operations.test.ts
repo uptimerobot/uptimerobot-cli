@@ -255,7 +255,7 @@ describe('API operations', () => {
     });
   });
 
-  it('preserves the API error code and HTTP status in structured output', async () => {
+  it('reports the API error code as apiCode and derives code from the status', async () => {
     const server = createServer((_request, response) => {
       response.statusCode = 401;
       response.setHeader('content-type', 'application/json');
@@ -276,7 +276,8 @@ describe('API operations', () => {
       exitCode: 4,
       stderr: {
         error: {
-          code: '003-005',
+          apiCode: '003-005',
+          code: 'HTTP_401',
           message: 'Invalid token.',
           status: 401,
         },

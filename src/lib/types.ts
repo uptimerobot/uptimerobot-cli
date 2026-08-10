@@ -2,6 +2,8 @@ export type HttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
 export type FlagValues = Record<string, boolean | string | string[] | undefined>;
 
 export interface CliError {
+  /** The upstream error code, verbatim, when the API supplied one. */
+  apiCode?: string;
   code: string;
   command?: string;
   details?: unknown;

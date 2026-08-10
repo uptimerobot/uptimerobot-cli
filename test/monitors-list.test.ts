@@ -617,7 +617,8 @@ describe('monitors list', () => {
       requests: 1,
       stderr: {
         error: {
-          code: 'RATE_LIMITED',
+          apiCode: 'RATE_LIMITED',
+          code: 'HTTP_429',
           message: 'Try again later.',
           status: 429,
         },
