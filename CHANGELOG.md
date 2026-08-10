@@ -12,6 +12,12 @@ may change in minor releases.
 
 ### Added
 
+- Heartbeat monitors carry a derived `pingUrl` in normalized output. The API
+  returns the ingredients without naming the result — `url` holds the token and
+  the endpoint is `<host>/m<id>-<token>` — so the URL a heartbeat must receive
+  could previously only be obtained from the dashboard. Set
+  `UPTIMEROBOT_HEARTBEAT_URL` to override the host. Derived, not authoritative:
+  `--raw` is unaffected, and this gives way to the API field once it exists.
 - `--publish-on-status-page` on `incidents comments create` and
   `incidents comments update`, controlling whether a comment appears on the
   status page. The field was added to the published API contract; the flag is

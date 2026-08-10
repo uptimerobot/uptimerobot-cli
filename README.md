@@ -138,6 +138,19 @@ uptimerobot monitors create http --name checkout-api --set friendlyName=checkout
 #   --name checkout-api and --set friendlyName=checkout. Pass only one.
 ```
 
+## Heartbeat monitors
+
+A heartbeat monitor stays silent until something pings it. Normalized output carries a derived `pingUrl` for that purpose:
+
+```sh
+uptimerobot monitors get 803704830 --json --format json
+# {"type":"HEARTBEAT","id":803704830,"url":"997c8970…","pingUrl":"https://heartbeat.uptimerobot.com/m803704830-997c8970…"}
+```
+
+The URL is composed from the monitor's `id` and `url`, where `url` carries the monitor's token rather than a target address. Set `UPTIMEROBOT_HEARTBEAT_URL` to point at a different host. The field is derived by the CLI, not returned by the API, so `--raw` does not include it.
+
+Treat the ping URL as a secret: anyone holding it can report the heartbeat on your behalf.
+
 ## Validate before sending
 
 Inspect a monitor request contract or print a validated example without credentials or network access:

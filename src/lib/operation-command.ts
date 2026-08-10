@@ -15,6 +15,7 @@ import { AuthenticationError, resolveApiKey } from './auth.js';
 import { BaseCommand } from './base-command.js';
 import { flagName } from './flag-name.js';
 import { curatedCommandDescription } from './help-curation.js';
+import { withDerivedFields } from './response-curation.js';
 import { detectInvocationMode, isCI, requestConfirmation } from './invocation.js';
 import { enrichOperationParserError } from './operation-parser-error.js';
 import { redactSecrets } from './redact-secrets.js';
@@ -332,7 +333,8 @@ Canonical command: ${options.canonicalCommand}`
         return this.fail(apiError, exitCodeFor(response.status));
       }
 
-      const normalized = flags.raw === true ? payload : normalizeResult(payload);
+      // --raw is the untouched API response, so derived fields stay out of it.
+      const normalized = flags.raw === true ? payload : withDerivedFields(normalizeResult(payload));
       // Redacted before rendering, so column selection, truncation, and JSONL
       // splitting all operate on the redacted values. --raw stays untouched.
       const redaction =
