@@ -31,6 +31,14 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
 
   static override flags = {
     agent: Flags.boolean({ description: 'Mark this invocation as agent-driven' }),
+    // Named and spelled exactly as the generated commands spell it, so the one
+    // hand-written command that prints a document is not the odd one out. It
+    // matters most when redirecting: a pipe defaults to JSON, so saving the
+    // readable report to a file needs a way to say so.
+    format: Flags.string({
+      description: 'Output format; json is normalized and jsonl emits one resource per line',
+      options: ['json', 'jsonl', 'table', 'plain'],
+    }),
     json: Flags.boolean({ description: 'Emit structured JSON output' }),
   };
 
@@ -41,7 +49,10 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
     const repoRoot = await this.resolveRepoRoot(args.path);
     const context = await scanRepository(repoRoot);
 
-    const format = resolveFormat({ json: flags.json }, detectInvocationMode(flags.agent === true));
+    const format = resolveFormat(
+      { format: flags.format, json: flags.json },
+      detectInvocationMode(flags.agent === true),
+    );
     if (format === 'json' || format === 'jsonl') this.log(JSON.stringify(context));
     // The Markdown rendering already ends in a newline, and `log` adds one.
     else this.log(formatSeedContext(context).trimEnd());

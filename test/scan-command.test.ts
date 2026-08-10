@@ -136,6 +136,27 @@ describe('uptimerobot scan', () => {
     expect(output).not.toContain('"schemaVersion"');
   });
 
+  // Redirected output defaults to JSON, which is right for a pipe but wrong for
+  // someone saving the readable report to a file. `--format` is what every
+  // generated command already offers; this one should not be the exception.
+  it('honours --format table even when the output is not a terminal', async () => {
+    const root = await makeRepository();
+
+    await Scan.run([root, '--format', 'table'], { root: projectRoot });
+
+    const output = printed();
+    expect(output).toContain('# Scan seed context (schema 1)');
+    expect(output).not.toContain('"schemaVersion"');
+  });
+
+  it('still emits JSON for --format json', async () => {
+    const root = await makeRepository();
+
+    await Scan.run([root, '--format', 'json'], { root: projectRoot });
+
+    expect(JSON.parse(printed())).toMatchObject({ schemaVersion: 1 });
+  });
+
   it('scans the current directory when no path is given', async () => {
     const root = await makeRepository();
     vi.spyOn(process, 'cwd').mockReturnValue(root);
