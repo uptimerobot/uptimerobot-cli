@@ -2300,6 +2300,8 @@ components:
                 exclusiveMinimum: false
               comment:
                 type: string
+              publishOnStatusPage:
+                type: boolean
               created:
                 oneOf:
                   - {}
@@ -2317,6 +2319,7 @@ components:
             required:
               - id
               - comment
+              - publishOnStatusPage
               - created
               - user
       required:
@@ -2508,6 +2511,11 @@ components:
           maxLength: 10000
           description: Updated content of the comment
           example: Issue has been identified and fix is in progress...
+        publishOnStatusPage:
+          type: boolean
+          description: Whether the comment is published on the status page
+          example: true
+          default: false
       required:
         - content
     IncidentCommentDto:
@@ -2519,6 +2527,8 @@ components:
           exclusiveMinimum: false
         comment:
           type: string
+        publishOnStatusPage:
+          type: boolean
         created:
           oneOf:
             - {}
@@ -2536,6 +2546,7 @@ components:
       required:
         - id
         - comment
+        - publishOnStatusPage
         - created
         - user
     CreateIncidentCommentRequestDto:
@@ -2546,6 +2557,11 @@ components:
           maxLength: 10000
           description: Content of the comment
           example: Investigating the issue...
+        publishOnStatusPage:
+          type: boolean
+          description: Whether the comment is published on the status page
+          example: true
+          default: false
       required:
         - content
     CreateMonitorGroupDto:
