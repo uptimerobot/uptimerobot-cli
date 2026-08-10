@@ -4,14 +4,15 @@ import type { OperationDefinition } from './types.js';
 type OperationCommandId = keyof typeof operations;
 
 /**
- * The three bulk endpoints answer with a per-monitor `success` before the
- * change has been applied, and the response carries no operation id to poll,
- * so a caller that treats the exit code as "done" acts on monitors that are
- * still in their old state. The delay is observed behaviour rather than
- * published contract, which is why it is recorded here.
+ * The three bulk endpoints answer with a per-monitor `success` that reports
+ * acceptance, not application: there is no operation id to poll and nothing
+ * distinguishes queued from applied, so a caller treating exit 0 as "done" may
+ * act on monitors still in their old state. A stale-cache defect that made the
+ * gap tens of seconds wide was fixed in UPT-3557, so no duration is quoted —
+ * the absent completion signal is the part that is structural.
  */
 const BULK_DELAY_NOTE =
-  'Applied asynchronously. The API accepts the write and reports "success" for every matched monitor immediately, but the change takes roughly 40-60 seconds to take effect, and nothing in the response distinguishes queued from applied. Poll `uptimerobot monitors get <id>` until the status reflects the change before anything depends on it.';
+  'Reports acceptance, not completion. The API answers "success" for every matched monitor as soon as the write is accepted; it carries no operation id, and nothing in the response distinguishes queued from applied. Confirm with `uptimerobot monitors get <id>` before anything depends on the new state.';
 
 /**
  * Editorial notes appended to a command's help description. `src/generated` is

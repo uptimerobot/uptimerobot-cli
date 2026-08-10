@@ -25,10 +25,10 @@ describe('monitors bulk', () => {
     return `http://127.0.0.1:${address.port}/v3`;
   }
 
-  // The endpoints report success per monitor before the change is applied and
-  // return no operation id, so the only way to know a bulk write landed is to
-  // re-read the monitors. Help is where a caller finds that out.
-  it('documents the apply delay in the help of every bulk command', async () => {
+  // The endpoints answer success per monitor on acceptance and return no
+  // operation id, so the only way to know a bulk write landed is to re-read the
+  // monitors. Help is where a caller finds that out.
+  it('documents the missing completion signal in every bulk command help', async () => {
     const [pause, start, update] = await Promise.all([
       runCli(['monitors', 'bulk', 'pause', '--help']),
       runCli(['monitors', 'bulk', 'start', '--help']),
@@ -39,7 +39,7 @@ describe('monitors bulk', () => {
       exitCode: 0,
       namesTheDelay: true,
       saysAccepted: true,
-      saysAsynchronous: true,
+      saysNoCompletionSignal: true,
     };
 
     expect({
@@ -146,10 +146,12 @@ function describesAsyncApply(result: CliResult): Record<string, boolean | number
   return {
     confirmsWithGet: help.includes('`uptimerobot monitors get <id>`'),
     exitCode: result.exitCode,
-    namesTheDelay: help.includes('roughly 40-60 seconds to take effect'),
+    namesTheDelay: help.includes('Reports acceptance, not completion'),
     saysAccepted: help.includes(
-      'accepts the write and reports "success" for every matched monitor immediately',
+      'answers "success" for every matched monitor as soon as the write is accepted',
     ),
-    saysAsynchronous: help.includes('Applied asynchronously.'),
+    saysNoCompletionSignal: help.includes(
+      'nothing in the response distinguishes queued from applied',
+    ),
   };
 }

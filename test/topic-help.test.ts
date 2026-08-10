@@ -11,7 +11,7 @@ describe('topic help', () => {
     expect(help).not.toContain('Create a monitor (API)');
   });
 
-  it('warns about the bulk apply delay on the topic as well as its commands', async () => {
+  it('warns that bulk reports acceptance on the topic as well as its commands', async () => {
     const [topic, listing] = await Promise.all([
       runCli(['monitors', 'bulk', '--help']),
       runCli(['monitors', '--help']),
@@ -19,12 +19,13 @@ describe('topic help', () => {
     const help = topic.stdout.replace(/\s+/g, ' ');
 
     expect(topic.exitCode).toBe(0);
-    expect(help).toContain('applied asynchronously');
-    expect(help).toContain('roughly 40-60 seconds to take effect');
-    expect(help).toContain('Poll `uptimerobot monitors get <id>` to confirm the new state.');
+    expect(help).toContain('report acceptance, not completion');
+    expect(help).toContain(
+      'Confirm with `uptimerobot monitors get <id>` before depending on the new state.',
+    );
     // The topic listing shows only the first line, so it must stay a summary.
     expect(listing.stdout.replace(/\s+/g, ' ')).toContain('monitors bulk Run bulk monitor actions');
-    expect(listing.stdout).not.toContain('40-60 seconds');
+    expect(listing.stdout).not.toContain('report acceptance, not completion');
   });
 
   it('describes the monitors stats response-time topic apart from the command of the same name', async () => {

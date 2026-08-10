@@ -51,13 +51,13 @@ may change in minor releases.
   tell "the input is wrong, do not repeat it" from "retrying may help". Exit
   code `1` now means only the latter.
 - `monitors bulk pause`, `monitors bulk start`, and `monitors bulk update`
-  document in their help, and in the `monitors bulk` topic help, that the API
-  applies these writes asynchronously: it reports `success` for every matched
-  monitor immediately, the change takes roughly 40-60 seconds to take effect,
-  and no operation id is returned, so `monitors get` is the only way to confirm
-  the new state. Behaviour is unchanged; the delay was previously undocumented,
-  and a pipeline that paused monitors before a deploy could start deploying
-  while they were still live.
+  document in their help, and in the `monitors bulk` topic help, that these
+  writes report acceptance rather than completion: the API answers `success`
+  for every matched monitor as soon as the write is accepted, returns no
+  operation id, and offers nothing that distinguishes queued from applied, so
+  `monitors get` is the only way to confirm the new state. Behaviour is
+  unchanged; a pipeline that paused monitors before a deploy could otherwise
+  start deploying while they were still live.
 
 ### Fixed
 

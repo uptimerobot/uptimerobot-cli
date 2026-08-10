@@ -143,7 +143,7 @@ uptimerobot monitors create http --name checkout-api --set friendlyName=checkout
 A heartbeat monitor stays silent until something pings it. Normalized output carries a derived `pingUrl` for that purpose:
 
 ```sh
-uptimerobot monitors get 803704830 --json --format json
+uptimerobot monitors get 803704830 --json
 # {"type":"HEARTBEAT","id":803704830,"url":"997c8970…","pingUrl":"https://heartbeat.uptimerobot.com/m803704830-997c8970…"}
 ```
 
@@ -216,7 +216,7 @@ Branch on `code` or `status`. Read `apiCode` only for diagnostics, and use `--ra
 
 `monitors bulk pause`, `monitors bulk start`, and `monitors bulk update` report per-monitor outcomes in an HTTP 201 response, so a failure is only visible in the body. The CLI inspects it and exits non-zero, listing the failed entries in the error envelope's `details`.
 
-Those three commands are also applied asynchronously. The API accepts the write and reports `success` for every matched monitor immediately, but the change takes roughly 40-60 seconds to take effect, nothing in the response distinguishes queued from applied, and there is no operation id to poll. Exit code `0` therefore means the request was accepted, not that the monitors have changed. A pipeline that pauses monitors before a deploy must poll `uptimerobot monitors get <id>` until the reported status reflects the change before it continues.
+Those three commands report acceptance rather than completion. The API answers `success` for every matched monitor as soon as the write is accepted; it carries no operation id, and nothing in the response distinguishes queued from applied. Exit code `0` therefore means the request was accepted, not that the monitors have changed. A pipeline that pauses monitors before a deploy should confirm with `uptimerobot monitors get <id>` before it continues.
 
 ## Safety
 
