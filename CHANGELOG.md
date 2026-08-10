@@ -10,6 +10,58 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `--publish-on-status-page` on `incidents comments create` and
+  `incidents comments update`, controlling whether a comment appears on the
+  status page. The field was added to the published API contract; the flag is
+  generated from it and defaults to `false`.
+- `uptimerobot version` reports the CLI version, platform, and Node.js runtime
+  through the normal output flags, so `uptimerobot version --json` answers
+  `{"version":"0.3.0","platform":"darwin-arm64","node":"24.12.0"}`. The bare
+  `--version` flag is handled inside oclif before any command runs and keeps
+  printing the single human line it always has; asserting a minimum version in
+  CI no longer means parsing that sentence.
+
+### Changed
+
+- The error envelope's `code` is now always `HTTP_<status>` for a failure the
+  API reported, and the upstream code is passed through verbatim as `apiCode`.
+  It previously reported whichever code the API happened to include and fell
+  back to `HTTP_<status>` only when there was none, so the same failure was
+  spelled `000-004` on one endpoint and `HTTP_404` on another, and the spelling
+  could change without a CLI release. Those codes are documented nowhere in the
+  API contract, so `apiCode` is diagnostic only; branch on `code` or `status`.
+- A typed flag and `--set` that give the same request body field different
+  values now fail with `INVALID_INPUT` and exit 2, naming the field and both
+  values. Previously `--set` won silently and the typed flag was discarded.
+  Passing both with the same value is still accepted. `--body` is unchanged: it
+  is a base document that typed flags and `--set` may both override.
+- A request the API rejects as invalid now exits `2`, the code locally caught
+  invalid input already used, instead of the generic `1`. HTTP 400 and HTTP 422
+  both map to it. HTTP 409 takes a new exit code `8`, because a conflict is a
+  well-formed request that only the current server state refuses. Previously all
+  three were indistinguishable from a transient fault, so a script could not
+  tell "the input is wrong, do not repeat it" from "retrying may help". Exit
+  code `1` now means only the latter.
+- `monitors bulk pause`, `monitors bulk start`, and `monitors bulk update`
+  document in their help, and in the `monitors bulk` topic help, that the API
+  applies these writes asynchronously: it reports `success` for every matched
+  monitor immediately, the change takes roughly 40-60 seconds to take effect,
+  and no operation id is returned, so `monitors get` is the only way to confirm
+  the new state. Behaviour is unchanged; the delay was previously undocumented,
+  and a pipeline that paused monitors before a deploy could start deploying
+  while they were still live.
+
+### Fixed
+
+- A reader that closes stdout early, as `| head`, `| head -c`, and `| grep -q`
+  do, no longer produces a `Detected unsettled top-level await` warning on
+  stderr and exit code 13. The CLI now treats the broken pipe as the end of its
+  output and exits 0, or with the exit code the command had already decided on.
+  Output delivered before the reader left is unchanged, and a failure is still
+  reported on stderr.
+
 ## [0.3.0] - 2026-07-29
 
 ### Added
