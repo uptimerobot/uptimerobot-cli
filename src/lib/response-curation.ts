@@ -23,6 +23,9 @@ export function withDerivedFields(payload: unknown, env = process.env): unknown 
   if (Array.isArray(payload.items)) {
     return { ...payload, items: payload.items.map((item) => withDerivedFields(item, env)) };
   }
+  // An API-supplied value wins: this composition exists only while the contract
+  // has none, and must not shadow the real field when UPT-3726 lands.
+  if (typeof payload.pingUrl === 'string') return payload;
   const pingUrl = heartbeatPingUrl(payload, env);
   return pingUrl === undefined ? payload : { ...payload, pingUrl };
 }

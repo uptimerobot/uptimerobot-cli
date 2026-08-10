@@ -27,6 +27,14 @@ describe('derived heartbeat ping URL', () => {
     });
   });
 
+  // The composition exists only while the contract has no such field. When the
+  // API grows one it has to win, or the derived value would shadow the real one.
+  it('leaves an API-supplied pingUrl in place', () => {
+    const authoritative = { ...HEARTBEAT, pingUrl: 'https://heartbeat.example.com/from-the-api' };
+
+    expect(withDerivedFields(authoritative, {})).toEqual(authoritative);
+  });
+
   it('honours an overridden heartbeat host', () => {
     const result = withDerivedFields(HEARTBEAT, {
       UPTIMEROBOT_HEARTBEAT_URL: 'https://hb.example.com/',

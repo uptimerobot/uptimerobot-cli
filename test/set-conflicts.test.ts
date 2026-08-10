@@ -62,6 +62,33 @@ describe('--set against typed flags', () => {
     );
   });
 
+  // Property order is not meaning, so the same object written two ways agrees.
+  it('accepts an object given to both with its keys in a different order', async () => {
+    const result = await runCli([
+      'monitors',
+      'create',
+      'http',
+      '--name',
+      'checkout-api',
+      '--url',
+      'https://example.com',
+      '--interval',
+      '60',
+      '--timeout',
+      '30',
+      '--custom-http-headers',
+      '{"a":"1","b":"2"}',
+      '--set',
+      'customHttpHeaders={"b":"2","a":"1"}',
+      '--dry-run',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout).body).toEqual(
+      expect.objectContaining({ customHttpHeaders: { a: '1', b: '2' } }),
+    );
+  });
+
   it('lets a typed flag override --body without complaint', async () => {
     const result = await runCli([
       'monitors',

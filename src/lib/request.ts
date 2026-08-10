@@ -168,8 +168,28 @@ function assignValue(
   assignPath(target, path, value);
 }
 
+/**
+ * Structural equality, so the same object written two ways is not a conflict:
+ * a typed flag carrying `{"a":1,"b":2}` and `--set` carrying `{"b":2,"a":1}`
+ * say the same thing, and refusing them would be a false positive on the very
+ * case the conflict check is meant to allow through.
+ */
 function sameValue(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(withSortedKeys(value ?? null));
+}
+
+function withSortedKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withSortedKeys);
+  if (!isPlainRecord(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, withSortedKeys(value[key])]),
+  );
 }
 
 function describeValue(value: unknown): string {

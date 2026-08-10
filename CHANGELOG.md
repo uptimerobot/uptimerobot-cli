@@ -10,7 +10,13 @@ may change in minor releases.
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-08-10
+## [1.0.0] - 2026-08-10
+
+First stable release. The public contract stated above — the command tree and
+flags, machine-readable output shapes, error codes, exit codes, and environment
+variables — is from here on covered by semantic versioning, so changing it
+requires a major release. Everything below was landed deliberately before that
+freeze; each entry is a change that would otherwise have needed a 2.0.
 
 ### Added
 
@@ -26,7 +32,7 @@ may change in minor releases.
   generated from it and defaults to `false`.
 - `uptimerobot version` reports the CLI version, platform, and Node.js runtime
   through the normal output flags, so `uptimerobot version --json` answers
-  `{"version":"0.4.0","platform":"darwin-arm64","node":"24.12.0"}`. The bare
+  `{"version":"1.0.0","platform":"darwin-arm64","node":"24.12.0"}`. The bare
   `--version` flag is handled inside oclif before any command runs and keeps
   printing the single human line it always has; asserting a minimum version in
   CI no longer means parsing that sentence.
@@ -51,7 +57,8 @@ may change in minor releases.
   well-formed request that only the current server state refuses. Previously all
   three were indistinguishable from a transient fault, so a script could not
   tell "the input is wrong, do not repeat it" from "retrying may help". Exit
-  code `1` now means only the latter.
+  code `1` stays the generic fallback for everything not mapped to a code of its
+  own, including a bulk operation in which every item failed (`BULK_FAILED`).
 - `monitors bulk pause`, `monitors bulk start`, and `monitors bulk update`
   document in their help, and in the `monitors bulk` topic help, that these
   writes report acceptance rather than completion: the API answers `success`
@@ -189,8 +196,8 @@ may change in minor releases.
 - Redirects are followed manually and the origin is re-checked at every hop
   before credentials are attached; cross-origin redirects are refused.
 
-[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.3.0...v0.4.0
+[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.0...v0.1.2
