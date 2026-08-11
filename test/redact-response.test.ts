@@ -291,4 +291,53 @@ describe('response redaction', () => {
       stdout: '{"items":[{"id":1,"friendlyName":"checkout-api"}],"nextCursor":null}\n',
     });
   });
+
+  it('redacts credential fields carried by an API error envelope', async () => {
+    const apiUrl = await serve(
+      { message: 'Monitor rejected', details: { httpPassword: SECRET, field: 'httpPassword' } },
+      400,
+    );
+
+    const result = await runCli(['monitors', 'get', '7', '--json'], environment(apiUrl));
+
+    expect(result.stderr).not.toContain(SECRET);
+    expect({ ...result, stderr: JSON.parse(result.stderr) }).toEqual({
+      exitCode: 2,
+      stderr: {
+        error: {
+          code: 'HTTP_400',
+          // The field name is not a credential, only its value is.
+          details: { httpPassword: '[REDACTED]', field: 'httpPassword' },
+          message: 'Monitor rejected',
+          status: 400,
+        },
+      },
+      stdout: '',
+    });
+  });
+
+  // Failure output is what gets pasted into bug reports, CI logs, and agent
+  // transcripts, and errorEnvelope also serves failures raised before flags are
+  // parsed. Errors therefore always redact, unlike the success path.
+  it('keeps redacting an error envelope even when --reveal-secrets is passed', async () => {
+    const apiUrl = await serve(
+      { message: 'Monitor rejected', details: { httpPassword: SECRET } },
+      400,
+    );
+
+    const result = await runCli(
+      ['monitors', 'get', '7', '--json', '--reveal-secrets'],
+      environment(apiUrl),
+    );
+
+    expect(result.stderr).not.toContain(SECRET);
+    expect(JSON.parse(result.stderr)).toEqual({
+      error: {
+        code: 'HTTP_400',
+        details: { httpPassword: '[REDACTED]' },
+        message: 'Monitor rejected',
+        status: 400,
+      },
+    });
+  });
 });
