@@ -184,7 +184,7 @@ Interactive terminals use tables by default. Piped, redirected, and agent-driven
 | `--raw`            | Untouched API response as JSON       |
 | `--reveal-secrets` | Credential-like fields shown in full |
 
-Recognizable credential fields in a response, such as `httpPassword`, print as `[REDACTED]` in every format, and a stderr notice names what was hidden. Pass `--reveal-secrets` to print the values instead. `--raw` skips redaction along with the rest of normalization.
+Recognizable credential fields in a response, such as `httpPassword`, print as `[REDACTED]` in every format, and a stderr notice names what was hidden. Pass `--reveal-secrets` to print the values instead. `--raw` skips redaction along with the rest of normalization. Machine-readable error envelopes are redacted the same way but unconditionally, because failure output is what ends up in bug reports and CI logs; `--reveal-secrets` does not lift it. Redaction matches field names, so a credential quoted inside an error `message` is not covered.
 
 Set `UPTIMEROBOT_OUTPUT` to `json`, `jsonl`, `table`, or `plain` to choose a default. Use `--agent` or `UPTIMEROBOT_AGENT=1` to identify agent execution explicitly. A truthy `CI` environment variable identifies CI execution independently.
 

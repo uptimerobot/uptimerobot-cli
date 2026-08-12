@@ -10,6 +10,21 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- Machine-readable error envelopes are redacted, so the documented rule that
+  credential-like fields print as `[REDACTED]` in every format now holds on the
+  failure path as well as the success path. Redaction is applied where a failure
+  becomes output rather than at each error's source, covering the API's `details`
+  passthrough, the CLI's own bulk failure entries, and any error shape added
+  later. Nothing in the published API populates `details` with a credential
+  today and bulk entries carry only ids, names, and statuses, so no output
+  changes; what changes is that a future endpoint cannot leak through this path
+  without a CLI change. Two limits are deliberate: redaction matches field names,
+  so a credential interpolated into a free-text `message` is still shown, and
+  `--reveal-secrets` does not lift redaction on errors the way it does on
+  successful output.
+
 ## [1.0.0] - 2026-08-10
 
 First stable release. The public contract stated above — the command tree and

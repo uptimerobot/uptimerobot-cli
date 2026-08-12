@@ -1,6 +1,7 @@
 import { outputFormatFromEnvironment, requestedFormatFromArgv } from '../output/resolve-format.js';
 import { agentEnvironmentDetected } from './invocation.js';
 import { isRecord } from './objects.js';
+import { redactSecrets } from './redact-secrets.js';
 import type { CliError } from './types.js';
 
 const handledErrors = new WeakSet<object>();
@@ -27,8 +28,26 @@ export class CliFailure extends Error {
   }
 }
 
+/**
+ * Redacts the envelope rather than each error's source, because this is the one
+ * place a failure becomes output: it covers the API's `details` passthrough,
+ * the CLI's own bulk failures, and any error shape added later. The cast holds
+ * because only values are replaced and no CliError key is credential-like, so
+ * every key survives with its type.
+ *
+ * Unlike the success path this ignores --reveal-secrets. errorEnvelope also
+ * serves failures raised before flags are parsed, and failure output is what
+ * gets pasted into bug reports, CI logs, and agent transcripts.
+ *
+ * Redaction is key-based, so a secret interpolated into a free-text `message`
+ * is not covered; only structured content is.
+ */
+function redactError(error: CliError): CliError {
+  return redactSecrets(error).value as CliError;
+}
+
 export function errorEnvelope(error: unknown): { error: CliError } {
-  if (error instanceof CliFailure) return { error: error.cliError };
+  if (error instanceof CliFailure) return { error: redactError(error.cliError) };
 
   const metadata = isRecord(error) ? (error as ErrorMetadata) : {};
   const exitCode = exitCodeForError(error);
@@ -46,7 +65,7 @@ export function errorEnvelope(error: unknown): { error: CliError } {
         : 'The command failed.';
 
   return {
-    error: {
+    error: redactError({
       code,
       ...(metadata.details !== undefined ? { details: metadata.details } : {}),
       ...(typeof metadata.expected === 'string' ? { expected: metadata.expected } : {}),
@@ -57,7 +76,7 @@ export function errorEnvelope(error: unknown): { error: CliError } {
       metadata.suggestions.every((suggestion) => typeof suggestion === 'string')
         ? { suggestions: metadata.suggestions as string[] }
         : {}),
-    },
+    }),
   };
 }
 
