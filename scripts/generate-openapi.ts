@@ -226,6 +226,7 @@ function collectOperations(document: OpenApiDocument): OperationDefinition[] {
         continue;
       }
 
+      generated.push(definition);
       for (const variant of variants) {
         assertBodyFlagNames(variant.fields, parameters);
         generated.push({

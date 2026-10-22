@@ -30,6 +30,7 @@
   "commands/monitors/bulk/pause.ts",
   "commands/monitors/bulk/start.ts",
   "commands/monitors/bulk/update.ts",
+  "commands/monitors/create.ts",
   "commands/monitors/create/api.ts",
   "commands/monitors/create/dns.ts",
   "commands/monitors/create/heartbeat.ts",

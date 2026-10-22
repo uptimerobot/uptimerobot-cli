@@ -1483,6 +1483,24 @@ export const operations = {
       }
     ]
   },
+  "monitors:create": {
+    "commandId": "monitors:create",
+    "contentTypes": [
+      "application/json"
+    ],
+    "defaultApiUrl": "https://api.uptimerobot.com/v3",
+    "description": "New monitors of any type can be created using this endpoint. The request body is documented as one schema per monitor type — pick the one matching the `type` you are creating.",
+    "destructive": false,
+    "method": "POST",
+    "operationId": "MonitorsController_create",
+    "parameters": [],
+    "path": "/monitors",
+    "requestBodyRequired": true,
+    "summary": "Create a monitor",
+    "tags": [
+      "Monitors"
+    ]
+  },
   "monitors:create:api": {
     "commandId": "monitors:create:api",
     "contentTypes": [
