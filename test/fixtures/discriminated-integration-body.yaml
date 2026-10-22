@@ -22,6 +22,12 @@ paths:
                 mapping:
                   slack: '#/components/schemas/SlackIntegration'
                   webhook: '#/components/schemas/WebhookIntegration'
+            examples:
+              slack:
+                summary: Create a Slack integration
+                value:
+                  name: Team chat
+                  type: slack
       responses:
         '201':
           description: Created

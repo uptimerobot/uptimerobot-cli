@@ -101,6 +101,14 @@ describe('OpenAPI command generation', () => {
     ]);
     expect(plainCreate).not.toHaveProperty('requestBodyFields');
     expect(plainCreate).not.toHaveProperty('requestBodyDefaults');
+    expect(plainCreate).toHaveProperty('requestBodyExamples', [
+      {
+        body: { name: 'Team chat', type: 'slack' },
+        name: 'slack',
+        summary: 'Create a Slack integration',
+      },
+    ]);
+    expect(registry['integrations:update']).not.toHaveProperty('requestBodyExamples');
     expect(result.stdout).toBe('Generated 6 commands.\n');
   });
 
