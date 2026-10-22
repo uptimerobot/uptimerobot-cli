@@ -213,19 +213,23 @@ function collectOperations(document: OpenApiDocument): OperationDefinition[] {
         summary: operation.summary ?? `${method.toUpperCase()} ${path}`,
         tags: operation.tags ?? [],
       };
+      const examples = requestBodyExamples(operation);
+      const plainDefinition: OperationDefinition = {
+        ...definition,
+        ...(examples.length > 0 ? { requestBodyExamples: examples } : {}),
+      };
       const variants = discriminatedRequestBodyVariants(document, operation);
       if (!variants) {
         const fields = ordinaryRequestBodyFields(document, operation);
         if (fields) assertBodyFlagNames(fields, parameters);
-        const examples = requestBodyExamples(operation);
         generated.push({
-          ...definition,
-          ...(examples.length > 0 ? { requestBodyExamples: examples } : {}),
+          ...plainDefinition,
           ...(fields ? { requestBodyFields: fields } : {}),
         });
         continue;
       }
 
+      generated.push(plainDefinition);
       for (const variant of variants) {
         assertBodyFlagNames(variant.fields, parameters);
         generated.push({

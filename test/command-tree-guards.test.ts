@@ -7,12 +7,9 @@ import { runCli } from './helpers/run-cli.js';
 // after a sync and nothing else notices the command has gone.
 describe('command tree guards', () => {
   // `POST /integrations` and `PATCH /integrations/{id}` are both bare oneOfs.
-  // If a discriminator is added — the change that would generate
-  // `integrations create slack|webhook|...` — the generator turns these into
-  // topics and the bare commands disappear, exactly as `monitors create` has
-  // no bare command today. Adding the subcommands is welcome; removing these
-  // is breaking, so both are expected to coexist, with --set remaining the
-  // untyped escape hatch.
+  // If a discriminator is added, the generator emits typed subcommands
+  // (`integrations create slack|webhook|...`) and keeps these plain commands
+  // beside them, with --set remaining the untyped escape hatch.
   it.each([
     ['create', ['integrations', 'create', '--set', 'type=slack'], 'POST'],
     ['update', ['integrations', 'update', '123', '--set', 'name=renamed'], 'PATCH'],

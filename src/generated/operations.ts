@@ -1483,6 +1483,204 @@ export const operations = {
       }
     ]
   },
+  "monitors:create": {
+    "commandId": "monitors:create",
+    "contentTypes": [
+      "application/json"
+    ],
+    "defaultApiUrl": "https://api.uptimerobot.com/v3",
+    "description": "New monitors of any type can be created using this endpoint. The request body is documented as one schema per monitor type — pick the one matching the `type` you are creating.",
+    "destructive": false,
+    "method": "POST",
+    "operationId": "MonitorsController_create",
+    "parameters": [],
+    "path": "/monitors",
+    "requestBodyRequired": true,
+    "summary": "Create a monitor",
+    "tags": [
+      "Monitors"
+    ],
+    "requestBodyExamples": [
+      {
+        "body": {
+          "friendlyName": "My HTTP monitor",
+          "type": "HTTP",
+          "url": "https://example.com",
+          "interval": 60,
+          "timeout": 30
+        },
+        "name": "HTTP Monitor"
+      },
+      {
+        "body": {
+          "friendlyName": "My HTTP monitor",
+          "type": "HTTP",
+          "url": "https://example.com",
+          "interval": 60,
+          "timeout": 30,
+          "config": {
+            "ipVersion": "ipv6Only"
+          }
+        },
+        "name": "HTTP/Keyword Monitor (IP version)"
+      },
+      {
+        "body": {
+          "friendlyName": "My HTTPS monitor",
+          "type": "HTTP",
+          "url": "https://example.com",
+          "interval": 60,
+          "timeout": 30,
+          "config": {
+            "sslExpirationPeriodDays": [
+              7,
+              14,
+              30
+            ]
+          }
+        },
+        "name": "HTTP/Keyword Monitor (SSL expiration periods)"
+      },
+      {
+        "body": {
+          "friendlyName": "My Keyword monitor",
+          "type": "KEYWORD",
+          "url": "https://example.com",
+          "interval": 60,
+          "timeout": 30,
+          "keywordType": "ALERT_EXISTS",
+          "keywordCaseType": "CaseSensitive",
+          "keywordValue": "Service Unavailable"
+        },
+        "name": "Keyword Monitor"
+      },
+      {
+        "body": {
+          "friendlyName": "My Ping monitor",
+          "type": "PING",
+          "url": "example.com",
+          "interval": 60,
+          "timeout": 30
+        },
+        "name": "Ping Monitor"
+      },
+      {
+        "body": {
+          "friendlyName": "My Port monitor",
+          "type": "PORT",
+          "url": "example.com",
+          "port": 443,
+          "interval": 60,
+          "timeout": 30
+        },
+        "name": "Port Monitor"
+      },
+      {
+        "body": {
+          "friendlyName": "My Heartbeat monitor",
+          "type": "HEARTBEAT",
+          "interval": 60,
+          "gracePeriod": 300
+        },
+        "name": "Heartbeat Monitor"
+      },
+      {
+        "body": {
+          "friendlyName": "My DNS monitor",
+          "type": "DNS",
+          "url": "example.com",
+          "interval": 60,
+          "config": {
+            "dnsRecords": {
+              "CNAME": [
+                "example.com"
+              ],
+              "MX": [
+                "1 aspmx.l.google.com.",
+                "5 alt1.aspmx.l.google.com."
+              ],
+              "NS": [
+                "ns-cloud-a1.googledomains.com.",
+                "ns-cloud-a2.googledomains.com."
+              ],
+              "A": [
+                "192.168.1.1"
+              ],
+              "PTR": [
+                "example.com"
+              ]
+            }
+          }
+        },
+        "name": "DNS Monitor"
+      },
+      {
+        "body": {
+          "friendlyName": "My API monitor",
+          "type": "API",
+          "url": "https://api.example.com/health",
+          "interval": 60,
+          "timeout": 30,
+          "config": {
+            "apiAssertions": {
+              "logic": "AND",
+              "checks": [
+                {
+                  "property": "$.data.status",
+                  "comparison": "equals",
+                  "target": "active"
+                },
+                {
+                  "property": "$.data.count",
+                  "comparison": "greater_than",
+                  "target": 0
+                }
+              ]
+            },
+            "ipVersion": "ipv4Only",
+            "sslExpirationPeriodDays": [
+              7,
+              14,
+              30
+            ]
+          }
+        },
+        "name": "API Monitor"
+      },
+      {
+        "body": {
+          "friendlyName": "My UDP monitor",
+          "type": "UDP",
+          "url": "1.2.3.4",
+          "port": 53,
+          "interval": 60,
+          "timeout": 30,
+          "config": {
+            "udp": {
+              "payload": "ping",
+              "packetLossThreshold": 50
+            }
+          }
+        },
+        "name": "UDP Monitor"
+      },
+      {
+        "body": {
+          "friendlyName": "My Visual Comparison monitor",
+          "type": "VISUAL_COMPARISON",
+          "url": "https://example.com",
+          "interval": 300,
+          "config": {
+            "visualComparison": {
+              "sensitivityThreshold": 10,
+              "viewport": "desktop"
+            }
+          }
+        },
+        "name": "Visual Comparison Monitor"
+      }
+    ]
+  },
   "monitors:create:api": {
     "commandId": "monitors:create:api",
     "contentTypes": [
