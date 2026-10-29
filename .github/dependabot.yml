@@ -49,7 +49,7 @@ updates:
       timezone: "Europe/Bratislava"
     open-pull-requests-limit: 5
     cooldown:
-      default-days: 5
+      default-days: 7
     groups:
       security-updates:
         applies-to: "security-updates"
@@ -62,6 +62,3 @@ updates:
         applies-to: "version-updates"
         patterns:
           - "*"
-        update-types:
-          - "minor"
-          - "patch"
