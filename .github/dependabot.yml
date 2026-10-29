@@ -1,11 +1,67 @@
+# Managed by dependabot-rollout. Grouping/cooldown standard v1.
 version: 2
 updates:
-  # Bump SHA-pinned GitHub Actions via reviewed PRs so the pins don't go stale.
-  - package-ecosystem: github-actions
-    directory: /
+  - package-ecosystem: "npm"
+    directory: "/"
     schedule:
-      interval: weekly
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Bratislava"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 5
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
     groups:
-      github-actions:
+      security-updates:
+        applies-to: "security-updates"
         patterns:
-          - '*'
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      dev-dependencies:
+        applies-to: "version-updates"
+        dependency-type: "development"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      prod-dependencies:
+        applies-to: "version-updates"
+        dependency-type: "production"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Bump SHA-pinned GitHub Actions via reviewed PRs so the pins don't go stale.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Bratislava"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 5
+    groups:
+      security-updates:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      all:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
