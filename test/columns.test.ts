@@ -19,9 +19,12 @@ const EXPECTED_COLLECTION_COMMAND_IDS = [
   'maintenance-windows:list',
   'monitor-groups:list',
   'monitors:list',
+  'monitors:third-party-service:incidents:activity-log',
+  'monitors:third-party-service:incidents:list',
   'status-pages:announcements:list',
   'status-pages:list',
   'tags:list',
+  'third-party-providers:list',
   'user:alert-contacts',
   'user:all-alert-contacts',
 ] as const;

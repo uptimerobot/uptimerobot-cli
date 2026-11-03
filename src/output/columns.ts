@@ -28,9 +28,12 @@ export const COLLECTION_COMMAND_IDS = [
   'maintenance-windows:list',
   'monitor-groups:list',
   'monitors:list',
+  'monitors:third-party-service:incidents:activity-log',
+  'monitors:third-party-service:incidents:list',
   'status-pages:announcements:list',
   'status-pages:list',
   'tags:list',
+  'third-party-providers:list',
   'user:alert-contacts',
   'user:all-alert-contacts',
 ] as const satisfies readonly OperationCommandId[];
@@ -111,6 +114,20 @@ export const COMMAND_COLUMNS = {
     { format: stateAge, header: 'IN STATE', key: 'currentStateDuration' },
     { format: joinNames, key: 'tags', maxWidth: 32 },
   ],
+  'monitors:third-party-service:incidents:activity-log': [
+    { key: 'timestamp' },
+    { key: 'status' },
+    { header: 'RECIPIENT', key: 'alertContactName', maxWidth: 28 },
+    { header: 'CONTACT', key: 'channelIdentifier', maxWidth: 36 },
+    { key: 'channel' },
+  ],
+  'monitors:third-party-service:incidents:list': [
+    { key: 'id' },
+    { key: 'severity' },
+    { key: 'title', maxWidth: 48 },
+    { header: 'STARTED', key: 'startedAt' },
+    { header: 'RESOLVED', key: 'resolvedAt' },
+  ],
   'status-pages:announcements:list': [
     { key: 'id' },
     { key: 'title', maxWidth: 40 },
@@ -130,6 +147,13 @@ export const COMMAND_COLUMNS = {
     { format: accessLevel, header: 'ACCESS', key: 'isPasswordSet' },
   ],
   'tags:list': [{ key: 'id' }, { key: 'name', maxWidth: 28 }],
+  'third-party-providers:list': [
+    { key: 'id' },
+    { key: 'name', maxWidth: 28 },
+    { key: 'state' },
+    { header: 'TRACKED', key: 'isTracked' },
+    { header: 'STATUS PAGE', key: 'statusPageUrl', maxWidth: 40 },
+  ],
   'user:alert-contacts': ALERT_CONTACT_COLUMNS,
   'user:all-alert-contacts': [
     { header: 'USER ID', key: 'user.id' },

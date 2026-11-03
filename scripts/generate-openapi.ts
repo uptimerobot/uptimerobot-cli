@@ -515,7 +515,11 @@ function commandIdFor(method: HttpMethod, path: string): string {
   if (endsWithParameter) return [...staticParts, 'get'].join(':');
   if (staticParts.length === 1) return [...staticParts, 'list'].join(':');
   if (hasParameter) {
-    if (['activity-log', 'alerts', 'all', 'response-time', 'uptime'].includes(lastStatic ?? '')) {
+    if (
+      ['activity-log', 'alerts', 'all', 'response-time', 'status', 'uptime'].includes(
+        lastStatic ?? '',
+      )
+    ) {
       return staticParts.join(':');
     }
     return [...staticParts, 'list'].join(':');
@@ -568,7 +572,7 @@ async function writeGeneratedFiles(
       `import { createOperationCommand } from '${relativePrefix}lib/operation-command.js';`,
       `import { operations } from '${relativePrefix}generated/operations.js';`,
       '',
-      `export default createOperationCommand(operations['${operation.commandId}']);`,
+      exportLine(`operations['${operation.commandId}']`),
       '',
     ].join('\n');
     await mkdir(dirname(commandPath), { recursive: true });
@@ -578,6 +582,12 @@ async function writeGeneratedFiles(
     join(generatedPath, 'command-files.json'),
     `${JSON.stringify(commandFiles.sort(), null, 2)}\n`,
   );
+}
+
+// Mirrors oxfmt at printWidth 100, so a regenerated entrypoint passes format:check.
+function exportLine(argument: string): string {
+  const line = `export default createOperationCommand(${argument});`;
+  return line.length <= 100 ? line : `export default createOperationCommand(\n  ${argument},\n);`;
 }
 
 async function generatedCommandFiles(
