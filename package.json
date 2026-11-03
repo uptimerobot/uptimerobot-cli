@@ -121,6 +121,17 @@
                 "description": "Query response time statistics overall or by region"
               }
             }
+          },
+          "third-party-service": {
+            "description": "Inspect a tracked third-party service and its incidents\n\nA third-party service is created with `monitors create third-party-service`, stopped with `monitors delete`, and cannot be paused.",
+            "subtopics": {
+              "incidents": {
+                "description": "List and inspect provider incidents"
+              }
+            }
+          },
+          "storm-protection": {
+            "description": "Read and update account storm protection"
           }
         }
       },
@@ -140,6 +151,9 @@
       },
       "user": {
         "description": "Inspect the authenticated user and contacts"
+      },
+      "third-party-providers": {
+        "description": "Search the third-party provider catalog"
       }
     }
   }

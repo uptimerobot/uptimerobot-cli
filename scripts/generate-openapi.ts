@@ -146,6 +146,23 @@ const BODY_FLAG_CURATIONS: Record<string, BodyFlagCuration> = {
     flag: 'region-threshold-oc',
   },
   regionalData: { flag: 'regional-data', hidden: true },
+  'config.thirdPartyService.providerId': {
+    aliases: ['config-third-party-service-provider-id'],
+    flag: 'provider-id',
+  },
+  'config.thirdPartyService.trackedComponentIds': {
+    aliases: ['config-third-party-service-tracked-component-ids'],
+    description: 'Component id to track (repeatable); omit to track every component',
+    flag: 'components',
+  },
+  'config.thirdPartyService.notify.severity': {
+    aliases: ['config-third-party-service-notify-severity'],
+    flag: 'notify-severity',
+  },
+  'config.thirdPartyService.notify.incrementalUpdates': {
+    aliases: ['config-third-party-service-notify-incremental-updates'],
+    flag: 'notify-incremental-updates',
+  },
 };
 const RESERVED_FLAGS = new Set([
   'agent',

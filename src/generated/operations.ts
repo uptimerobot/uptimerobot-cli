@@ -8330,7 +8330,10 @@ export const operations = {
         "type": "object"
       },
       {
-        "flag": "config-third-party-service-provider-id",
+        "aliases": [
+          "config-third-party-service-provider-id"
+        ],
+        "flag": "provider-id",
         "path": "config.thirdPartyService.providerId",
         "required": true,
         "description": "The provider to track: isdown's numeric provider id, as returned by the third-party provider catalog.",
@@ -8340,10 +8343,13 @@ export const operations = {
         "type": "number"
       },
       {
-        "flag": "config-third-party-service-tracked-component-ids",
+        "aliases": [
+          "config-third-party-service-tracked-component-ids"
+        ],
+        "flag": "components",
         "path": "config.thirdPartyService.trackedComponentIds",
         "required": false,
-        "description": "Component ids to scope tracking to (isdown components.id, not external_id). Omit to track every component.",
+        "description": "Component id to track (repeatable); omit to track every component",
         "example": [
           555,
           556
@@ -8383,7 +8389,10 @@ export const operations = {
         "type": "object"
       },
       {
-        "flag": "config-third-party-service-notify-severity",
+        "aliases": [
+          "config-third-party-service-notify-severity"
+        ],
+        "flag": "notify-severity",
         "path": "config.thirdPartyService.notify.severity",
         "required": false,
         "requiredWhenParentPresent": true,
@@ -8397,7 +8406,10 @@ export const operations = {
         "type": "string"
       },
       {
-        "flag": "config-third-party-service-notify-incremental-updates",
+        "aliases": [
+          "config-third-party-service-notify-incremental-updates"
+        ],
+        "flag": "notify-incremental-updates",
         "path": "config.thirdPartyService.notify.incrementalUpdates",
         "required": false,
         "requiredWhenParentPresent": true,
@@ -11570,10 +11582,13 @@ export const operations = {
         "type": "object"
       },
       {
-        "flag": "config-third-party-service-tracked-component-ids",
+        "aliases": [
+          "config-third-party-service-tracked-component-ids"
+        ],
+        "flag": "components",
         "path": "config.thirdPartyService.trackedComponentIds",
         "required": false,
-        "description": "Component ids to scope tracking to (isdown components.id, not external_id). Every id must belong to the monitor provider. Omit to leave the scope unchanged, set to null or [] to track every component.",
+        "description": "Component id to track (repeatable); omit to track every component",
         "example": [
           555,
           556
@@ -11613,7 +11628,10 @@ export const operations = {
         "type": "object"
       },
       {
-        "flag": "config-third-party-service-notify-severity",
+        "aliases": [
+          "config-third-party-service-notify-severity"
+        ],
+        "flag": "notify-severity",
         "path": "config.thirdPartyService.notify.severity",
         "required": false,
         "requiredWhenParentPresent": true,
@@ -11627,7 +11645,10 @@ export const operations = {
         "type": "string"
       },
       {
-        "flag": "config-third-party-service-notify-incremental-updates",
+        "aliases": [
+          "config-third-party-service-notify-incremental-updates"
+        ],
+        "flag": "notify-incremental-updates",
         "path": "config.thirdPartyService.notify.incrementalUpdates",
         "required": false,
         "requiredWhenParentPresent": true,

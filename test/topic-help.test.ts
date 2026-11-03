@@ -38,4 +38,22 @@ describe('topic help', () => {
     );
     expect(help).toContain('monitors stats response-time Get monitor response time statistics');
   });
+
+  it('describes the third-party service topics instead of borrowing a subcommand summary', async () => {
+    const [monitors, service, root] = await Promise.all([
+      runCli(['monitors', '--help']),
+      runCli(['monitors', 'third-party-service', '--help']),
+      runCli(['--help']),
+    ]);
+
+    expect(monitors.stdout.replace(/\s+/g, ' ')).toContain(
+      'monitors third-party-service Inspect a tracked third-party service and its incidents',
+    );
+    expect(service.stdout.replace(/\s+/g, ' ')).toContain(
+      'monitors third-party-service incidents List and inspect provider incidents',
+    );
+    expect(root.stdout.replace(/\s+/g, ' ')).toContain(
+      'third-party-providers Search the third-party provider catalog',
+    );
+  });
 });

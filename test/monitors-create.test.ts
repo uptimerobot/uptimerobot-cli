@@ -285,6 +285,57 @@ describe('monitor creation', () => {
     expect(update.stdout).toContain('"friendlyName"');
   });
 
+  it('creates a third-party service from short provider, component and notify flags', async () => {
+    let observedBody: unknown;
+    const server = createServer(async (request, response) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      observedBody = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      response.statusCode = 201;
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify({ id: 99, type: 'THIRD_PARTY_SERVICE' }));
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+
+    const result = await runCli(
+      [
+        'monitors',
+        'create',
+        'third-party-service',
+        '--provider-id',
+        '4317',
+        '--components',
+        '11',
+        '--components',
+        '12',
+        '--notify-severity',
+        'major',
+        '--notify-incremental-updates',
+        '--json',
+      ],
+      {
+        UPTIMEROBOT_AGENT: '0',
+        UPTIMEROBOT_API_KEY: 'u123-secret',
+        UPTIMEROBOT_DEV_API_URL: `http://127.0.0.1:${address.port}/v3`,
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(observedBody).toEqual({
+      type: 'THIRD_PARTY_SERVICE',
+      config: {
+        thirdPartyService: {
+          providerId: 4317,
+          trackedComponentIds: [11, 12],
+          notify: { severity: 'major', incrementalUpdates: true },
+        },
+      },
+    });
+  });
+
   it('creates an HTTP monitor from type-safe human-friendly flags', async () => {
     let observedRequest: Record<string, unknown> = {};
     const server = createServer(async (request, response) => {
