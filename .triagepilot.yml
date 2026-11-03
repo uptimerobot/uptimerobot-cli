@@ -20,7 +20,7 @@ risk:
   ai_authorship:
     enabled: false
   paths:
-    - pattern: 'src/lib/{auth,credential-store,redact-secrets,sensitive-fields}.ts'
+    - pattern: 'src/lib/{auth,credential-store,redact-secrets,sensitive-fields,invocation}.ts'
       weight: 70
       tag: credentials
     - pattern: 'src/commands/auth/**'
@@ -30,8 +30,8 @@ risk:
     - pattern: '{.github/workflows/release.yml,package.json,.npmrc}'
       weight: 70
       tag: publishing
-    # Writes files on users' machines
-    - pattern: 'src/lib/skills-installer.ts'
+    # Writes files on users' machines; install.ts holds the confirmation prompt
+    - pattern: 'src/{lib/skills-installer.ts,commands/skills/install.ts}'
       weight: 70
       tag: skills-installer
     - pattern: 'src/api/**'
@@ -40,8 +40,21 @@ risk:
     - pattern: 'src/lib/request*.ts'
       weight: 70
       tag: request-layer
+    # Changes who has to review what
+    - pattern: '.triagepilot.yml'
+      weight: 70
+      tag: review-routing
   suppressors:
-    - if_all_match: ['docs/**', '**/*.md', '**/*.mdx', '**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.spec.tsx']
+    - if_all_match:
+        [
+          'docs/**',
+          '**/*.md',
+          '**/*.mdx',
+          '**/*.test.ts',
+          '**/*.test.tsx',
+          '**/*.spec.ts',
+          '**/*.spec.tsx',
+        ]
       ceiling: 15
 
 ownership:
