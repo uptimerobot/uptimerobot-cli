@@ -1,0 +1,48 @@
+# TriagePilot: https://github.com/TriagePilot/triage-pilot/blob/main/docs/github-app/repository-configuration.md
+#
+# Tiers: score <= 25 low (no human), <= 70 medium (1 reviewer), > 70 high (2 reviewers).
+# Every PR also scores 5 per 5 changed non-test files (max 20), +15 for 200+ changed
+# lines, +15 for a lockfile change. Path weights add up, each counted once.
+#   weight 70  -> always 2 reviewers (5 + 70 > 70)
+#   no weight  -> small PRs auto-approve
+version: 1
+mode: enforce
+
+routing:
+  high_risk_reviewers: 2
+  exclude_source_branch_patterns: ['dependabot/**']
+
+risk:
+  thresholds:
+    low: 25
+    high: 70
+  # Defaults to enabled (+10) when omitted.
+  ai_authorship:
+    enabled: false
+  paths:
+    - pattern: 'src/lib/{auth,credential-store,redact-secrets,sensitive-fields}.ts'
+      weight: 70
+      tag: credentials
+    - pattern: 'src/commands/auth/**'
+      weight: 70
+      tag: credentials
+    # Published to npm as @uptimerobot/cli
+    - pattern: '{.github/workflows/release.yml,package.json,.npmrc}'
+      weight: 70
+      tag: publishing
+    # Writes files on users' machines
+    - pattern: 'src/lib/skills-installer.ts'
+      weight: 70
+      tag: skills-installer
+    - pattern: 'src/api/**'
+      weight: 70
+      tag: request-layer
+    - pattern: 'src/lib/request*.ts'
+      weight: 70
+      tag: request-layer
+  suppressors:
+    - if_all_match: ['docs/**', '**/*.md', '**/*.mdx', '**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.spec.tsx']
+      ceiling: 15
+
+ownership:
+  fallback_reviewers: ['@subalee', '@velzepooz', '@tomas223', '@clovnrian']
