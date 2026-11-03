@@ -21,6 +21,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkOperationResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Pause monitors by group and/or tag
@@ -47,6 +55,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkOperationResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Start monitors by group and/or tag
@@ -73,6 +89,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkOperationResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Update monitors by group and/or tag
@@ -122,6 +146,16 @@ paths:
           schema:
             example: '2024-12-31T23:59:59Z'
             type: string
+        - name: status
+          required: false
+          in: query
+          description: >-
+            Filter incidents by status. "open" returns only currently ongoing
+            incidents, regardless of started_after/started_before.
+          schema:
+            enum:
+              - open
+            type: string
       responses:
         '200':
           description: ''
@@ -129,6 +163,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IncidentSummaryPaginationDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: List incidents
@@ -152,6 +194,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IncidentDetailDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get an incident by ID
@@ -197,8 +247,24 @@ paths:
                 $ref: '#/components/schemas/PublicIncidentCommentsPaginationDto'
         '401':
           description: Unauthorized - missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '404':
           description: Incident not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: List incident comments
@@ -225,12 +291,36 @@ paths:
           description: Comment created successfully
         '400':
           description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '401':
           description: Unauthorized - missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '403':
           description: Forbidden - no write permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '404':
           description: Incident not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Create incident comment
@@ -240,7 +330,8 @@ paths:
     get:
       description: >-
         Returns the activity log for an incident, including status updates,
-        comments, and notifications. Sorted by date descending.
+        comments, and notifications. Sorted by date descending, newest first.
+        Values can be paginated with the cursor parameter.
       operationId: IncidentsController_getActivityLog
       parameters:
         - name: id
@@ -249,6 +340,30 @@ paths:
           description: ID of the incident
           schema:
             type: string
+        - name: cursor
+          required: false
+          in: query
+          description: >-
+            Cursor to paginate through further notification entries (comments,
+            status updates and system events are only returned on the first
+            page)
+          schema:
+            pattern: /^[A-Za-z0-9_-]+$/
+            example: MjAyNi0wOS0xMiAxMDowMjowMXw0MjAwMDAwMDAwMDAwMDExfDQ0fDIwMA
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: >-
+            Maximum number of notification entries per page (1-200, default 50).
+            The first page also carries every comment, status update and system
+            event on top of those, so it can hold more than `limit` entries.
+          schema:
+            minimum: 1
+            maximum: 200
+            default: 50
+            example: 50
+            type: number
       responses:
         '200':
           description: ''
@@ -256,6 +371,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ActivityLogResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get incident activity log
@@ -264,8 +387,9 @@ paths:
   /incidents/{id}/alerts:
     get:
       description: >-
-        Returns all alerts that were sent for a specific incident, including
-        recipient information and delivery status.
+        Returns alerts that were sent for a specific incident, including
+        recipient information and delivery status. Sorted by date descending,
+        newest first. Values can be paginated with the cursor parameter.
       operationId: IncidentsController_getAlerts
       parameters:
         - name: id
@@ -274,6 +398,24 @@ paths:
           description: ID of the incident
           schema:
             type: string
+        - name: cursor
+          required: false
+          in: query
+          description: Cursor to paginate through sent alerts
+          schema:
+            pattern: /^[A-Za-z0-9_-]+$/
+            example: MjAyNi0wOS0xMiAxMDowMjowMXw0MjAwMDAwMDAwMDAwMDExfDQ0fDIwMA
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: Number of sent alerts to return (1-200, default 50)
+          schema:
+            minimum: 1
+            maximum: 200
+            default: 50
+            example: 50
+            type: number
       responses:
         '200':
           description: ''
@@ -281,6 +423,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicSentAlertsResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get incident sent alerts
@@ -316,6 +466,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IncidentCommentDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Update an incident comment
@@ -342,10 +500,30 @@ paths:
           description: Comment deleted successfully
         '401':
           description: Unauthorized - missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '403':
           description: Forbidden - no write permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '404':
           description: Incident or comment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Delete incident comment
@@ -374,14 +552,38 @@ paths:
                 $ref: '#/components/schemas/MonitorGroupDto'
         '400':
           description: Validation error (invalid name, monitorIds, or groupIds)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '401':
           description: Unauthorized - invalid or missing authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '403':
           description: >-
             Forbidden - no write permission or monitor-groups feature not
             available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '429':
           description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Create a monitor group
@@ -393,6 +595,17 @@ paths:
         with the cursor parameter.
       operationId: MonitorGroupsController_list
       parameters:
+        - name: limit
+          required: false
+          in: query
+          description: >-
+            Maximum number of monitor groups to return per page. Default: 50,
+            Min: 1, Max: 200.
+          schema:
+            minimum: 1
+            maximum: 200
+            example: 50
+            type: number
         - name: cursor
           required: false
           in: query
@@ -406,6 +619,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MonitorGroupPaginationDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: List monitor groups
@@ -429,6 +650,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MonitorGroupDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get a monitor group by ID
@@ -457,6 +686,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MonitorGroupDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Update a monitor group
@@ -489,19 +726,102 @@ paths:
           description: Monitor group deleted successfully
         '400':
           description: Cannot delete default group or invalid new group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '401':
           description: Unauthorized - invalid or missing authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '403':
           description: >-
             Forbidden - no write permission or monitor-groups feature not
             available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '404':
           description: Monitor group not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Delete a monitor group
       tags:
         - Monitor Groups
+  /monitors/storm-protection:
+    get:
+      description: >-
+        Get the account-wide storm protection (alert grouping) settings. Returns
+        defaults when not yet configured.
+      operationId: StormProtectionController_get
+      parameters: []
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StormProtectionSettingsResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+      security:
+        - bearer: []
+      summary: Get storm protection settings
+      tags:
+        - Storm Protection
+    patch:
+      description: >-
+        Update the account-wide storm protection (alert grouping) settings.
+        Partial update — only provided fields are changed.
+      operationId: StormProtectionController_update
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStormProtectionDto'
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StormProtectionSettingsResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+      security:
+        - bearer: []
+      summary: Update storm protection settings
+      tags:
+        - Storm Protection
   /monitors:
     get:
       description: >-
@@ -588,6 +908,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MonitorPaginationDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: List monitors
@@ -620,6 +948,7 @@ paths:
                 - $ref: '#/components/schemas/CreateApiMonitorDto'
                 - $ref: '#/components/schemas/CreateUdpMonitorDto'
                 - $ref: '#/components/schemas/CreateVisualComparisonMonitorDto'
+                - $ref: '#/components/schemas/CreateThirdPartyServiceMonitorDto'
               discriminator:
                 propertyName: type
                 mapping:
@@ -632,6 +961,7 @@ paths:
                   API: '#/components/schemas/CreateApiMonitorDto'
                   UDP: '#/components/schemas/CreateUdpMonitorDto'
                   VISUAL_COMPARISON: '#/components/schemas/CreateVisualComparisonMonitorDto'
+                  THIRD_PARTY_SERVICE: '#/components/schemas/CreateThirdPartyServiceMonitorDto'
             examples:
               HTTP Monitor:
                 value:
@@ -756,6 +1086,12 @@ paths:
                     visualComparison:
                       sensitivityThreshold: 10
                       viewport: desktop
+              Third Party Service:
+                value:
+                  type: THIRD_PARTY_SERVICE
+                  config:
+                    thirdPartyService:
+                      providerId: 4317
       responses:
         '201':
           description: ''
@@ -763,6 +1099,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MonitorDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Create a monitor
@@ -824,6 +1168,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UptimeStatsDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get aggregated uptime statistics
@@ -865,6 +1217,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MonitorUptimeStatsDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get monitor uptime statistics
@@ -916,6 +1276,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MonitorResponseTimeStatsByRegionDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get monitor response time statistics by region
@@ -983,9 +1351,185 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MonitorResponseTimeStatsDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get monitor response time statistics
+      tags:
+        - Monitors
+  /monitors/{id}/third-party-service/status:
+    get:
+      description: >-
+        Returns the fine-grained 4-state (operational, minor, major,
+        maintenance) for a third party service monitor. Distinct from the coarse
+        monitor status field, which cannot tell a partial degradation from a
+        full outage.
+      operationId: MonitorsController_getThirdPartyServiceStatus
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: number
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorThirdPartyServiceStatusDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+      security:
+        - bearer: []
+      summary: Get the current status of a third party service
+      tags:
+        - Monitors
+  /monitors/{id}/third-party-service/incidents:
+    get:
+      description: >-
+        Returns every incident (resolved and unresolved) recorded for the
+        provider a third party service monitor tracks, newest first, with
+        verbatim provider updates. An empty history returns an empty array with
+        a 200, never an error.
+      operationId: MonitorsController_getThirdPartyServiceIncidents
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: number
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorThirdPartyServiceIncidentsDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+      security:
+        - bearer: []
+      summary: Get the incident history of a third party service
+      tags:
+        - Monitors
+  /monitors/{id}/third-party-service/incidents/{incidentId}:
+    get:
+      description: >-
+        Returns one incident from the incident history of a third party service
+        monitor, resolved or not, with its verbatim provider updates.
+        affectedComponents lists the affected components the monitor tracks, or
+        every affected component when the monitor tracks the whole provider.
+      operationId: MonitorsController_getThirdPartyServiceIncident
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: The monitor ID
+          schema:
+            minimum: 1
+            maximum: 2147483647
+            example: 42
+            type: number
+        - name: incidentId
+          required: true
+          in: path
+          description: >-
+            The incident ID from the incident history of the third party
+            service. A string, since it can exceed the safe integer range.
+          schema:
+            pattern: /^\d{1,20}$/
+            example: '355758443503112192'
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorThirdPartyServiceIncidentDetailDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+      security:
+        - bearer: []
+      summary: Get one incident of a third party service
+      tags:
+        - Monitors
+  /monitors/{id}/third-party-service/incidents/{incidentId}/activity-log:
+    get:
+      description: >-
+        Returns the notifications this account sent about one incident of a
+        third party service, with the channel, the alert contact and whether
+        delivery succeeded. channelIdentifier is shown only for email, SMS and
+        voice channels; for every other channel, such as webhooks, Slack or
+        mobile push, whose value can carry a credential, it is the literal
+        string "[REDACTED]". An incident with no notifications returns an empty
+        array with a 200.
+      operationId: MonitorsController_getThirdPartyServiceIncidentActivityLog
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: The monitor ID
+          schema:
+            minimum: 1
+            maximum: 2147483647
+            example: 42
+            type: number
+        - name: incidentId
+          required: true
+          in: path
+          description: >-
+            The incident ID from the incident history of the third party
+            service. A string, since it can exceed the safe integer range.
+          schema:
+            pattern: /^\d{1,20}$/
+            example: '355758443503112192'
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/MonitorThirdPartyServiceIncidentActivityLogDto
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+      security:
+        - bearer: []
+      summary: Get the activity log of a third party service incident
       tags:
         - Monitors
   /monitors/{id}:
@@ -1005,6 +1549,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MonitorDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get a monitor by ID
@@ -1031,6 +1583,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MonitorDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Update a monitor
@@ -1047,6 +1607,14 @@ paths:
       responses:
         '200':
           description: ''
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Delete a monitor
@@ -1076,6 +1644,14 @@ paths:
       responses:
         '201':
           description: ''
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Reset stats for a monitor
@@ -1110,6 +1686,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MonitorDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Pause a monitor
@@ -1144,6 +1728,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MonitorDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Start a monitor
@@ -1154,6 +1746,17 @@ paths:
       description: List Public Status Pages
       operationId: PspController_list
       parameters:
+        - name: limit
+          required: false
+          in: query
+          description: >-
+            Maximum number of status pages to return per page. Default: 50, Min:
+            1, Max: 200.
+          schema:
+            minimum: 1
+            maximum: 200
+            example: 50
+            type: number
         - name: cursor
           required: false
           in: query
@@ -1167,6 +1770,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PspPaginationDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: List PSPs
@@ -1174,13 +1785,24 @@ paths:
         - Public Status Pages
     post:
       description: >-
-        Create a Public Status Page. Use multipart/form-data content type when
-        uploading a logo.
+        Create a Public Status Page.
+
+
+        Send `application/json` unless you are uploading a logo — it is the only
+        content type that can express nested objects and arrays without
+        ambiguity. Reserve `multipart/form-data` for requests that carry a
+        `logo` file. In multipart, send arrays as a repeated field
+        (`monitorIds=1&monitorIds=2`) or with the bracket suffix
+        (`monitorIds[]=1`), and send `monitorIds[]=` with no value for an empty
+        array.
       operationId: PspController_create
       parameters: []
       requestBody:
         required: true
         content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePsPDto'
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/CreatePsPDto'
@@ -1191,6 +1813,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PspDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Create a PSP
@@ -1213,6 +1843,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PspDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get a PSP by ID
@@ -1220,8 +1858,16 @@ paths:
         - Public Status Pages
     patch:
       description: >-
-        Update a Public Status Page. Use multipart/form-data content type when
-        uploading a logo or icon.
+        Update a Public Status Page.
+
+
+        Send `application/json` unless you are uploading a logo or icon — it is
+        the only content type that can express nested objects and arrays without
+        ambiguity. Reserve `multipart/form-data` for requests that carry a
+        `logo` or `icon` file. In multipart, send arrays as a repeated field
+        (`monitorIds=1&monitorIds=2`) or with the bracket suffix
+        (`monitorIds[]=1`), and send `monitorIds[]=` with no value for an empty
+        array.
       operationId: PspController_update
       parameters:
         - name: id
@@ -1232,6 +1878,9 @@ paths:
       requestBody:
         required: true
         content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePspDto'
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/UpdatePspDto'
@@ -1242,6 +1891,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PspDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Update a PSP
@@ -1259,6 +1916,14 @@ paths:
       responses:
         '200':
           description: ''
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Delete a PSP
@@ -1276,6 +1941,17 @@ paths:
           in: path
           description: ID of the Public Status Page
           schema:
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: >-
+            Maximum number of announcements to return per page. Default: 50,
+            Min: 1, Max: 200.
+          schema:
+            minimum: 1
+            maximum: 200
+            example: 50
             type: number
         - name: status
           required: false
@@ -1303,12 +1979,36 @@ paths:
                 $ref: '#/components/schemas/PspAnnouncementPaginationResponseDto'
         '400':
           description: Invalid status value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '401':
           description: Unauthorized - missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '404':
           description: PSP not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '429':
           description: Too Many Requests - rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: List announcements
@@ -1339,12 +2039,36 @@ paths:
                 $ref: '#/components/schemas/PspAnnouncementResponseDto'
         '400':
           description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '401':
           description: Unauthorized - missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '403':
           description: Forbidden - no write permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '404':
           description: PSP not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Create an announcement
@@ -1376,10 +2100,30 @@ paths:
                 $ref: '#/components/schemas/PspAnnouncementResponseDto'
         '401':
           description: Unauthorized - missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '404':
           description: PSP or announcement not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '429':
           description: Too Many Requests - rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get an announcement by ID
@@ -1416,15 +2160,91 @@ paths:
                 $ref: '#/components/schemas/PspAnnouncementResponseDto'
         '400':
           description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '401':
           description: Unauthorized - missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '403':
           description: Forbidden - no write permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '404':
           description: PSP or announcement not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Update an announcement
+      tags:
+        - PSP Announcements
+    delete:
+      description: >-
+        Permanently delete an announcement from a Public Status Page. This
+        cannot be undone.
+      operationId: PspAnnouncementsController_delete
+      parameters:
+        - name: pspId
+          required: true
+          in: path
+          description: ID of the Public Status Page
+          schema:
+            type: number
+        - name: id
+          required: true
+          in: path
+          description: ID of the announcement to delete
+          schema:
+            type: number
+      responses:
+        '200':
+          description: The announcement has been successfully deleted
+        '401':
+          description: Unauthorized - missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+        '403':
+          description: Forbidden - no write permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+        '404':
+          description: PSP or announcement not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+      security:
+        - bearer: []
+      summary: Delete an announcement
       tags:
         - PSP Announcements
   /psps/{pspId}/announcements/{id}/pin:
@@ -1451,10 +2271,30 @@ paths:
           description: Announcement pinned successfully
         '401':
           description: Unauthorized - missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '403':
           description: Forbidden - no write permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '404':
           description: PSP or announcement not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Pin an announcement
@@ -1484,10 +2324,30 @@ paths:
           description: Announcement unpinned successfully
         '401':
           description: Unauthorized - missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '403':
           description: Forbidden - no write permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         '404':
           description: PSP or announcement not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Unpin an announcement
@@ -1498,6 +2358,17 @@ paths:
       description: List maintenance windows
       operationId: MaintenanceWindowsController_list
       parameters:
+        - name: limit
+          required: false
+          in: query
+          description: >-
+            Maximum number of maintenance windows to return per page. Default:
+            50, Min: 1, Max: 200.
+          schema:
+            minimum: 1
+            maximum: 200
+            example: 50
+            type: number
         - name: cursor
           required: false
           in: query
@@ -1510,6 +2381,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MaintenanceWindowPaginationDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: List maintenance windows
@@ -1532,6 +2411,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MaintenanceWindowDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Create a maintenance window
@@ -1555,6 +2442,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MaintenanceWindowDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get a maintenance window by ID
@@ -1583,6 +2478,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MaintenanceWindowDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Update a maintenance window
@@ -1600,6 +2503,14 @@ paths:
       responses:
         '204':
           description: ''
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Delete a maintenance window
@@ -1617,6 +2528,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get current user
@@ -1636,6 +2555,14 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/AlertContactDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get alert contacts
@@ -1657,6 +2584,14 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/AllAlertContactDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get all alert contacts
@@ -1667,6 +2602,17 @@ paths:
       description: List Integrations
       operationId: IntegrationsController_list
       parameters:
+        - name: limit
+          required: false
+          in: query
+          description: >-
+            Maximum number of integrations to return per page. Default: 50, Min:
+            1, Max: 200.
+          schema:
+            minimum: 1
+            maximum: 200
+            example: 50
+            type: number
         - name: includeOrgMembers
           required: false
           in: query
@@ -1690,6 +2636,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IntegrationPaginationDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: List Integrations
@@ -1701,22 +2655,40 @@ paths:
       parameters: []
       requestBody:
         required: true
+        description: >-
+          Integration to create. The `type` field selects which shape `data`
+          must take — each integration type requires a different set of fields.
         content:
           application/json:
             schema:
               oneOf:
                 - $ref: '#/components/schemas/CreateSlackIntegrationDto'
                 - $ref: '#/components/schemas/CreateTelegramIntegrationDto'
-                - $ref: '#/components/schemas/CreateMsTeamsIntegrationDto'
+                - $ref: '#/components/schemas/CreateMSTeamsIntegrationDto'
                 - $ref: '#/components/schemas/CreateWebhookIntegrationDto'
                 - $ref: '#/components/schemas/CreateZapierIntegrationDto'
                 - $ref: '#/components/schemas/CreatePagerdutyIntegrationDto'
                 - $ref: '#/components/schemas/CreateGoogleChatIntegrationDto'
                 - $ref: '#/components/schemas/CreateDiscordIntegrationDto'
                 - $ref: '#/components/schemas/CreateSplunkIntegrationDto'
-                - $ref: '#/components/schemas/CreatePushbulletIntegrationDto'
+                - $ref: '#/components/schemas/CreatePushBulletIntegrationDto'
                 - $ref: '#/components/schemas/CreatePushoverIntegrationDto'
                 - $ref: '#/components/schemas/CreateMattermostIntegrationDto'
+              discriminator:
+                propertyName: type
+                mapping:
+                  Slack: '#/components/schemas/CreateSlackIntegrationDto'
+                  Telegram: '#/components/schemas/CreateTelegramIntegrationDto'
+                  MSTeams: '#/components/schemas/CreateMSTeamsIntegrationDto'
+                  Webhook: '#/components/schemas/CreateWebhookIntegrationDto'
+                  Zapier: '#/components/schemas/CreateZapierIntegrationDto'
+                  Pagerduty: '#/components/schemas/CreatePagerdutyIntegrationDto'
+                  GoogleChat: '#/components/schemas/CreateGoogleChatIntegrationDto'
+                  Discord: '#/components/schemas/CreateDiscordIntegrationDto'
+                  Splunk: '#/components/schemas/CreateSplunkIntegrationDto'
+                  PushBullet: '#/components/schemas/CreatePushBulletIntegrationDto'
+                  Pushover: '#/components/schemas/CreatePushoverIntegrationDto'
+                  Mattermost: '#/components/schemas/CreateMattermostIntegrationDto'
       responses:
         '201':
           description: ''
@@ -1724,6 +2696,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IntegrationDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Create an Integration
@@ -1747,6 +2727,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IntegrationDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get an integration by ID
@@ -1764,23 +2752,41 @@ paths:
             type: number
       requestBody:
         required: true
+        description: >-
+          Integration fields to update. The `type` field selects which shape
+          `data` must take — each integration type accepts a different set of
+          fields.
         content:
           application/json:
             schema:
               oneOf:
-                - $ref: '#/components/schemas/UpdateSlackIntegrationSchema'
-                  title: Slack
-                - $ref: '#/components/schemas/UpdateTelegramIntegrationSchema'
-                - $ref: '#/components/schemas/UpdateMsTeamsIntegrationSchema'
-                - $ref: '#/components/schemas/UpdateWebhookIntegrationSchema'
-                - $ref: '#/components/schemas/UpdateZapierIntegrationSchema'
-                - $ref: '#/components/schemas/UpdatePagerdutyIntegrationSchema'
-                - $ref: '#/components/schemas/UpdateGoogleChatIntegrationSchema'
-                - $ref: '#/components/schemas/UpdateDiscordIntegrationSchema'
-                - $ref: '#/components/schemas/UpdateSplunkIntegrationSchema'
-                - $ref: '#/components/schemas/UpdatePushbulletIntegrationSchema'
-                - $ref: '#/components/schemas/UpdatePushoverIntegrationSchema'
-                - $ref: '#/components/schemas/UpdateMattermostIntegrationSchema'
+                - $ref: '#/components/schemas/UpdateSlackIntegrationDto'
+                - $ref: '#/components/schemas/UpdateTelegramIntegrationDto'
+                - $ref: '#/components/schemas/UpdateMSTeamsIntegrationDto'
+                - $ref: '#/components/schemas/UpdateWebhookIntegrationDto'
+                - $ref: '#/components/schemas/UpdateZapierIntegrationDto'
+                - $ref: '#/components/schemas/UpdatePagerdutyIntegrationDto'
+                - $ref: '#/components/schemas/UpdateGoogleChatIntegrationDto'
+                - $ref: '#/components/schemas/UpdateDiscordIntegrationDto'
+                - $ref: '#/components/schemas/UpdateSplunkIntegrationDto'
+                - $ref: '#/components/schemas/UpdatePushBulletIntegrationDto'
+                - $ref: '#/components/schemas/UpdatePushoverIntegrationDto'
+                - $ref: '#/components/schemas/UpdateMattermostIntegrationDto'
+              discriminator:
+                propertyName: type
+                mapping:
+                  Slack: '#/components/schemas/UpdateSlackIntegrationDto'
+                  Telegram: '#/components/schemas/UpdateTelegramIntegrationDto'
+                  MSTeams: '#/components/schemas/UpdateMSTeamsIntegrationDto'
+                  Webhook: '#/components/schemas/UpdateWebhookIntegrationDto'
+                  Zapier: '#/components/schemas/UpdateZapierIntegrationDto'
+                  Pagerduty: '#/components/schemas/UpdatePagerdutyIntegrationDto'
+                  GoogleChat: '#/components/schemas/UpdateGoogleChatIntegrationDto'
+                  Discord: '#/components/schemas/UpdateDiscordIntegrationDto'
+                  Splunk: '#/components/schemas/UpdateSplunkIntegrationDto'
+                  PushBullet: '#/components/schemas/UpdatePushBulletIntegrationDto'
+                  Pushover: '#/components/schemas/UpdatePushoverIntegrationDto'
+                  Mattermost: '#/components/schemas/UpdateMattermostIntegrationDto'
       responses:
         '200':
           description: ''
@@ -1788,6 +2794,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IntegrationDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Update an Integration
@@ -1805,6 +2819,14 @@ paths:
       responses:
         '200':
           description: ''
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Delete an Integration
@@ -1818,6 +2840,17 @@ paths:
         separately through /v3/integrations.
       operationId: AlertContactsController_list
       parameters:
+        - name: limit
+          required: false
+          in: query
+          description: >-
+            Maximum number of alert contacts to return per page. Default: 50,
+            Min: 1, Max: 200.
+          schema:
+            minimum: 1
+            maximum: 200
+            example: 50
+            type: number
         - name: cursor
           required: false
           in: query
@@ -1831,6 +2864,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AlertContactPaginationDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: List personal alert contacts
@@ -1856,6 +2897,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AlertContactDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Create a personal alert contact
@@ -1879,6 +2928,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AlertContactDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Get a personal alert contact by ID
@@ -1907,6 +2964,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AlertContactDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Update a personal alert contact
@@ -1925,6 +2990,14 @@ paths:
       responses:
         '200':
           description: ''
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Delete a personal alert contact
@@ -1937,6 +3010,17 @@ paths:
         ascending order
       operationId: TagsController_getTags
       parameters:
+        - name: limit
+          required: false
+          in: query
+          description: >-
+            Maximum number of tags to return per page. Default: 50, Min: 1, Max:
+            200.
+          schema:
+            minimum: 1
+            maximum: 200
+            example: 50
+            type: number
         - name: cursor
           required: false
           in: query
@@ -1950,6 +3034,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SimpleTagPaginationDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: List user tags
@@ -1969,11 +3061,93 @@ paths:
       responses:
         '204':
           description: Tag deleted successfully
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
       security:
         - bearer: []
       summary: Delete a tag
       tags:
         - Tags
+  /third-party-providers:
+    get:
+      description: >-
+        Search the third-party provider catalog by provider or component name.
+        Each provider is identified by its numeric id, and isTracked tells
+        whether the account already monitors it as a third-party service.
+        Results are cached for a minute, so isTracked can lag by up to a minute
+        after a third-party service is created or deleted.
+      operationId: ThirdPartyProvidersController_search
+      parameters:
+        - name: search
+          required: true
+          in: query
+          description: Free-text term matched against provider names and their components.
+          schema:
+            minLength: 1
+            maxLength: 100
+            example: github
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThirdPartyProviderSearchDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+      security:
+        - bearer: []
+      summary: Search third-party providers
+      tags:
+        - Third-party providers
+  /third-party-providers/{id}:
+    get:
+      description: >-
+        Returns one third-party provider by its numeric id, with its current
+        state and its component tree. Components carry their own id, name and
+        status, and list their children.
+      operationId: ThirdPartyProvidersController_getById
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: The numeric id of the third-party provider.
+          schema:
+            example: '7'
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThirdPartyProviderDetailDto'
+        default:
+          description: >-
+            An error response. `code` is a member of the published error code
+            vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+      security:
+        - bearer: []
+      summary: Get a third-party provider
+      tags:
+        - Third-party providers
 info:
   title: UptimeRobot API
   description: ''
@@ -1990,6 +3164,8 @@ tags:
     description: ''
   - name: Integrations
     description: ''
+  - name: Storm Protection
+    description: ''
 servers:
   - url: https://api.uptimerobot.com/v3
 components:
@@ -2002,6 +3178,371 @@ components:
         Enter your API token (without the "Bearer" prefix — it is added
         automatically).
   schemas:
+    ApiErrorResponseDto:
+      type: object
+      properties:
+        code:
+          type: string
+          description: >-
+            A stable, machine-readable error code. Always a member of the
+            published vocabulary.
+          enum:
+            - 000-001
+            - 000-002
+            - 000-003
+            - 000-004
+            - 000-005
+            - 000-006
+            - 000-007
+            - 000-008
+            - 000-009
+            - 000-010
+            - 000-011
+            - 000-012
+            - 000-013
+            - 000-014
+            - 000-015
+            - 003-001
+            - 003-002
+            - 003-003
+            - 003-004
+            - 003-005
+            - 003-006
+            - 003-007
+            - 003-008
+            - 003-009
+            - 003-010
+            - 003-011
+            - 003-012
+            - 003-013
+            - 003-014
+            - 003-015
+            - 003-016
+            - 003-017
+            - 003-018
+            - 003-019
+            - 003-020
+            - 003-021
+            - 004-001
+            - 004-002
+            - 004-033
+            - 004-034
+            - 004-035
+            - 004-036
+            - 004-037
+            - 004-038
+            - 004-039
+            - 004-040
+            - 004-041
+            - 004-042
+            - 004-003
+            - 004-004
+            - 004-005
+            - 004-006
+            - 004-007
+            - 004-008
+            - 004-009
+            - 004-010
+            - 004-011
+            - 004-012
+            - 004-013
+            - 004-014
+            - 004-015
+            - 004-016
+            - 004-017
+            - 004-018
+            - 004-019
+            - 004-020
+            - 004-021
+            - 004-022
+            - 004-023
+            - 004-024
+            - 004-025
+            - 004-026
+            - 004-027
+            - 004-028
+            - 004-029
+            - 004-030
+            - 004-031
+            - 004-032
+            - 004-043
+            - 004-044
+            - 004-045
+            - 004-046
+            - 004-047
+            - 004-048
+            - 005-001
+            - 005-002
+            - 006-001
+            - 009-001
+            - 009-002
+            - 009-003
+            - 009-004
+            - 009-005
+            - 009-006
+            - 009-007
+            - 009-008
+            - 009-009
+            - 009-010
+            - 009-011
+            - 009-012
+            - 009-013
+            - 009-014
+            - 009-015
+            - 009-016
+            - 009-017
+            - 009-022
+            - 009-023
+            - 009-024
+            - 009-025
+            - 009-018
+            - 009-019
+            - 009-020
+            - 009-026
+            - 009-027
+            - 009-028
+            - 009-033
+            - 009-034
+            - 009-021
+            - 009-033
+            - 009-030
+            - 009-036
+            - 009-037
+            - 011-001
+            - 011-002
+            - 011-003
+            - 011-004
+            - 011-005
+            - 011-006
+            - 011-007
+            - 011-008
+            - 011-009
+            - 011-010
+            - 011-011
+            - 011-012
+            - 011-013
+            - 011-014
+            - 011-015
+            - 011-016
+            - 011-017
+            - 011-018
+            - 011-019
+            - 011-020
+            - 011-021
+            - 011-022
+            - 011-023
+            - 011-024
+            - 011-025
+            - 011-026
+            - 011-027
+            - 011-028
+            - 011-029
+            - 011-030
+            - 011-031
+            - 011-032
+            - 011-033
+            - 011-034
+            - 013-001
+            - 013-002
+            - 013-003
+            - 013-004
+            - 013-005
+            - 013-006
+            - 013-007
+            - 013-008
+            - 017-001
+            - 017-002
+            - 018-001
+            - 018-002
+            - 018-003
+            - 018-004
+            - 018-005
+            - 018-006
+            - 018-007
+            - 018-008
+            - 018-009
+            - 018-010
+            - 018-011
+            - 018-012
+            - 018-013
+            - 018-014
+            - 018-015
+            - 021-001
+            - 021-002
+            - 021-003
+            - 021-004
+            - 021-005
+            - 021-006
+            - 021-007
+            - 021-008
+            - 021-009
+            - 021-010
+            - 021-011
+            - 021-012
+            - 021-013
+            - 021-014
+            - 021-015
+            - 021-016
+            - 021-017
+            - 021-018
+            - 021-019
+            - 021-020
+            - 021-021
+            - 021-022
+            - 021-023
+            - 021-024
+            - 021-025
+            - 021-026
+            - 021-027
+            - 021-028
+            - 021-029
+            - 021-030
+            - 021-031
+            - 021-032
+            - 021-033
+            - 021-034
+            - 021-035
+            - 021-036
+            - 021-037
+            - 021-038
+            - 021-039
+            - 021-040
+            - 021-041
+            - 021-042
+            - 021-043
+            - 021-044
+            - 021-045
+            - 021-046
+            - 021-047
+            - 021-048
+            - 021-049
+            - 021-050
+            - 021-051
+            - 021-052
+            - 022-001
+            - 024-001
+            - 024-002
+            - 024-003
+            - 024-004
+            - 024-005
+            - 024-006
+            - 024-007
+            - 024-008
+            - 025-002
+            - 025-003
+            - 025-004
+            - 025-005
+            - 025-006
+            - 025-007
+            - 025-008
+            - 025-009
+            - 025-010
+            - 025-011
+            - 025-012
+            - 025-013
+            - 025-014
+            - 025-015
+            - 025-016
+            - 025-017
+            - 025-018
+            - 025-019
+            - 025-020
+            - 025-021
+            - 025-022
+            - 021-053
+            - 021-054
+            - 021-055
+            - 021-056
+            - 021-057
+            - 021-058
+            - 021-059
+            - 021-060
+            - 021-061
+            - 021-062
+            - 021-065
+            - 021-066
+            - 021-067
+            - 021-068
+            - 021-069
+            - 026-001
+            - 026-002
+            - 026-003
+            - 026-004
+            - 026-005
+            - 026-006
+            - 026-007
+            - 026-008
+            - 026-009
+            - 026-016
+            - 026-017
+            - 026-018
+            - 026-019
+            - 026-020
+            - 027-001
+            - 027-002
+            - 027-003
+            - 027-004
+            - 027-005
+            - 027-006
+            - 027-007
+            - 027-008
+            - 027-009
+            - 027-010
+            - 027-011
+            - 027-012
+            - 027-013
+            - 027-014
+            - 027-015
+            - 027-016
+            - 028-001
+            - 028-002
+            - 029-001
+            - 029-002
+            - 029-003
+            - 029-004
+            - 029-005
+            - 029-006
+            - 029-007
+            - 029-008
+            - 029-009
+            - 029-010
+            - 029-011
+            - 029-012
+            - 029-013
+            - 029-014
+            - 029-015
+            - 030-001
+            - 030-002
+            - 030-003
+            - 030-004
+            - 030-005
+            - 030-006
+            - 030-007
+            - 030-008
+            - 030-009
+            - 031-001
+            - 031-002
+            - 031-003
+            - 031-004
+            - 031-005
+        message:
+          description: >-
+            Human-readable error detail. An array of per-field messages for
+            validation failures, a single string otherwise.
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        statusCode:
+          type: number
+          description: The HTTP status code, present on validation failures.
+        error:
+          type: string
+          description: The HTTP status text, present on validation failures.
+      required:
+        - code
+        - message
     PublicBulkPauseDto:
       type: object
       properties:
@@ -2083,6 +3624,13 @@ components:
               - eu
               - as
               - oc
+        MANUAL_SELECTED:
+          type: boolean
+          description: >-
+            Whether the customer chose REGION explicitly. On update, false means
+            the region was not customer-chosen, so REGION is ignored and the
+            monitor keeps the region it already runs from. Send true to change
+            the region, or omit this field.
         THRESHOLD:
           type: object
           additionalProperties: false
@@ -2101,8 +3649,6 @@ components:
             eu: 6000
             as: 7000
             oc: 8000
-        MANUAL_SELECTED:
-          type: boolean
       required:
         - REGION
     PublicBulkUpdateDto:
@@ -2266,6 +3812,185 @@ components:
               nullable: true
             responseDownloadUrl:
               type: string
+              nullable: true
+            assertionDiagnostics:
+              type: object
+              properties:
+                version:
+                  type: number
+                  minimum: 1
+                  maximum: 1
+                logic:
+                  type: string
+                  enum:
+                    - AND
+                    - OR
+                summary:
+                  type: object
+                  properties:
+                    passed:
+                      type: boolean
+                    total:
+                      type: integer
+                      minimum: 0
+                      exclusiveMinimum: false
+                    passedCount:
+                      type: integer
+                      minimum: 0
+                      exclusiveMinimum: false
+                    failedCount:
+                      type: integer
+                      minimum: 0
+                      exclusiveMinimum: false
+                  required:
+                    - passed
+                    - total
+                    - passedCount
+                    - failedCount
+                results:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      index:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: false
+                      property:
+                        type: string
+                      source:
+                        type: string
+                        enum:
+                          - body_json
+                          - header
+                          - status_code
+                          - body_text
+                      selector:
+                        type: string
+                      comparison:
+                        type: string
+                        enum:
+                          - equals
+                          - not_equals
+                          - contains
+                          - not_contains
+                          - greater_than
+                          - less_than
+                          - is_null
+                          - is_not_null
+                          - is_string
+                          - is_number
+                          - is_boolean
+                          - is_array
+                          - is_object
+                          - is_empty
+                          - is_not_empty
+                          - length_equals
+                          - length_not_equals
+                          - length_greater_than
+                          - length_less_than
+                          - exists
+                          - not_exists
+                        x-enumNames:
+                          - EQUALS
+                          - NOT_EQUALS
+                          - CONTAINS
+                          - NOT_CONTAINS
+                          - GREATER_THAN
+                          - LESS_THAN
+                          - IS_NULL
+                          - IS_NOT_NULL
+                          - IS_STRING
+                          - IS_NUMBER
+                          - IS_BOOLEAN
+                          - IS_ARRAY
+                          - IS_OBJECT
+                          - IS_EMPTY
+                          - IS_NOT_EMPTY
+                          - LENGTH_EQUALS
+                          - LENGTH_NOT_EQUALS
+                          - LENGTH_GREATER_THAN
+                          - LENGTH_LESS_THAN
+                          - EXISTS
+                          - NOT_EXISTS
+                      passed:
+                        type: boolean
+                      actualTypes:
+                        type: array
+                        items:
+                          type: string
+                          enum:
+                            - missing
+                            - 'null'
+                            - boolean
+                            - number
+                            - string
+                            - array
+                            - object
+                      actualSummary:
+                        type: string
+                      targetType:
+                        type: string
+                        enum:
+                          - missing
+                          - 'null'
+                          - boolean
+                          - number
+                          - string
+                          - array
+                          - object
+                      targetSummary:
+                        type: string
+                      selectedCount:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: false
+                      failedCount:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: false
+                      failingSamples:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            path:
+                              type: string
+                            actualSummary:
+                              type: string
+                          required:
+                            - path
+                            - actualSummary
+                      failureReason:
+                        type: string
+                        enum:
+                          - no_match
+                          - value_present
+                          - response_not_json
+                          - type_mismatch
+                          - comparison_failed
+                          - invalid_jsonpath
+                          - too_many_matches
+                          - evaluation_limit_exceeded
+                          - unsupported_value_type
+                          - diagnostic_payload_truncated
+                      truncated:
+                        type: boolean
+                      redacted:
+                        type: boolean
+                    required:
+                      - index
+                      - property
+                      - source
+                      - comparison
+                      - passed
+                      - truncated
+                      - redacted
+              required:
+                - version
+                - logic
+                - summary
+                - results
               nullable: true
           required:
             - url
@@ -2477,6 +4202,9 @@ components:
     PublicSentAlertsResponseDto:
       type: object
       properties:
+        nextLink:
+          type: string
+          nullable: true
         data:
           type: array
           items:
@@ -2502,6 +4230,7 @@ components:
               - channelType
               - status
       required:
+        - nextLink
         - data
     UpdateIncidentCommentRequestDto:
       type: object
@@ -2660,6 +4389,71 @@ components:
           maxLength: 255
           description: Name of the monitor group
           example: Production Monitors
+    StormProtectionSettingsResponseDto:
+      type: object
+      properties:
+        isEnabled:
+          type: boolean
+        thresholdType:
+          type: string
+          enum:
+            - count
+            - percentage
+          x-enumNames:
+            - Count
+            - Percentage
+        thresholdValue:
+          type: integer
+        windowMinutes:
+          type: integer
+        config:
+          type: object
+          properties:
+            groupPooling:
+              type: boolean
+          required:
+            - groupPooling
+      required:
+        - isEnabled
+        - thresholdType
+        - thresholdValue
+        - windowMinutes
+        - config
+    UpdateStormProtectionConfigDto:
+      type: object
+      properties:
+        groupPooling:
+          type: boolean
+          description: >-
+            When enabled, suppressed alerts are pooled into a single grouped
+            notification.
+    UpdateStormProtectionDto:
+      type: object
+      properties:
+        isEnabled:
+          type: boolean
+          description: Enable or disable storm protection (alert grouping).
+        thresholdType:
+          enum:
+            - count
+            - percentage
+          type: string
+          description: How the threshold is measured.
+        thresholdValue:
+          type: number
+          minimum: 1
+          maximum: 1000000
+          description: >-
+            Threshold that triggers grouping. Accepts 1-1000000; the stricter
+            rule (>= 2 for "count", <= 100 for "percentage") is enforced
+            server-side by domain validation.
+        windowMinutes:
+          type: number
+          minimum: 1
+          maximum: 15
+          description: Rolling time window in minutes (1-15).
+        config:
+          $ref: '#/components/schemas/UpdateStormProtectionConfigDto'
     MonitorPaginationDto:
       type: object
       properties:
@@ -2754,6 +4548,7 @@ components:
                 maximum: 65535
                 exclusiveMaximum: false
                 nullable: true
+              portAlertCondition: {}
               gracePeriod:
                 type: number
                 minimum: 0
@@ -2842,55 +4637,91 @@ components:
                         items:
                           type: string
                   apiAssertions:
-                    type: object
-                    properties:
-                      logic:
-                        type: string
-                        enum:
-                          - AND
-                          - OR
-                      checks:
-                        type: array
-                        minItems: 1
-                        maxItems: 5
-                        items:
-                          type: object
-                          properties:
-                            property:
-                              type: string
-                            comparison:
-                              type: string
-                              enum:
-                                - equals
-                                - not_equals
-                                - contains
-                                - not_contains
-                                - greater_than
-                                - less_than
-                                - is_null
-                                - is_not_null
-                              x-enumNames:
-                                - EQUALS
-                                - NOT_EQUALS
-                                - CONTAINS
-                                - NOT_CONTAINS
-                                - GREATER_THAN
-                                - LESS_THAN
-                                - IS_NULL
-                                - IS_NOT_NULL
-                            target:
-                              oneOf:
-                                - type: string
-                                - type: number
-                                - type: boolean
-                                - {}
-                              default: null
-                          required:
-                            - property
-                            - comparison
-                    required:
-                      - logic
-                      - checks
+                    oneOf:
+                      - type: object
+                        properties:
+                          logic:
+                            type: string
+                            enum:
+                              - AND
+                              - OR
+                          checks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                property:
+                                  type: string
+                                comparison:
+                                  type: string
+                                  enum:
+                                    - equals
+                                    - not_equals
+                                    - contains
+                                    - not_contains
+                                    - greater_than
+                                    - less_than
+                                    - is_null
+                                    - is_not_null
+                                    - is_string
+                                    - is_number
+                                    - is_boolean
+                                    - is_array
+                                    - is_object
+                                    - is_empty
+                                    - is_not_empty
+                                    - length_equals
+                                    - length_not_equals
+                                    - length_greater_than
+                                    - length_less_than
+                                    - exists
+                                    - not_exists
+                                  x-enumNames:
+                                    - EQUALS
+                                    - NOT_EQUALS
+                                    - CONTAINS
+                                    - NOT_CONTAINS
+                                    - GREATER_THAN
+                                    - LESS_THAN
+                                    - IS_NULL
+                                    - IS_NOT_NULL
+                                    - IS_STRING
+                                    - IS_NUMBER
+                                    - IS_BOOLEAN
+                                    - IS_ARRAY
+                                    - IS_OBJECT
+                                    - IS_EMPTY
+                                    - IS_NOT_EMPTY
+                                    - LENGTH_EQUALS
+                                    - LENGTH_NOT_EQUALS
+                                    - LENGTH_GREATER_THAN
+                                    - LENGTH_LESS_THAN
+                                    - EXISTS
+                                    - NOT_EXISTS
+                                target: {}
+                                id:
+                                  oneOf:
+                                    - type: string
+                                      maxLength: 128
+                                    - type: integer
+                                      minimum: -9007199254740991
+                                      exclusiveMinimum: false
+                                      maximum: 9007199254740991
+                                      exclusiveMaximum: false
+                                index:
+                                  type: integer
+                                  minimum: 0
+                                  exclusiveMinimum: false
+                                  maximum: 9007199254740991
+                                  exclusiveMaximum: false
+                              required:
+                                - property
+                                - comparison
+                        required:
+                          - logic
+                          - checks
+                      - type: object
+                        properties: {}
                   sslExpirationPeriodDays:
                     type: array
                     maxItems: 10
@@ -2975,6 +4806,47 @@ components:
                     required:
                       - sensitivityThreshold
                       - viewport
+                  thirdPartyService:
+                    type: object
+                    properties:
+                      trackedComponentIds:
+                        type: array
+                        items:
+                          type: integer
+                        nullable: true
+                      currentState:
+                        type: string
+                        enum:
+                          - operational
+                          - minor
+                          - major
+                          - maintenance
+                      needsReview:
+                        type: boolean
+                      notify:
+                        type: object
+                        properties:
+                          severity:
+                            type: string
+                            enum:
+                              - all
+                              - major
+                              - none
+                          incrementalUpdates:
+                            type: boolean
+                        required:
+                          - severity
+                          - incrementalUpdates
+                      maintenanceNotificationsEnabled:
+                        type: boolean
+                      providerId:
+                        type: integer
+                        nullable: true
+                    required:
+                      - currentState
+                      - needsReview
+                      - notify
+                      - providerId
                 nullable: true
               regionalData:
                 type: object
@@ -3013,6 +4885,12 @@ components:
                       exclusiveMaximum: false
                 required:
                   - REGION
+              heartbeatUrl:
+                description: >-
+                  Complete heartbeat ping URL for HEARTBEAT monitors; null for
+                  every other type
+                type: string
+                nullable: true
               maintenanceWindows:
                 type: array
                 items:
@@ -3176,6 +5054,8 @@ components:
                               enum:
                                 - normal
                                 - compact
+                            showMonitorsUnderGroups:
+                              type: boolean
                         colors:
                           type: object
                           properties:
@@ -3284,6 +5164,7 @@ components:
               status: {}
               url:
                 type: string
+                nullable: true
               currentStateDuration:
                 type: number
               lastIncidentId:
@@ -3320,7 +5201,6 @@ components:
                           friendlyName:
                             type: string
                             minLength: 1
-                            nullable: true
                           status: {}
                           url:
                             type: string
@@ -3447,6 +5327,7 @@ components:
               - responseTimeThreshold
               - config
               - regionalData
+              - heartbeatUrl
               - maintenanceWindows
               - psps
               - id
@@ -3877,6 +5758,155 @@ components:
         - data_points
         - from
         - to
+    MonitorThirdPartyServiceStatusDto:
+      type: object
+      properties:
+        currentState:
+          type: string
+          enum:
+            - operational
+            - minor
+            - major
+            - maintenance
+      required:
+        - currentState
+    MonitorThirdPartyServiceIncidentsDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+              severity:
+                type: string
+                enum:
+                  - minor
+                  - major
+              resolved:
+                type: boolean
+              startedAt:
+                type: string
+              resolvedAt:
+                type: string
+                nullable: true
+              updates:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                    description:
+                      type: string
+                    createdAt:
+                      type: string
+                  required:
+                    - status
+                    - description
+                    - createdAt
+            required:
+              - id
+              - title
+              - severity
+              - resolved
+              - startedAt
+              - resolvedAt
+              - updates
+      required:
+        - data
+    MonitorThirdPartyServiceIncidentDetailDto:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        severity:
+          type: string
+          enum:
+            - minor
+            - major
+        resolved:
+          type: boolean
+        startedAt:
+          type: string
+        resolvedAt:
+          type: string
+          nullable: true
+        updates:
+          type: array
+          items:
+            type: object
+            properties:
+              status:
+                type: string
+              description:
+                type: string
+              createdAt:
+                type: string
+            required:
+              - status
+              - description
+              - createdAt
+        description:
+          type: string
+          nullable: true
+        affectedComponents:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+            required:
+              - id
+              - name
+      required:
+        - id
+        - title
+        - severity
+        - resolved
+        - startedAt
+        - resolvedAt
+        - updates
+        - description
+        - affectedComponents
+    MonitorThirdPartyServiceIncidentActivityLogDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              channel:
+                type: string
+              channelIdentifier:
+                type: string
+              alertContactName:
+                type: string
+              status:
+                type: string
+                enum:
+                  - SUCCESS
+                  - NOT_DELIVERED
+              timestamp:
+                type: string
+            required:
+              - channel
+              - channelIdentifier
+              - alertContactName
+              - status
+              - timestamp
+      required:
+        - data
     MonitorDto:
       type: object
       properties:
@@ -3963,6 +5993,7 @@ components:
           maximum: 65535
           exclusiveMaximum: false
           nullable: true
+        portAlertCondition: {}
         gracePeriod:
           type: number
           minimum: 0
@@ -4051,55 +6082,91 @@ components:
                   items:
                     type: string
             apiAssertions:
-              type: object
-              properties:
-                logic:
-                  type: string
-                  enum:
-                    - AND
-                    - OR
-                checks:
-                  type: array
-                  minItems: 1
-                  maxItems: 5
-                  items:
-                    type: object
-                    properties:
-                      property:
-                        type: string
-                      comparison:
-                        type: string
-                        enum:
-                          - equals
-                          - not_equals
-                          - contains
-                          - not_contains
-                          - greater_than
-                          - less_than
-                          - is_null
-                          - is_not_null
-                        x-enumNames:
-                          - EQUALS
-                          - NOT_EQUALS
-                          - CONTAINS
-                          - NOT_CONTAINS
-                          - GREATER_THAN
-                          - LESS_THAN
-                          - IS_NULL
-                          - IS_NOT_NULL
-                      target:
-                        oneOf:
-                          - type: string
-                          - type: number
-                          - type: boolean
-                          - {}
-                        default: null
-                    required:
-                      - property
-                      - comparison
-              required:
-                - logic
-                - checks
+              oneOf:
+                - type: object
+                  properties:
+                    logic:
+                      type: string
+                      enum:
+                        - AND
+                        - OR
+                    checks:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          property:
+                            type: string
+                          comparison:
+                            type: string
+                            enum:
+                              - equals
+                              - not_equals
+                              - contains
+                              - not_contains
+                              - greater_than
+                              - less_than
+                              - is_null
+                              - is_not_null
+                              - is_string
+                              - is_number
+                              - is_boolean
+                              - is_array
+                              - is_object
+                              - is_empty
+                              - is_not_empty
+                              - length_equals
+                              - length_not_equals
+                              - length_greater_than
+                              - length_less_than
+                              - exists
+                              - not_exists
+                            x-enumNames:
+                              - EQUALS
+                              - NOT_EQUALS
+                              - CONTAINS
+                              - NOT_CONTAINS
+                              - GREATER_THAN
+                              - LESS_THAN
+                              - IS_NULL
+                              - IS_NOT_NULL
+                              - IS_STRING
+                              - IS_NUMBER
+                              - IS_BOOLEAN
+                              - IS_ARRAY
+                              - IS_OBJECT
+                              - IS_EMPTY
+                              - IS_NOT_EMPTY
+                              - LENGTH_EQUALS
+                              - LENGTH_NOT_EQUALS
+                              - LENGTH_GREATER_THAN
+                              - LENGTH_LESS_THAN
+                              - EXISTS
+                              - NOT_EXISTS
+                          target: {}
+                          id:
+                            oneOf:
+                              - type: string
+                                maxLength: 128
+                              - type: integer
+                                minimum: -9007199254740991
+                                exclusiveMinimum: false
+                                maximum: 9007199254740991
+                                exclusiveMaximum: false
+                          index:
+                            type: integer
+                            minimum: 0
+                            exclusiveMinimum: false
+                            maximum: 9007199254740991
+                            exclusiveMaximum: false
+                        required:
+                          - property
+                          - comparison
+                  required:
+                    - logic
+                    - checks
+                - type: object
+                  properties: {}
             sslExpirationPeriodDays:
               type: array
               maxItems: 10
@@ -4184,6 +6251,47 @@ components:
               required:
                 - sensitivityThreshold
                 - viewport
+            thirdPartyService:
+              type: object
+              properties:
+                trackedComponentIds:
+                  type: array
+                  items:
+                    type: integer
+                  nullable: true
+                currentState:
+                  type: string
+                  enum:
+                    - operational
+                    - minor
+                    - major
+                    - maintenance
+                needsReview:
+                  type: boolean
+                notify:
+                  type: object
+                  properties:
+                    severity:
+                      type: string
+                      enum:
+                        - all
+                        - major
+                        - none
+                    incrementalUpdates:
+                      type: boolean
+                  required:
+                    - severity
+                    - incrementalUpdates
+                maintenanceNotificationsEnabled:
+                  type: boolean
+                providerId:
+                  type: integer
+                  nullable: true
+              required:
+                - currentState
+                - needsReview
+                - notify
+                - providerId
           nullable: true
         regionalData:
           type: object
@@ -4222,6 +6330,12 @@ components:
                 exclusiveMaximum: false
           required:
             - REGION
+        heartbeatUrl:
+          description: >-
+            Complete heartbeat ping URL for HEARTBEAT monitors; null for every
+            other type
+          type: string
+          nullable: true
         maintenanceWindows:
           type: array
           items:
@@ -4385,6 +6499,8 @@ components:
                         enum:
                           - normal
                           - compact
+                      showMonitorsUnderGroups:
+                        type: boolean
                   colors:
                     type: object
                     properties:
@@ -4493,6 +6609,7 @@ components:
         status: {}
         url:
           type: string
+          nullable: true
         currentStateDuration:
           type: number
         lastIncidentId:
@@ -4529,7 +6646,6 @@ components:
                     friendlyName:
                       type: string
                       minLength: 1
-                      nullable: true
                     status: {}
                     url:
                       type: string
@@ -4656,6 +6772,7 @@ components:
         - responseTimeThreshold
         - config
         - regionalData
+        - heartbeatUrl
         - maintenanceWindows
         - psps
         - id
@@ -4759,7 +6876,10 @@ components:
           items:
             type: number
         regionData:
-          description: Regional data for monitoring
+          description: >-
+            Regional data for monitoring. Omit it, or send it without REGION,
+            and the region is assigned automatically (currently NA or EU, one
+            region per organization) and never changed on edit.
           allOf:
             - $ref: '#/components/schemas/RegionalDataDto'
         regionalData:
@@ -4857,7 +6977,8 @@ components:
             X-Custom-Header: value
           description: >-
             Custom HTTP headers to be sent in the request. Must be sent as JSON
-            object with key-value pairs
+            object with key-value pairs. The serialized JSON must not exceed
+            3000 characters
         successHttpResponseCodes:
           example:
             - 2xx
@@ -4948,7 +7069,10 @@ components:
           items:
             type: number
         regionData:
-          description: Regional data for monitoring
+          description: >-
+            Regional data for monitoring. Omit it, or send it without REGION,
+            and the region is assigned automatically (currently NA or EU, one
+            region per organization) and never changed on edit.
           allOf:
             - $ref: '#/components/schemas/RegionalDataDto'
         regionalData:
@@ -5046,7 +7170,8 @@ components:
             X-Custom-Header: value
           description: >-
             Custom HTTP headers to be sent in the request. Must be sent as JSON
-            object with key-value pairs
+            object with key-value pairs. The serialized JSON must not exceed
+            3000 characters
         successHttpResponseCodes:
           example:
             - 2xx
@@ -5173,7 +7298,10 @@ components:
           items:
             type: number
         regionData:
-          description: Regional data for monitoring
+          description: >-
+            Regional data for monitoring. Omit it, or send it without REGION,
+            and the region is assigned automatically (currently NA or EU, one
+            region per organization) and never changed on edit.
           allOf:
             - $ref: '#/components/schemas/RegionalDataDto'
         regionalData:
@@ -5279,7 +7407,10 @@ components:
           items:
             type: number
         regionData:
-          description: Regional data for monitoring
+          description: >-
+            Regional data for monitoring. Omit it, or send it without REGION,
+            and the region is assigned automatically (currently NA or EU, one
+            region per organization) and never changed on edit.
           allOf:
             - $ref: '#/components/schemas/RegionalDataDto'
         regionalData:
@@ -5392,7 +7523,10 @@ components:
           items:
             type: number
         regionData:
-          description: Regional data for monitoring
+          description: >-
+            Regional data for monitoring. Omit it, or send it without REGION,
+            and the region is assigned automatically (currently NA or EU, one
+            region per organization) and never changed on edit.
           allOf:
             - $ref: '#/components/schemas/RegionalDataDto'
         regionalData:
@@ -5567,7 +7701,10 @@ components:
           items:
             type: number
         regionData:
-          description: Regional data for monitoring
+          description: >-
+            Regional data for monitoring. Omit it, or send it without REGION,
+            and the region is assigned automatically (currently NA or EU, one
+            region per organization) and never changed on edit.
           allOf:
             - $ref: '#/components/schemas/RegionalDataDto'
         regionalData:
@@ -5627,15 +7764,15 @@ components:
         - type
         - url
         - config
-    AssertionCheckDto:
+    PublicApiAssertionCheckDto:
       type: object
       properties:
         property:
           type: string
           maxLength: 500
           description: >-
-            JSONPath expression to extract value from response (must start with
-            $)
+            Assertion source: safe JSONPath, headers.<name>, status_code, or
+            body
           example: $.data.status
         comparison:
           enum:
@@ -5647,17 +7784,43 @@ components:
             - less_than
             - is_null
             - is_not_null
+            - is_string
+            - is_number
+            - is_boolean
+            - is_array
+            - is_object
+            - is_empty
+            - is_not_empty
+            - length_equals
+            - length_not_equals
+            - length_greater_than
+            - length_less_than
+            - exists
+            - not_exists
           type: string
           description: Comparison operator
           example: equals
         target:
-          type: object
-          description: Expected value for comparison (ignored for is_null/is_not_null)
-          example: active
+          description: >-
+            Expected native JSON value. Arrays and objects are supported for
+            body-JSON equality and containment; omit target for null, type,
+            existence, and empty comparisons.
+          example:
+            - active
+            - role: primary
+          oneOf:
+            - type: string
+              nullable: true
+            - type: number
+            - type: boolean
+            - type: array
+              items: {}
+            - type: object
+              additionalProperties: true
       required:
         - property
         - comparison
-    ApiAssertionsDto:
+    PublicApiAssertionsDto:
       type: object
       properties:
         logic:
@@ -5668,12 +7831,10 @@ components:
           description: Logic for combining assertions
           example: AND
         checks:
-          minItems: 1
-          maxItems: 5
           description: Array of assertion checks (1-5)
           type: array
           items:
-            $ref: '#/components/schemas/AssertionCheckDto'
+            $ref: '#/components/schemas/PublicApiAssertionCheckDto'
       required:
         - logic
         - checks
@@ -5683,7 +7844,7 @@ components:
         apiAssertions:
           description: API monitor assertions configuration
           allOf:
-            - $ref: '#/components/schemas/ApiAssertionsDto'
+            - $ref: '#/components/schemas/PublicApiAssertionsDto'
         sslExpirationPeriodDays:
           maxItems: 10
           description: SSL expiration period in days (0-365, max 10 items)
@@ -5753,7 +7914,10 @@ components:
           items:
             type: number
         regionData:
-          description: Regional data for monitoring
+          description: >-
+            Regional data for monitoring. Omit it, or send it without REGION,
+            and the region is assigned automatically (currently NA or EU, one
+            region per organization) and never changed on edit.
           allOf:
             - $ref: '#/components/schemas/RegionalDataDto'
         regionalData:
@@ -5850,7 +8014,8 @@ components:
             X-Custom-Header: value
           description: >-
             Custom HTTP headers to be sent in the request. Must be sent as JSON
-            object with key-value pairs
+            object with key-value pairs. The serialized JSON must not exceed
+            3000 characters
         successHttpResponseCodes:
           example:
             - 2xx
@@ -5969,7 +8134,10 @@ components:
           items:
             type: number
         regionData:
-          description: Regional data for monitoring
+          description: >-
+            Regional data for monitoring. Omit it, or send it without REGION,
+            and the region is assigned automatically (currently NA or EU, one
+            region per organization) and never changed on edit.
           allOf:
             - $ref: '#/components/schemas/RegionalDataDto'
         regionalData:
@@ -6143,7 +8311,10 @@ components:
           items:
             type: number
         regionData:
-          description: Regional data for monitoring
+          description: >-
+            Regional data for monitoring. Omit it, or send it without REGION,
+            and the region is assigned automatically (currently NA or EU, one
+            region per organization) and never changed on edit.
           allOf:
             - $ref: '#/components/schemas/RegionalDataDto'
         regionalData:
@@ -6205,6 +8376,206 @@ components:
         - type
         - url
         - config
+    ThirdPartyServiceNotifyDto:
+      type: object
+      properties:
+        severity:
+          type: string
+          enum:
+            - all
+            - major
+            - none
+          example: major
+          description: >-
+            Which provider incidents notify: every severity (all), only major
+            outages (major), or none.
+        incrementalUpdates:
+          type: boolean
+          example: true
+          description: Also notify on incremental updates of an incident already notified.
+      required:
+        - severity
+        - incrementalUpdates
+    CreateThirdPartyServiceConfigDto:
+      type: object
+      properties:
+        providerId:
+          type: number
+          minimum: 1
+          maximum: 9007199254740991
+          example: 4317
+          description: >-
+            The provider to track: isdown's numeric provider id, as returned by
+            the third-party provider catalog.
+        trackedComponentIds:
+          nullable: true
+          example:
+            - 555
+            - 556
+          description: >-
+            Component ids to scope tracking to (isdown components.id, not
+            external_id). Omit to track every component.
+          type: array
+          items:
+            type: number
+        notify:
+          description: Notification tuning. Omit to use the defaults.
+          allOf:
+            - $ref: '#/components/schemas/ThirdPartyServiceNotifyDto'
+      required:
+        - providerId
+    ThirdPartyServiceMonitorConfigDto:
+      type: object
+      properties:
+        thirdPartyService:
+          description: >-
+            Third party service configuration: the isdown provider to track and,
+            optionally, which of its components to scope tracking to.
+          allOf:
+            - $ref: '#/components/schemas/CreateThirdPartyServiceConfigDto'
+      required:
+        - thirdPartyService
+    CreateThirdPartyServiceMonitorDto:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - THIRD_PARTY_SERVICE
+          example: THIRD_PARTY_SERVICE
+        config:
+          description: >-
+            Third party service configuration.
+            `config.thirdPartyService.providerId` (required) names the isdown
+            provider to track; `trackedComponentIds` optionally scopes tracking
+            to specific components; `notify` tunes notifications.
+          allOf:
+            - $ref: '#/components/schemas/ThirdPartyServiceMonitorConfigDto'
+        assignedAlertContacts:
+          description: >-
+            Alert contacts to be assigned to the monitor. Omit to inherit the
+            account default contact.
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertContactSettings'
+      required:
+        - type
+        - config
+    PermissiveVisualComparisonFieldsDto:
+      type: object
+      properties:
+        sensitivityThreshold:
+          type: number
+          minimum: 0
+          maximum: 100
+        viewport:
+          type: string
+          enum:
+            - desktop
+            - mobile
+        areaCoordinates:
+          $ref: '#/components/schemas/VisualComparisonAreaCoordinatesDto'
+    ThirdPartyServiceConfigDto:
+      type: object
+      properties:
+        trackedComponentIds:
+          nullable: true
+          example:
+            - 555
+            - 556
+          description: >-
+            Component ids to scope tracking to (isdown components.id, not
+            external_id). Every id must belong to the monitor provider. Omit to
+            leave the scope unchanged, set to null or [] to track every
+            component.
+          type: array
+          items:
+            type: number
+        notify:
+          description: >-
+            Notification tuning. Replaces the stored value as a whole. Omit to
+            leave unchanged.
+          allOf:
+            - $ref: '#/components/schemas/ThirdPartyServiceNotifyDto'
+        maintenanceNotificationsEnabled:
+          type: boolean
+          example: true
+          description: >-
+            Notify when the provider schedules or updates a maintenance. Omit to
+            leave unchanged.
+    PermissiveMonitorConfigDto:
+      type: object
+      properties:
+        dnsRecords:
+          description: DNS records configuration. DNS monitors only. Send null to remove.
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/DnsRecordsDto'
+        sslExpirationPeriodDays:
+          maxItems: 10
+          description: >-
+            Days before certificate expiry to send SSL expiration reminders
+            (0-365, max 10 items). Requires the top-level
+            `sslExpirationReminder` flag to be enabled. HTTP, Keyword and API
+            monitors only. Send null to remove.
+          nullable: true
+          example:
+            - 7
+            - 14
+            - 30
+          type: array
+          items:
+            type: number
+            maximum: 365
+            minimum: 0
+        apiAssertions:
+          nullable: true
+          description: >-
+            API monitor assertions configuration. Required for API monitors —
+            the merged config must still contain it. Send null to remove.
+          allOf:
+            - $ref: '#/components/schemas/PublicApiAssertionsDto'
+        udp:
+          description: UDP monitor configuration. UDP monitors only. Send null to remove.
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/UdpConfigFieldsDto'
+        ipVersion:
+          type: string
+          enum:
+            - ipv4Only
+            - ipv6Only
+          description: >-
+            IP version preference. Omit for default behavior (IPv4 priority,
+            falls back to IPv6). Not supported by DNS, Heartbeat, Visual
+            Comparison or third-party service monitors. Send null to remove.
+          nullable: true
+          example: ipv4Only
+        applicationErrorRetries:
+          type: number
+          minimum: 0
+          maximum: 3
+          description: >-
+            Number of retries on application errors (HTTP 4xx/5xx). 0-3.
+            Connection errors always retry 3 times regardless of this setting.
+            HTTP, Keyword and API monitors only. Send null to remove.
+          nullable: true
+          example: 1
+        visualComparison:
+          description: >-
+            Visual comparison configuration. Visual Comparison monitors only.
+            Send null to remove.
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/PermissiveVisualComparisonFieldsDto'
+        thirdPartyService:
+          description: >-
+            Third party service configuration - the isdown provider to track
+            and, optionally, which of its components to scope tracking to. Third
+            party services only. Send null to remove.
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ThirdPartyServiceConfigDto'
     UpdateMonitorDto:
       type: object
       properties:
@@ -6231,6 +8602,7 @@ components:
             - API
             - UDP
             - VISUAL_COMPARISON
+            - THIRD_PARTY_SERVICE
           type: string
           example: HTTP
         port:
@@ -6238,6 +8610,15 @@ components:
           minimum: 1
           maximum: 65535
           description: Required for Port and UDP monitors
+        portAlertCondition:
+          enum:
+            - CLOSED
+            - OPEN
+          type: string
+          example: CLOSED
+          description: >-
+            Alerting condition for Port monitors. Only valid when type is Port;
+            defaults to CLOSED when omitted.
         keywordType:
           enum:
             - ALERT_EXISTS
@@ -6340,7 +8721,8 @@ components:
           type: object
           description: >-
             Custom HTTP headers to be sent in the request. Must be sent as JSON
-            object with key-value pairs
+            object with key-value pairs. The serialized JSON must not exceed
+            3000 characters
         successHttpResponseCodes:
           example:
             - 2xx
@@ -6404,7 +8786,10 @@ components:
           example: na
           deprecated: true
         regionData:
-          description: Regional data for monitoring
+          description: >-
+            Regional data for monitoring. Omit it, or send it without REGION,
+            and the region is assigned automatically (currently NA or EU, one
+            region per organization) and never changed on edit.
           allOf:
             - $ref: '#/components/schemas/RegionalDataDto'
         groupId:
@@ -6424,11 +8809,19 @@ components:
             environment: production
             team: platform
         config:
-          type: object
+          nullable: true
           description: >-
-            Monitor configuration patch. Top-level shallow merge with existing
-            config: omit keys to leave unchanged, set a key to null to remove
-            it, or send `config: null` to clear all config.
+            Monitor configuration patch. Accepted keys depend on the monitor
+            type - HTTP/Keyword: sslExpirationPeriodDays, ipVersion,
+            applicationErrorRetries. API: apiAssertions,
+            sslExpirationPeriodDays, ipVersion, applicationErrorRetries. DNS:
+            dnsRecords. UDP: udp, ipVersion. PING/PORT: ipVersion. Visual
+            Comparison: visualComparison. Third party service:
+            thirdPartyService. Heartbeat: none. Top-level shallow merge with
+            existing config: omit keys to leave unchanged, set a key to null to
+            remove it, or send `config: null` to clear all config.
+          allOf:
+            - $ref: '#/components/schemas/PermissiveMonitorConfigDto'
     PspPaginationDto:
       type: object
       properties:
@@ -6525,6 +8918,8 @@ components:
                         enum:
                           - normal
                           - compact
+                      showMonitorsUnderGroups:
+                        type: boolean
                   colors:
                     type: object
                     properties:
@@ -6714,6 +9109,8 @@ components:
                   enum:
                     - normal
                     - compact
+                showMonitorsUnderGroups:
+                  type: boolean
             colors:
               type: object
               properties:
@@ -6847,6 +9244,14 @@ components:
           example: normal
           title: Density
           description: The density of the page
+        showMonitorsUnderGroups:
+          type: boolean
+          example: false
+          title: Show monitors under their groups
+          description: >-
+            Group the monitors on the status page home screen under their
+            monitor groups instead of listing them flat. Omit it to keep the
+            current value.
     ColorsCustomSettingsDto:
       type: object
       properties:
@@ -6954,20 +9359,34 @@ components:
       type: object
       properties:
         monitorIds:
-          description: List of monitor IDs to be assigned to the PSP
+          description: >-
+            List of monitor IDs to be assigned to the PSP. `[0]` on its own is
+            the sentinel for "every monitor in the account"; an empty array
+            detaches all of them. In multipart/form-data, repeat the field
+            (`monitorIds=1&monitorIds=2`) or use the bracket suffix
+            (`monitorIds[]=1`); `monitorIds[]=` with no value is the empty
+            array.
           type: array
           items:
             type: number
+            maximum: 2147483647
+            minimum: 0
         tagIds:
-          description: List of tag IDs to be assigned to the PSP
+          description: >-
+            List of tag IDs to be assigned to the PSP. Uses the same multipart
+            encoding as `monitorIds`.
           type: array
           items:
             type: number
+            maximum: 2147483647
+            minimum: 1
         autoAddMonitors:
           type: boolean
           description: >-
             If enabled all monitors (old and new) will be added to PSP
-            automatically. In this case "monitorIds" property will be ignored
+            automatically. An explicit "monitorIds" wins over this flag when
+            both are sent — including an empty "monitorIds", which detaches
+            every monitor.
         friendlyName:
           type: string
           maxLength: 255
@@ -7014,13 +9433,15 @@ components:
           description: Available only for a Custom Domain status page
         sort:
           type: string
-          example: FriendlyNameAsc
           enum:
             - FriendlyNameAsc
             - FriendlyNameDesc
             - StatusUpDownPaused
             - StatusDownUpPaused
-          description: Sort monitors by friendly name or their statuses
+          example: FriendlyNameAsc
+          description: >-
+            Sort monitors by friendly name or their statuses. Manual is
+            read-only — a manual order can only be arranged in the dashboard.
         status:
           enum:
             - PAUSED
@@ -7066,20 +9487,34 @@ components:
       type: object
       properties:
         monitorIds:
-          description: List of monitor IDs to be assigned to the PSP
+          description: >-
+            List of monitor IDs to be assigned to the PSP. `[0]` on its own is
+            the sentinel for "every monitor in the account"; an empty array
+            detaches all of them. In multipart/form-data, repeat the field
+            (`monitorIds=1&monitorIds=2`) or use the bracket suffix
+            (`monitorIds[]=1`); `monitorIds[]=` with no value is the empty
+            array.
           type: array
           items:
             type: number
+            maximum: 2147483647
+            minimum: 0
         tagIds:
-          description: List of tag IDs to be assigned to the PSP
+          description: >-
+            List of tag IDs to be assigned to the PSP. Uses the same multipart
+            encoding as `monitorIds`.
           type: array
           items:
             type: number
+            maximum: 2147483647
+            minimum: 1
         autoAddMonitors:
           type: boolean
           description: >-
             If enabled all monitors (old and new) will be added to PSP
-            automatically. In this case "monitorIds" property will be ignored
+            automatically. An explicit "monitorIds" wins over this flag when
+            both are sent — including an empty "monitorIds", which detaches
+            every monitor.
         friendlyName:
           type: string
           maxLength: 255
@@ -7126,13 +9561,15 @@ components:
           description: Available only for a Custom Domain status page
         sort:
           type: string
-          example: FriendlyNameAsc
           enum:
             - FriendlyNameAsc
             - FriendlyNameDesc
             - StatusUpDownPaused
             - StatusDownUpPaused
-          description: Sort monitors by friendly name or their statuses
+          example: FriendlyNameAsc
+          description: >-
+            Sort monitors by friendly name or their statuses. Manual is
+            read-only — a manual order can only be arranged in the dashboard.
         status:
           enum:
             - PAUSED
@@ -7713,8 +10150,20 @@ components:
         fullName:
           type: string
         monitorsCount:
+          description: >-
+            Monitors this account is using. Third party services are counted
+            separately, in dependencyMonitorsCount, because they spend their own
+            allowance rather than a monitor slot.
           type: number
         monitorLimit:
+          type: number
+        dependencyMonitorsCount:
+          description: Third party services this account is tracking.
+          type: number
+        dependencyMonitorLimit:
+          description: >-
+            Third party services this account may track. Independent of
+            monitorLimit — spending one does not reduce the other.
           type: number
         smsCredits:
           type: number
@@ -7743,6 +10192,8 @@ components:
         - fullName
         - monitorsCount
         - monitorLimit
+        - dependencyMonitorsCount
+        - dependencyMonitorLimit
         - smsCredits
         - activeSubscription
     AlertContactDto:
@@ -7754,7 +10205,12 @@ components:
         friendlyName:
           type: string
           nullable: true
-        type: {}
+        type:
+          description: >-
+            Alert-contact type. Mobile push responses retain MobileAppOld (iOS)
+            and MobileApp (Android) through October 10, 2026; consumers should
+            also accept MobileAppIOS and MobileAppAndroid before responses
+            switch to those canonical names after the deadline.
         value:
           type: string
           nullable: true
@@ -7840,7 +10296,13 @@ components:
                 type: string
               value:
                 type: string
-              type: {}
+              type:
+                description: >-
+                  Alert-contact type. Mobile push responses retain MobileAppOld
+                  (iOS) and MobileApp (Android) through October 10, 2026;
+                  consumers should also accept MobileAppIOS and MobileAppAndroid
+                  before responses switch to those canonical names after the
+                  deadline.
               status: {}
               threshold:
                 type: number
@@ -7878,7 +10340,13 @@ components:
                 type: string
                 nullable: true
               enableNotificationsFor: {}
-              type: {}
+              type:
+                description: >-
+                  Alert-contact type. Mobile push responses retain MobileAppOld
+                  (iOS) and MobileApp (Android) through October 10, 2026;
+                  consumers should also accept MobileAppIOS and MobileAppAndroid
+                  before responses switch to those canonical names after the
+                  deadline.
               status: {}
               sslExpirationReminder:
                 type: boolean
@@ -7929,7 +10397,12 @@ components:
           type: string
           nullable: true
         enableNotificationsFor: {}
-        type: {}
+        type:
+          description: >-
+            Alert-contact type. Mobile push responses retain MobileAppOld (iOS)
+            and MobileApp (Android) through October 10, 2026; consumers should
+            also accept MobileAppIOS and MobileAppAndroid before responses
+            switch to those canonical names after the deadline.
         status: {}
         sslExpirationReminder:
           type: boolean
@@ -7998,9 +10471,9 @@ components:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Slack
-          type: string
         data:
           $ref: '#/components/schemas/SlackBaseIntegrationDto'
       required:
@@ -8029,9 +10502,9 @@ components:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Telegram
-          type: string
         data:
           $ref: '#/components/schemas/TelegramBaseIntegrationDto'
       required:
@@ -8063,13 +10536,13 @@ components:
           example: https://
       required:
         - webhookURL
-    CreateMsTeamsIntegrationDto:
+    CreateMSTeamsIntegrationDto:
       type: object
       properties:
         type:
+          type: string
           enum:
             - MSTeams
-          type: string
         data:
           $ref: '#/components/schemas/MsTeamsBaseIntegrationDto'
       required:
@@ -8115,9 +10588,9 @@ components:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Webhook
-          type: string
         data:
           $ref: '#/components/schemas/WebhookBaseIntegrationDto'
       required:
@@ -8151,9 +10624,9 @@ components:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Zapier
-          type: string
         data:
           $ref: '#/components/schemas/ZapierBaseIntegrationDto'
       required:
@@ -8199,9 +10672,9 @@ components:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Pagerduty
-          type: string
         data:
           $ref: '#/components/schemas/CreatePagerdutyBaseIntegrationDto'
       required:
@@ -8243,9 +10716,9 @@ components:
       type: object
       properties:
         type:
+          type: string
           enum:
             - GoogleChat
-          type: string
         data:
           $ref: '#/components/schemas/GoogleChatBaseIntegrationDto'
       required:
@@ -8283,9 +10756,9 @@ components:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Discord
-          type: string
         data:
           $ref: '#/components/schemas/DiscordBaseIntegrationDto'
       required:
@@ -8319,9 +10792,9 @@ components:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Splunk
-          type: string
         data:
           $ref: '#/components/schemas/SplunkBaseIntegrationDto'
       required:
@@ -8353,13 +10826,13 @@ components:
           example: '1234567890'
       required:
         - accessToken
-    CreatePushbulletIntegrationDto:
+    CreatePushBulletIntegrationDto:
       type: object
       properties:
         type:
+          type: string
           enum:
             - PushBullet
-          type: string
         data:
           $ref: '#/components/schemas/PushbulletBaseIntegrationDto'
       required:
@@ -8403,9 +10876,9 @@ components:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Pushover
-          type: string
         data:
           $ref: '#/components/schemas/CreatePushoverBaseIntegrationDto'
       required:
@@ -8443,9 +10916,9 @@ components:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Mattermost
-          type: string
         data:
           $ref: '#/components/schemas/MattermostBaseIntegrationDto'
       required:
@@ -8476,16 +10949,17 @@ components:
         customValue:
           type: string
           maxLength: 5000
-    UpdateSlackIntegrationSchema:
+    UpdateSlackIntegrationDto:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Slack
-          type: string
         data:
           $ref: '#/components/schemas/UpdateSlackIntegrationDataDto'
       required:
+        - type
         - data
     UpdateTelegramIntegrationDataDto:
       type: object
@@ -8506,16 +10980,17 @@ components:
           type: boolean
           description: Send a notification about SSL & Domain expiry
           example: true
-    UpdateTelegramIntegrationSchema:
+    UpdateTelegramIntegrationDto:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Telegram
-          type: string
         data:
           $ref: '#/components/schemas/UpdateTelegramIntegrationDataDto'
       required:
+        - type
         - data
     UpdateMsTeamsIntegrationDataDto:
       type: object
@@ -8541,16 +11016,17 @@ components:
           maxLength: 1500
           description: The Microsoft Teams Webhook URL
           example: https://
-    UpdateMsTeamsIntegrationSchema:
+    UpdateMSTeamsIntegrationDto:
       type: object
       properties:
         type:
+          type: string
           enum:
             - MSTeams
-          type: string
         data:
           $ref: '#/components/schemas/UpdateMsTeamsIntegrationDataDto'
       required:
+        - type
         - data
     UpdateWebhookIntegrationDataDto:
       type: object
@@ -8585,16 +11061,17 @@ components:
         customHeaders:
           type: object
           nullable: true
-    UpdateWebhookIntegrationSchema:
+    UpdateWebhookIntegrationDto:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Webhook
-          type: string
         data:
           $ref: '#/components/schemas/UpdateWebhookIntegrationDataDto'
       required:
+        - type
         - data
     UpdateZapierIntegrationDataDto:
       type: object
@@ -8618,16 +11095,17 @@ components:
         hookURL:
           type: string
           maxLength: 1500
-    UpdateZapierIntegrationSchema:
+    UpdateZapierIntegrationDto:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Zapier
-          type: string
         data:
           $ref: '#/components/schemas/UpdateZapierIntegrationDataDto'
       required:
+        - type
         - data
     UpdatePagerdutyIntegrationDataDto:
       type: object
@@ -8663,18 +11141,19 @@ components:
           type: boolean
           description: Auto-resolve incidents after up event
           example: true
-    UpdatePagerdutyIntegrationSchema:
+    UpdatePagerdutyIntegrationDto:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Pagerduty
-          type: string
         data:
           $ref: '#/components/schemas/UpdatePagerdutyIntegrationDataDto'
       required:
+        - type
         - data
-    PartialTypeClass:
+    UpdateGoogleChatIntegrationDataDto:
       type: object
       properties:
         friendlyName:
@@ -8703,16 +11182,17 @@ components:
           maxLength: 5000
           description: Optional. Text that will be added to body of each notification.
           example: This is a custom value
-    UpdateGoogleChatIntegrationSchema:
+    UpdateGoogleChatIntegrationDto:
       type: object
       properties:
         type:
+          type: string
           enum:
             - GoogleChat
-          type: string
         data:
-          $ref: '#/components/schemas/PartialTypeClass'
+          $ref: '#/components/schemas/UpdateGoogleChatIntegrationDataDto'
       required:
+        - type
         - data
     UpdateDiscordIntegrationDataDto:
       type: object
@@ -8739,26 +11219,49 @@ components:
           maxLength: 60
         sslExpirationReminder:
           type: boolean
-    UpdateDiscordIntegrationSchema:
+    UpdateDiscordIntegrationDto:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Discord
-          type: string
         data:
           $ref: '#/components/schemas/UpdateDiscordIntegrationDataDto'
       required:
+        - type
         - data
-    UpdateSplunkIntegrationSchema:
+    UpdateSplunkIntegrationDataDto:
+      type: object
+      properties:
+        friendlyName:
+          type: string
+          maxLength: 60
+          description: The friendly name of the integration
+          example: My Integration from API
+        enableNotificationsFor:
+          enum:
+            - UpAndDown
+            - Down
+            - Up
+            - None
+          type: string
+        sslExpirationReminder:
+          type: boolean
+          description: Send a notification about SSL & Domain expiry
+          example: true
+        urlToNotify:
+          type: string
+          maxLength: 1500
+    UpdateSplunkIntegrationDto:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Splunk
-          type: string
         data:
-          $ref: '#/components/schemas/PartialTypeClass'
+          $ref: '#/components/schemas/UpdateSplunkIntegrationDataDto'
       required:
         - type
         - data
@@ -8786,16 +11289,17 @@ components:
           maxLength: 1500
           description: The Pushbullet Access Token
           example: '1234567890'
-    UpdatePushbulletIntegrationSchema:
+    UpdatePushBulletIntegrationDto:
       type: object
       properties:
         type:
+          type: string
           enum:
             - PushBullet
-          type: string
         data:
           $ref: '#/components/schemas/UpdatePushbulletIntegrationDataDto'
       required:
+        - type
         - data
     UpdatePushoverIntegrationDataDto:
       type: object
@@ -8829,16 +11333,17 @@ components:
             - High
             - Emergency
           type: string
-    UpdatePushoverIntegrationSchema:
+    UpdatePushoverIntegrationDto:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Pushover
-          type: string
         data:
           $ref: '#/components/schemas/UpdatePushoverIntegrationDataDto'
       required:
+        - type
         - data
     UpdateMattermostIntegrationDataDto:
       type: object
@@ -8865,16 +11370,17 @@ components:
           maxLength: 60
         sslExpirationReminder:
           type: boolean
-    UpdateMattermostIntegrationSchema:
+    UpdateMattermostIntegrationDto:
       type: object
       properties:
         type:
+          type: string
           enum:
             - Mattermost
-          type: string
         data:
           $ref: '#/components/schemas/UpdateMattermostIntegrationDataDto'
       required:
+        - type
         - data
     AlertContactPaginationDto:
       type: object
@@ -8893,7 +11399,13 @@ components:
               friendlyName:
                 type: string
                 nullable: true
-              type: {}
+              type:
+                description: >-
+                  Alert-contact type. Mobile push responses retain MobileAppOld
+                  (iOS) and MobileApp (Android) through October 10, 2026;
+                  consumers should also accept MobileAppIOS and MobileAppAndroid
+                  before responses switch to those canonical names after the
+                  deadline.
               value:
                 type: string
                 nullable: true
@@ -8965,12 +11477,18 @@ components:
             - Email
             - ProSms
             - Voice
+            - MobileAppIOS
+            - MobileAppAndroid
             - MobileAppOld
             - MobileApp
           type: string
           description: >-
-            Personal alert-contact type. Email and push (MobileAppOld/MobileApp)
-            are creatable here; Pro SMS and voice require phone verification.
+            Personal alert-contact type. Email and mobile push for iOS or
+            Android are creatable here; Pro SMS and voice require phone
+            verification. Use MobileAppIOS or MobileAppAndroid for mobile push.
+            DEPRECATED: MobileAppOld (use MobileAppIOS) and MobileApp (use
+            MobileAppAndroid) are accepted through October 10, 2026 and will be
+            rejected after that date.
         friendlyName:
           type: string
           description: Display name of the alert contact
@@ -9054,3 +11572,119 @@ components:
       required:
         - data
         - nextCursorId
+    ThirdPartyProviderSearchDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              logoUrl:
+                type: string
+                nullable: true
+              statusPageUrl:
+                type: string
+              state:
+                type: string
+                enum:
+                  - operational
+                  - minor
+                  - major
+                  - maintenance
+              matchedComponent:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+                required:
+                  - id
+                  - name
+                nullable: true
+              isTracked:
+                type: boolean
+            required:
+              - id
+              - name
+              - logoUrl
+              - statusPageUrl
+              - state
+              - matchedComponent
+              - isTracked
+      required:
+        - data
+    ThirdPartyProviderDetailDto:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        logoUrl:
+          type: string
+          nullable: true
+        statusPageUrl:
+          type: string
+        state:
+          type: string
+          enum:
+            - operational
+            - minor
+            - major
+            - maintenance
+        components:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              status:
+                type: string
+                enum:
+                  - operational
+                  - minor
+                  - major
+                  - maintenance
+                  - unknown
+              children:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+                    status:
+                      type: string
+                      enum:
+                        - operational
+                        - minor
+                        - major
+                        - maintenance
+                        - unknown
+                  required:
+                    - id
+                    - name
+                    - status
+            required:
+              - id
+              - name
+              - status
+              - children
+      required:
+        - id
+        - name
+        - logoUrl
+        - statusPageUrl
+        - state
+        - components
