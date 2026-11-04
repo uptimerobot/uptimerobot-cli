@@ -58,4 +58,4 @@ risk:
       ceiling: 15
 
 ownership:
-  fallback_reviewers: ['@subalee', '@velzepooz', '@tomas223', '@clovnrian']
+  fallback_reviewers: ['@subalee', '@velzepooz', '@tomas223']
