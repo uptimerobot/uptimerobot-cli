@@ -10,6 +10,8 @@ may change in minor releases.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-04
+
 ### Added
 
 - Third-party service commands from the updated public API contract:
@@ -230,7 +232,8 @@ freeze; each entry is a change that would otherwise have needed a 2.0.
 - Redirects are followed manually and the origin is re-checked at every hop
   before credentials are attached; cross-origin redirects are refused.
 
-[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.1.2...v0.2.0

@@ -40,7 +40,7 @@ uptimerobot --help
 
 ```sh
 uptimerobot version --json
-# {"version":"1.0.0","platform":"darwin-arm64","node":"24.12.0"}
+# {"version":"1.1.0","platform":"darwin-arm64","node":"24.12.0"}
 ```
 
 ## AI agent skills
