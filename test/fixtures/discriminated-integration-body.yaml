@@ -1,0 +1,88 @@
+openapi: 3.0.0
+info:
+  title: Discriminated integration generator fixture
+  version: 1.0.0
+servers:
+  - url: https://api.example.test/v3
+paths:
+  /integrations:
+    post:
+      operationId: IntegrationsController_create
+      summary: Create an integration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/SlackIntegration'
+                - $ref: '#/components/schemas/WebhookIntegration'
+              discriminator:
+                propertyName: type
+                mapping:
+                  slack: '#/components/schemas/SlackIntegration'
+                  webhook: '#/components/schemas/WebhookIntegration'
+            examples:
+              slack:
+                summary: Create a Slack integration
+                value:
+                  name: Team chat
+                  type: slack
+      responses:
+        '201':
+          description: Created
+  /integrations/{id}:
+    patch:
+      operationId: IntegrationsController_update
+      summary: Update an integration
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/SlackIntegration'
+                - $ref: '#/components/schemas/WebhookIntegration'
+              discriminator:
+                propertyName: type
+                mapping:
+                  slack: '#/components/schemas/SlackIntegration'
+                  webhook: '#/components/schemas/WebhookIntegration'
+      responses:
+        '200':
+          description: Updated
+components:
+  schemas:
+    SlackIntegration:
+      type: object
+      required:
+        - name
+        - type
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+            - slack
+    WebhookIntegration:
+      type: object
+      required:
+        - name
+        - type
+        - url
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+            - webhook
+        url:
+          type: string

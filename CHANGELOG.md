@@ -10,6 +10,13 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `uptimerobot monitors create` is available as a plain command beside the typed
+  `monitors create <type>` commands. It takes `--body` and `--set` with no typed
+  flags, as an untyped escape hatch. The generator now keeps the plain command
+  whenever a request body is a discriminated union.
+
 ### Fixed
 
 - Machine-readable error envelopes are redacted, so the documented rule that
