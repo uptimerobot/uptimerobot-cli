@@ -336,6 +336,17 @@ describe('monitor creation', () => {
     });
   });
 
+  it('describes omitting --components as tracking everything on create but keeping the scope on update', async () => {
+    const create = await runCli(['monitors', 'create', 'third-party-service', '--help']);
+    const update = await runCli(['monitors', 'update', '--help']);
+
+    expect(create.exitCode).toBe(0);
+    expect(update.exitCode).toBe(0);
+    expect(create.stdout.replace(/\s+/g, ' ')).toContain('Omit to track every component');
+    expect(update.stdout.replace(/\s+/g, ' ')).toContain('Omit to leave the scope unchanged');
+    expect(update.stdout.replace(/\s+/g, ' ')).not.toContain('omit to track every component');
+  });
+
   it('creates an HTTP monitor from type-safe human-friendly flags', async () => {
     let observedRequest: Record<string, unknown> = {};
     const server = createServer(async (request, response) => {

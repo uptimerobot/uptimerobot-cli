@@ -8349,7 +8349,7 @@ export const operations = {
         "flag": "components",
         "path": "config.thirdPartyService.trackedComponentIds",
         "required": false,
-        "description": "Component id to track (repeatable); omit to track every component",
+        "description": "Component ids to scope tracking to (isdown components.id, not external_id). Omit to track every component.",
         "example": [
           555,
           556
@@ -11588,7 +11588,7 @@ export const operations = {
         "flag": "components",
         "path": "config.thirdPartyService.trackedComponentIds",
         "required": false,
-        "description": "Component id to track (repeatable); omit to track every component",
+        "description": "Component ids to scope tracking to (isdown components.id, not external_id). Every id must belong to the monitor provider. Omit to leave the scope unchanged, set to null or [] to track every component.",
         "example": [
           555,
           556

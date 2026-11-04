@@ -145,7 +145,7 @@ A third-party service tracks the public status page of an outside provider, such
 ```sh
 uptimerobot third-party-providers list --search stripe
 uptimerobot third-party-providers get 4317
-uptimerobot monitors create third-party-service --provider-id 4317 --components 11 --components 12 --notify-severity major
+uptimerobot monitors create third-party-service --provider-id 4317 --components 11 --components 12 --notify-severity major --notify-incremental-updates
 ```
 
 Omit `--components` to track every component. Then read its state and incidents by the monitor id the create returned:

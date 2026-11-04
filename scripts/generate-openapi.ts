@@ -152,7 +152,6 @@ const BODY_FLAG_CURATIONS: Record<string, BodyFlagCuration> = {
   },
   'config.thirdPartyService.trackedComponentIds': {
     aliases: ['config-third-party-service-tracked-component-ids'],
-    description: 'Component id to track (repeatable); omit to track every component',
     flag: 'components',
   },
   'config.thirdPartyService.notify.severity': {
