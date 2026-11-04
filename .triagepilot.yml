@@ -1,9 +1,9 @@
 # TriagePilot: https://github.com/TriagePilot/triage-pilot/blob/main/docs/github-app/repository-configuration.md
 #
-# Tiers: score <= 25 low (no human), <= 70 medium (1 reviewer), > 70 high (2 reviewers).
+# Tiers: score <= 25 low (no human), <= 90 medium (1 reviewer), > 90 high (2 reviewers).
 # Every PR also scores 5 per 5 changed non-test files (max 20), +15 for 200+ changed
 # lines, +15 for a lockfile change. Path weights add up, each counted once.
-#   weight 70  -> always 2 reviewers (5 + 70 > 70)
+#   weight 70  -> 1 reviewer; 2 once the PR is also large (6+ files and 200+ lines) or hits a second risky area
 #   no weight  -> small PRs auto-approve
 version: 1
 mode: enforce
@@ -15,7 +15,7 @@ routing:
 risk:
   thresholds:
     low: 25
-    high: 70
+    high: 90
   # Defaults to enabled (+10) when omitted.
   ai_authorship:
     enabled: false
