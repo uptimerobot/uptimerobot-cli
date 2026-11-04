@@ -146,6 +146,22 @@ const BODY_FLAG_CURATIONS: Record<string, BodyFlagCuration> = {
     flag: 'region-threshold-oc',
   },
   regionalData: { flag: 'regional-data', hidden: true },
+  'config.thirdPartyService.providerId': {
+    aliases: ['config-third-party-service-provider-id'],
+    flag: 'provider-id',
+  },
+  'config.thirdPartyService.trackedComponentIds': {
+    aliases: ['config-third-party-service-tracked-component-ids'],
+    flag: 'components',
+  },
+  'config.thirdPartyService.notify.severity': {
+    aliases: ['config-third-party-service-notify-severity'],
+    flag: 'notify-severity',
+  },
+  'config.thirdPartyService.notify.incrementalUpdates': {
+    aliases: ['config-third-party-service-notify-incremental-updates'],
+    flag: 'notify-incremental-updates',
+  },
 };
 const RESERVED_FLAGS = new Set([
   'agent',
@@ -515,7 +531,11 @@ function commandIdFor(method: HttpMethod, path: string): string {
   if (endsWithParameter) return [...staticParts, 'get'].join(':');
   if (staticParts.length === 1) return [...staticParts, 'list'].join(':');
   if (hasParameter) {
-    if (['activity-log', 'alerts', 'all', 'response-time', 'uptime'].includes(lastStatic ?? '')) {
+    if (
+      ['activity-log', 'alerts', 'all', 'response-time', 'status', 'uptime'].includes(
+        lastStatic ?? '',
+      )
+    ) {
       return staticParts.join(':');
     }
     return [...staticParts, 'list'].join(':');
@@ -568,7 +588,7 @@ async function writeGeneratedFiles(
       `import { createOperationCommand } from '${relativePrefix}lib/operation-command.js';`,
       `import { operations } from '${relativePrefix}generated/operations.js';`,
       '',
-      `export default createOperationCommand(operations['${operation.commandId}']);`,
+      exportLine(`operations['${operation.commandId}']`),
       '',
     ].join('\n');
     await mkdir(dirname(commandPath), { recursive: true });
@@ -578,6 +598,12 @@ async function writeGeneratedFiles(
     join(generatedPath, 'command-files.json'),
     `${JSON.stringify(commandFiles.sort(), null, 2)}\n`,
   );
+}
+
+// Mirrors oxfmt at printWidth 100, so a regenerated entrypoint passes format:check.
+function exportLine(argument: string): string {
+  const line = `export default createOperationCommand(${argument});`;
+  return line.length <= 100 ? line : `export default createOperationCommand(\n  ${argument},\n);`;
 }
 
 async function generatedCommandFiles(

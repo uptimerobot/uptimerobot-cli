@@ -239,7 +239,7 @@ describe('status pages create', () => {
         '--set',
         'monitorIds=[123]',
         '--set',
-        'customSettings.page.density=COMPACT',
+        'customSettings.page.density=Compact',
         '--file',
         `logo=${logo}`,
         '--json',

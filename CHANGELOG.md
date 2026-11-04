@@ -12,6 +12,18 @@ may change in minor releases.
 
 ### Added
 
+- Third-party service commands from the updated public API contract:
+  `third-party-providers list --search` and `third-party-providers get` find a
+  provider by id, `monitors create third-party-service` tracks it (with
+  `--provider-id`, `--components`, `--notify-severity` and
+  `--notify-incremental-updates`), and `monitors third-party-service status`,
+  `incidents list`, `incidents get` and `incidents activity-log` read what is
+  tracked. Table output has columns for the provider list, the incident list and
+  the incident activity log.
+- `monitors storm-protection` and `monitors storm-protection update`, `status-pages announcements
+delete`, and typed `integrations create <type>` and `integrations update <type>`
+  commands, also from the updated contract.
+
 - `uptimerobot monitors create` is available as a plain command beside the typed
   `monitors create <type>` commands. It takes `--body` and `--set` with no typed
   flags, as an untyped escape hatch. The generator now keeps the plain command

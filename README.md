@@ -138,6 +138,27 @@ uptimerobot monitors create http --name checkout-api --set friendlyName=checkout
 #   --name checkout-api and --set friendlyName=checkout. Pass only one.
 ```
 
+## Third-party services
+
+A third-party service tracks the public status page of an outside provider, such as a cloud or a payment processor, and alerts you when the provider reports an incident. Find the provider's id first, then track it:
+
+```sh
+uptimerobot third-party-providers list --search stripe
+uptimerobot third-party-providers get 4317
+uptimerobot monitors create third-party-service --provider-id 4317 --components 11 --components 12 --notify-severity major --notify-incremental-updates
+```
+
+Omit `--components` to track every component. Then read its state and incidents by the monitor id the create returned:
+
+```sh
+uptimerobot monitors third-party-service status 800123456
+uptimerobot monitors third-party-service incidents list 800123456
+uptimerobot monitors third-party-service incidents get 800123456 1234567890
+uptimerobot monitors third-party-service incidents activity-log 800123456 1234567890
+```
+
+`uptimerobot monitors delete <id>` stops tracking a service. A third-party service cannot be paused.
+
 ## Heartbeat monitors
 
 A heartbeat monitor stays silent until something pings it, so normalized output carries a derived `pingUrl` — the address that job should call. Both it and the `url` it is built from are secrets, so both are redacted unless you ask for them:

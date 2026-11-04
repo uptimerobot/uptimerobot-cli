@@ -141,15 +141,21 @@ describe('OpenAPI command generation', () => {
       .map((path) => path.slice(path.lastIndexOf('/create/') + 8, -3))
       .sort();
 
+    const thirdPartyServiceCommands = commandFiles
+      .filter((path) => path.includes('third-party'))
+      .map((path) => path.slice(path.indexOf('/commands/') + 10, -3))
+      .sort();
+
     expect({
       bulkUpdate: commandFiles.some((path) => path.endsWith('/monitors/bulk/update.ts')),
       commandCount: commandFiles.length,
       genericMonitorCreate: commandFiles.some((path) => path.endsWith('/monitors/create.ts')),
       monitorCreateCommands,
       result,
+      thirdPartyServiceCommands,
     }).toEqual({
       bulkUpdate: true,
-      commandCount: 68,
+      commandCount: 102,
       genericMonitorCreate: true,
       monitorCreateCommands: [
         'api',
@@ -159,11 +165,35 @@ describe('OpenAPI command generation', () => {
         'keyword',
         'ping',
         'port',
+        'third-party-service',
         'udp',
         'visual-comparison',
       ],
-      result: { exitCode: 0, stderr: '', stdout: 'Generated 68 commands.\n' },
+      result: { exitCode: 0, stderr: '', stdout: 'Generated 102 commands.\n' },
+      thirdPartyServiceCommands: [
+        'monitors/create/third-party-service',
+        'monitors/third-party-service/incidents/activity-log',
+        'monitors/third-party-service/incidents/get',
+        'monitors/third-party-service/incidents/list',
+        'monitors/third-party-service/status',
+        'third-party-providers/get',
+        'third-party-providers/list',
+      ],
     });
+  });
+
+  it('writes command entrypoints that already fit the formatter print width', async () => {
+    const output = await mkdtemp(join(tmpdir(), 'uptimerobot-openapi-width-'));
+    await runGenerator(['--input', join(projectRoot, 'openapi/openapi.yaml'), '--output', output]);
+    const commandFiles = await listFiles(join(output, 'commands'));
+
+    const overlong = [];
+    for (const path of commandFiles) {
+      const lines = (await readFile(path, 'utf8')).split('\n');
+      if (lines.some((line) => line.length > 100)) overlong.push(relative(output, path));
+    }
+
+    expect(overlong).toEqual([]);
   });
 
   it('preserves handwritten commands when regenerating OpenAPI commands', async () => {
