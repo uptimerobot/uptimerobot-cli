@@ -125,12 +125,20 @@ function hasLongRetryAfter(error: Error): boolean | undefined {
  * {@link ApiFailure}: a non-2xx response becomes the normalized API error, a
  * transport error becomes `NETWORK_ERROR`.
  */
-export async function requestJson(client: ApiClient, url: URL, method: string): Promise<unknown> {
+export async function requestJson(
+  client: ApiClient,
+  url: URL,
+  method: string,
+  body?: string,
+): Promise<unknown> {
   let result: ApiResult;
   try {
+    const headers = new Headers({ accept: 'application/json' });
+    if (body !== undefined) headers.set('content-type', 'application/json');
     result = await client.request(url, {
-      headers: new Headers({ accept: 'application/json' }),
+      headers,
       method,
+      ...(body === undefined ? {} : { body }),
     });
   } catch (error) {
     throw apiFailureFrom(error);
