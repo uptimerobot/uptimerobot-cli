@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   PROTOCOL_CLIENTS,
-  SKIP_PACKAGES,
+  SKIP_PATTERNS,
   VENDORS,
   type VendorEntry,
+  classifyPackage,
   matchPackage,
   normalizeCatalogName,
 } from '../src/lib/scan/vendors.js';
@@ -50,9 +51,34 @@ describe('the vendor map data', () => {
   });
 
   it('keeps skipped packages and protocol clients out of the map', () => {
-    for (const name of [...SKIP_PACKAGES, ...PROTOCOL_CLIENTS]) {
+    for (const name of [
+      ...SKIP_PATTERNS.map((pattern) => pattern.replace('*', 'x')),
+      ...PROTOCOL_CLIENTS,
+    ]) {
       expect(matchPackage('npm', name)).toBeUndefined();
       expect(matchPackage('pip', name)).toBeUndefined();
+    }
+  });
+
+  it('gives every non-package signal a non-empty pattern', () => {
+    for (const entry of VENDORS) {
+      for (const signal of entry.signals) {
+        expect(signal.pattern.trim()).not.toBe('');
+        if (signal.kind === 'hostname') expect(signal.pattern).toMatch(/^(\*\.)?[a-z0-9.-]+$/);
+      }
+    }
+  });
+
+  it('lists no package pattern that an earlier entry already catches', () => {
+    const ecosystems = ['npm', 'pip', 'go', 'gem', 'composer', 'cargo'] as const;
+    for (const entry of VENDORS) {
+      for (const signal of entry.signals) {
+        if (signal.kind !== 'package') continue;
+        const probe = signal.pattern.replace('*', 'probe');
+        for (const ecosystem of signal.ecosystems ?? ecosystems) {
+          expect(matchPackage(ecosystem, probe)?.entry.catalogName).toBe(entry.catalogName);
+        }
+      }
     }
   });
 
@@ -102,6 +128,19 @@ describe('matchPackage', () => {
     expect(matchPackage('npm', '@shopify/polaris')).toBeUndefined();
     expect(matchPackage('npm', '@mapbox/tilebelt')).toBeUndefined();
     expect(name(matchPackage('npm', '@mapbox/mapbox-sdk'))).toBe('Mapbox');
+  });
+
+  it('classifies with skip before protocol client before vendor', () => {
+    expect(classifyPackage('npm', '@shopify/polaris')).toEqual({
+      outcome: 'skip',
+      name: '@shopify/polaris',
+    });
+    expect(classifyPackage('pip', 'Psycopg[binary]')).toEqual({
+      outcome: 'protocol-client',
+      name: 'psycopg',
+    });
+    expect(classifyPackage('npm', 'left-pad')).toEqual({ outcome: 'unmapped', name: 'left-pad' });
+    expect(classifyPackage('gem', 'stripe')).toMatchObject({ outcome: 'vendor', name: 'stripe' });
   });
 
   it('normalizes catalog names the way the resolver compares them', () => {

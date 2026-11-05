@@ -3,10 +3,12 @@
  * provider in the UptimeRobot catalog, and what to search the catalog for.
  *
  * The map exists for names that differ from the brand (`boto3` is AWS,
- * `@octokit/*` is GitHub). Every `catalogName` returned exactly one row with
- * that name when the catalog was checked in November 2026; the resolver still
- * treats "no exact-name row today" as "not in the catalog", whatever this file
- * says. Data only: nothing here reads a file or reaches the network.
+ * `@octokit/*` is GitHub). Invariant: every `catalogName` is the exact name of
+ * one catalog row, and the resolver treats "no exact-name row" as "not in the
+ * catalog", whatever this file says, so a stale entry fails closed. Package
+ * patterns are matched first-entry-first: keep a more specific prefix in an
+ * earlier entry than a broader one. Data only: nothing here reads a file or
+ * reaches the network.
  */
 
 export type VendorClass = 'runtime' | 'build-time';
@@ -266,9 +268,12 @@ export const VENDORS: readonly VendorEntry[] = [
 /**
  * Frameworks, runtimes, ORMs, build tools and UI libraries: no outage of
  * theirs reaches the user's product, so they are mentioned in one line and
- * never proposed. Matched after normalization, by exact name or `prefix*`.
+ * never proposed. Patterns, not names: exact or `prefix*`, matched after
+ * normalization through {@link isSkippedPackage}. `django-*` deliberately
+ * covers `django-storages`; the S3 backend it configures is evidence for AWS
+ * through `boto3`, not a provider of its own.
  */
-export const SKIP_PACKAGES: ReadonlySet<string> = new Set([
+export const SKIP_PATTERNS: readonly string[] = [
   'next',
   'react',
   'react-dom',
@@ -313,7 +318,7 @@ export const SKIP_PACKAGES: ReadonlySet<string> = new Set([
   'tokio',
   '@shopify/polaris',
   '@shopify/hydrogen',
-]);
+];
 
 /**
  * Protocol clients with no vendor hostname of their own. The database behind
@@ -351,6 +356,15 @@ export interface PackageMatch {
 }
 
 /**
+ * What a declared dependency means to the scan, in precedence order: a name on
+ * the skip list is never a vendor, a protocol client is never searched, and
+ * only a mapped name becomes a provider.
+ */
+export type PackageClassification =
+  | { outcome: 'skip' | 'protocol-client' | 'unmapped'; name: string }
+  | { outcome: 'vendor'; name: string; match: PackageMatch };
+
+/**
  * The name test the resolver applies to a catalog row: lowercase with every
  * non-alphanumeric character removed, so `Fly.io` equals `fly.io` and
  * `Clerk Chat` does not equal `Clerk`.
@@ -377,12 +391,24 @@ function patternMatches(pattern: string, name: string): boolean {
 
 export function isSkippedPackage(ecosystem: PackageEcosystem, name: string): boolean {
   const normalized = normalizePackageName(ecosystem, name);
-  for (const pattern of SKIP_PACKAGES) if (patternMatches(pattern, normalized)) return true;
-  return false;
+  return SKIP_PATTERNS.some((pattern) => patternMatches(pattern, normalized));
 }
 
 export function isProtocolClient(ecosystem: PackageEcosystem, name: string): boolean {
   return PROTOCOL_CLIENTS.has(normalizePackageName(ecosystem, name));
+}
+
+/** Normalizes once and applies the precedence skip, protocol client, vendor, unmapped. */
+export function classifyPackage(ecosystem: PackageEcosystem, name: string): PackageClassification {
+  const normalized = normalizePackageName(ecosystem, name);
+  if (SKIP_PATTERNS.some((pattern) => patternMatches(pattern, normalized))) {
+    return { outcome: 'skip', name: normalized };
+  }
+  if (PROTOCOL_CLIENTS.has(normalized)) return { outcome: 'protocol-client', name: normalized };
+  const match = matchPackage(ecosystem, normalized);
+  return match === undefined
+    ? { outcome: 'unmapped', name: normalized }
+    : { outcome: 'vendor', name: normalized, match };
 }
 
 /** The vendor a dependency name points at, if the map knows it. */

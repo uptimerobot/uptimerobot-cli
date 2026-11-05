@@ -72,6 +72,28 @@ describe('matchManifest on package.json', () => {
     expect(byProvider(findings, 'Resend')).toBeDefined();
   });
 
+  it('reads peer and optional dependencies as runtime', () => {
+    const peers = matchManifest({
+      path: 'package.json',
+      contents:
+        '{\n  "peerDependencies": { "stripe": "^17" },\n  "optionalDependencies": { "twilio": "5.0.0" }\n}',
+    });
+    expect(byProvider(peers, 'Stripe')?.detail).toMatchObject({
+      class: 'runtime',
+      scope: 'peerDependencies',
+      version: '^17',
+    });
+    expect(byProvider(peers, 'Twilio')?.evidence.line).toBe(3);
+  });
+
+  it('puts every finding of a minified manifest on line 1', () => {
+    const findings = matchManifest({
+      path: 'package.json',
+      contents: '{"dependencies":{"stripe":"1"}}',
+    });
+    expect(byProvider(findings, 'Stripe')?.evidence.line).toBe(1);
+  });
+
   it('classes a devDependency as build-time', () => {
     expect(byProvider(findings, 'GitHub')?.detail).toMatchObject({
       class: 'build-time',
@@ -234,6 +256,40 @@ describe('matchManifest on pyproject.toml edge cases', () => {
     expect(findings.map((finding) => finding.value)).not.toContain('name');
     expect(findings.map((finding) => finding.value)).not.toContain('python');
     expect(byProvider(findings, 'Sentry')?.detail.class).toBe('build-time');
+  });
+
+  it('never takes a dependency from a comment inside an array', () => {
+    const contents = [
+      '[project]',
+      'dependencies = [',
+      '  "requests",',
+      '  # "stripe>=1",',
+      '  "sendgrid", # "twilio"',
+      ']',
+      '',
+    ].join('\n');
+    const findings = matchManifest({ path: 'pyproject.toml', contents });
+    expect(findings.filter((finding) => finding.outcome === 'vendor').map((f) => f.value)).toEqual([
+      'SendGrid',
+    ]);
+  });
+
+  it('reads a dotted key as the subtable form', () => {
+    const findings = matchManifest({
+      path: 'Cargo.toml',
+      contents: [
+        '[dependencies]',
+        'async-stripe.version = "0.39"',
+        'serde.features = ["derive"]',
+        '',
+      ].join('\n'),
+    });
+    expect(byProvider(findings, 'Stripe')).toMatchObject({
+      evidence: { line: 2 },
+      detail: { version: '0.39' },
+    });
+    expect(findings.map((finding) => finding.value)).not.toContain('serde.features');
+    expect(findings.map((finding) => finding.value)).not.toContain('serde.version');
   });
 
   it('reports nothing from a pyproject.toml without dependency tables', () => {

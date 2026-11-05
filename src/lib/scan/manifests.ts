@@ -7,16 +7,26 @@
  * because repository text is data to this scan, never an instruction. Pure:
  * takes a path and the file's contents, reads nothing else, never throws for a
  * manifest's own sake (malformed JSON yields no findings).
+ *
+ * Sections read, and nothing else:
+ * - `package.json`: `dependencies`, `peerDependencies`, `optionalDependencies`
+ *   (runtime), `devDependencies` (build-time).
+ * - `composer.json`: `require` (runtime), `require-dev` (build-time).
+ * - `requirements*.txt`: every requirement line.
+ * - `pyproject.toml`: `[project] dependencies` and `[tool.poetry.dependencies]`
+ *   (runtime, plus Poetry's `main` group); `[project.optional-dependencies]`,
+ *   `[dependency-groups]`, `[tool.poetry.dev-dependencies]` and every other
+ *   Poetry group (build-time). `[table.name]` subtables count, `[[arrays]]` do not.
+ * - `go.mod`: `require` lines, `// indirect` included.
+ * - `Gemfile`: `gem` lines; a `group` block or `group:` option is build-time.
+ * - `Cargo.toml`: `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`,
+ *   their `[target.<cfg>.*]` forms and `[table.name]` subtables.
+ * Renames (`package = "real-name"` in Cargo or Poetry) are not resolved; the
+ * declared name is what the map sees.
  */
+import { isPlainRecord } from '../objects.js';
 import type { ScanFinding } from './finding.js';
-import {
-  type PackageEcosystem,
-  type VendorClass,
-  isProtocolClient,
-  isSkippedPackage,
-  matchPackage,
-  normalizePackageName,
-} from './vendors.js';
+import { type PackageEcosystem, type VendorClass, classifyPackage } from './vendors.js';
 
 /**
  * `vendor`: a mapped provider. `skip`: a framework or library on the skip list.
@@ -33,10 +43,14 @@ export type ManifestOutcome = 'vendor' | 'skip' | 'protocol-client' | 'unmapped'
 export interface ManifestFinding extends ScanFinding {
   outcome: ManifestOutcome;
   detail: {
+    /** `package@version`, or the package alone when the manifest pins nothing. */
     signal: string;
-    class: VendorClass;
-    scope: string;
     package: string;
+    version: string;
+    /** The manifest section the dependency sits in, as the manifest names it. */
+    scope: string;
+    /** The section's class for non-vendor outcomes; the provider's class for a vendor. */
+    class: VendorClass;
   };
 }
 
@@ -54,6 +68,9 @@ interface Declared {
   /** The dependency section's own class: `devDependencies` is build-time. */
   class: VendorClass;
 }
+
+/** An evidence line of 1 also means "location unknown", as in {@link ScanEvidence}. */
+const UNKNOWN_LINE = 1;
 
 const DEV_SCOPES = new Set([
   'devDependencies',
@@ -94,47 +111,40 @@ function classify(
 ): ManifestFinding {
   const signal =
     dependency.version === '' ? dependency.name : `${dependency.name}@${dependency.version}`;
+  const classified = classifyPackage(ecosystem, dependency.name);
   const base = {
     kind: ecosystem,
     evidence: { file, line: dependency.line },
     detail: {
       signal,
-      class: dependency.class,
-      scope: dependency.scope,
       package: dependency.name,
+      version: dependency.version,
+      scope: dependency.scope,
+      class: dependency.class,
     },
   };
-  if (isSkippedPackage(ecosystem, dependency.name)) {
-    return { ...base, outcome: 'skip', value: normalizePackageName(ecosystem, dependency.name) };
-  }
-  if (isProtocolClient(ecosystem, dependency.name)) {
-    return {
-      ...base,
-      outcome: 'protocol-client',
-      value: normalizePackageName(ecosystem, dependency.name),
-    };
-  }
-  const match = matchPackage(ecosystem, dependency.name);
-  if (match === undefined) {
-    return {
-      ...base,
-      outcome: 'unmapped',
-      value: normalizePackageName(ecosystem, dependency.name),
-    };
+  if (classified.outcome !== 'vendor') {
+    return { ...base, outcome: classified.outcome, value: classified.name };
   }
   // A vendor only in a dev section is build-time; a build-time vendor stays so.
   const vendorClass: VendorClass =
-    dependency.class === 'build-time' ? 'build-time' : match.entry.class;
+    dependency.class === 'build-time' ? 'build-time' : classified.match.entry.class;
   return {
     ...base,
     outcome: 'vendor',
-    value: match.entry.catalogName,
+    value: classified.match.entry.catalogName,
     detail: { ...base.detail, class: vendorClass },
   };
 }
 
 const PARSERS: Record<PackageEcosystem, (contents: string, name: string) => Declared[]> = {
-  npm: (contents) => parseJsonSections(contents, ['dependencies', 'devDependencies']),
+  npm: (contents) =>
+    parseJsonSections(contents, [
+      'dependencies',
+      'peerDependencies',
+      'optionalDependencies',
+      'devDependencies',
+    ]),
   composer: (contents) => parseJsonSections(contents, ['require', 'require-dev']),
   pip: (contents, name) =>
     name === 'pyproject.toml' ? parsePyproject(contents) : parseRequirements(contents),
@@ -160,14 +170,14 @@ function parseJsonSections(contents: string, sections: readonly string[]): Decla
   } catch {
     return [];
   }
-  if (typeof parsed !== 'object' || parsed === null) return [];
+  if (!isPlainRecord(parsed)) return [];
   const lines = contents.split('\n');
   const declared: Declared[] = [];
   for (const scope of sections) {
-    const section = (parsed as Record<string, unknown>)[scope];
-    if (typeof section !== 'object' || section === null || Array.isArray(section)) continue;
+    const section = parsed[scope];
+    if (!isPlainRecord(section)) continue;
     const start = lines.findIndex((line) => line.includes(`"${scope}"`));
-    for (const [name, version] of Object.entries(section as Record<string, unknown>)) {
+    for (const [name, version] of Object.entries(section)) {
       const line = findLine(lines, (text) => text.includes(`"${name}"`), start);
       declared.push({
         name,
@@ -181,11 +191,15 @@ function parseJsonSections(contents: string, sections: readonly string[]): Decla
   return declared;
 }
 
+/**
+ * The first line at or after `from` that passes the test; {@link UNKNOWN_LINE}
+ * when the section key itself was not found (`from` is -1) or nothing matches,
+ * as happens in a minified manifest where every finding sits on line 1 anyway.
+ */
 function findLine(lines: readonly string[], test: (line: string) => boolean, from: number): number {
-  for (let index = Math.max(from, 0); index < lines.length; index += 1) {
-    if (test(lines[index] ?? '')) return index + 1;
-  }
-  return 1;
+  if (from < 0) return UNKNOWN_LINE;
+  const index = lines.findIndex((text, position) => position >= from && test(text));
+  return index < 0 ? UNKNOWN_LINE : index + 1;
 }
 
 const PIP_REQUIREMENT =
@@ -223,26 +237,34 @@ interface TomlAssignment {
   line: number;
 }
 
-/** Characters of `text` outside quoted strings, with `#` comments removed. */
-function tomlCode(text: string): string {
+/**
+ * `text` up to its first `#` outside quoted strings (`keepStrings`), or only
+ * the characters outside quoted strings with the comment removed (the default,
+ * for bracket counting).
+ */
+function tomlCode(text: string, options: { keepStrings?: boolean } = {}): string {
   let out = '';
   let quote: string | undefined;
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index] ?? '';
     if (quote !== undefined) {
-      if (char === '\\' && quote === '"') index += 1;
-      else if (char === quote) quote = undefined;
+      if (options.keepStrings === true) out += char;
+      if (char === '\\' && quote === '"') {
+        if (options.keepStrings === true) out += text[index + 1] ?? '';
+        index += 1;
+      } else if (char === quote) quote = undefined;
       continue;
     }
     if (char === '"' || char === "'") quote = char;
     else if (char === '#') break;
-    else out += char;
+    if (char !== '#') out += char;
   }
   return out;
 }
 
 const TOML_HEADER = /^\[\[?\s*([^\]]+?)\s*\]\]?\s*$/;
-const TOML_KEY = /^("[^"]*"|'[^']*'|[A-Za-z0-9._-]+)\s*=\s*(.*)$/;
+/** A bare or quoted key; a dotted key (`serde.version = "1"`) is `key` plus `subkey`. */
+const TOML_KEY = /^("[^"]*"|'[^']*'|[A-Za-z0-9_-]+)(?:\.([A-Za-z0-9_.-]+))?\s*=\s*(.*)$/;
 
 /**
  * A line-level TOML reader: enough for dependency tables, no more. Tracks the
@@ -258,7 +280,11 @@ function readToml(contents: string): TomlAssignment[] {
     const line = index + 1;
     const code = tomlCode(raw);
     if (open !== undefined) {
-      open.assignment.value = [...open.assignment.value, { text: raw, line }];
+      // Comments inside an array never reach the value: `# "stripe",` is not a dependency.
+      open.assignment.value = [
+        ...open.assignment.value,
+        { text: tomlCode(raw, { keepStrings: true }), line },
+      ];
       open.depth += depthDelta(code);
       if (open.depth <= 0) open = undefined;
       return;
@@ -272,14 +298,16 @@ function readToml(contents: string): TomlAssignment[] {
     const match = TOML_KEY.exec(raw.trim());
     if (match === null || match[1] === undefined) return;
     const key = match[1].replaceAll(/^["']|["']$/g, '');
+    const value = tomlCode(match[3] ?? '', { keepStrings: true });
     const assignment: TomlAssignment = {
-      table,
-      key,
-      value: [{ text: match[2] ?? '', line }],
+      // `serde.version = "1"` is the subtable `[dependencies.serde]` on one line.
+      table: match[2] === undefined ? table : `${table}.${key}`,
+      key: match[2] === undefined ? key : match[2].slice(match[2].lastIndexOf('.') + 1),
+      value: [{ text: value, line }],
       line,
     };
     assignments.push(assignment);
-    const depth = depthDelta(tomlCode(match[2] ?? ''));
+    const depth = depthDelta(tomlCode(value));
     if (depth > 0) open = { assignment, depth };
   });
   return assignments;
@@ -334,18 +362,13 @@ function parsePyproject(contents: string): Declared[] {
       for (const item of quotedItems(assignment))
         push(parseRequirement(item.text, item.line, table));
     } else {
-      const poetry =
-        /^tool\.poetry\.(dependencies|dev-dependencies|group\.([^.]+)\.dependencies)(?:\.([^.]+))?$/.exec(
-          table,
-        );
-      if (poetry === null) continue;
-      const scope = poetry[1] ?? '';
-      const subtable = poetry[3];
-      if (subtable !== undefined && key !== 'version') continue;
-      const name = subtable ?? key;
+      const poetry = POETRY_TABLE.exec(table);
+      const dependency = poetry === null ? undefined : tableDependency(assignment, poetry);
+      if (poetry === null || dependency === undefined) continue;
+      const scope = poetry.groups?.scope ?? '';
       const cls: VendorClass =
-        scope === 'dependencies' || poetry[2] === 'main' ? 'runtime' : 'build-time';
-      push({ name, version: versionOf(assignment), line: assignment.line, scope, class: cls });
+        scope === 'dependencies' || poetry.groups?.group === 'main' ? 'runtime' : 'build-time';
+      push({ ...dependency, scope, class: cls });
     }
   }
   return declared;
@@ -358,23 +381,37 @@ function parsePyproject(contents: string): Declared[] {
 function parseCargo(contents: string): Declared[] {
   const declared: Declared[] = [];
   for (const assignment of readToml(contents)) {
-    const match =
-      /^(?:target\.[^.]+\.)?(dependencies|dev-dependencies|build-dependencies)(?:\.([^.]+))?$/.exec(
-        assignment.table,
-      );
-    if (match === null) continue;
-    const scope = match[1] ?? '';
-    const subtable = match[2];
-    if (subtable !== undefined && assignment.key !== 'version') continue;
-    declared.push({
-      name: subtable ?? assignment.key,
-      version: versionOf(assignment),
-      line: assignment.line,
-      scope,
-      class: scopeClass(scope),
-    });
+    const match = CARGO_TABLE.exec(assignment.table);
+    const dependency = match === null ? undefined : tableDependency(assignment, match);
+    if (match === null || dependency === undefined) continue;
+    const scope = match.groups?.scope ?? '';
+    declared.push({ ...dependency, scope, class: scopeClass(scope) });
   }
   return declared;
+}
+
+const POETRY_TABLE =
+  /^tool\.poetry\.(?<scope>dependencies|dev-dependencies|group\.(?<group>[^.]+)\.dependencies)(?:\.(?<subtable>[^.]+))?$/;
+const CARGO_TABLE =
+  /^(?:target\.[^.]+\.)?(?<scope>dependencies|dev-dependencies|build-dependencies)(?:\.(?<subtable>[^.]+))?$/;
+
+/**
+ * The dependency a key in a dependency table names: the key itself in
+ * `[table]`, or the subtable's name when the key is `version` in
+ * `[table.name]`; any other key of a subtable (`features`, `optional`) is not
+ * a dependency.
+ */
+function tableDependency(
+  assignment: TomlAssignment,
+  table: RegExpExecArray,
+): Pick<Declared, 'name' | 'version' | 'line'> | undefined {
+  const subtable = table.groups?.subtable;
+  if (subtable !== undefined && assignment.key !== 'version') return undefined;
+  return {
+    name: subtable ?? assignment.key,
+    version: versionOf(assignment),
+    line: assignment.line,
+  };
 }
 
 /** `go.mod`: every `require` line, single or block form; the module line is not a dependency. */
