@@ -15,24 +15,25 @@ may change in minor releases.
 - The scan finds the third-party providers a repository depends on, from
   dependency manifests, deploy files, terraform, CI files, container registries
   and the git remote, and reports them in a "Third-party providers" section
-  with `package@version` and `path:line` evidence. `uptimerobot scan --json`
-  carries them under `thirdParty`; the seed context schema is 2.
-- `uptimerobot scan --apply` resolves those providers against the catalog and
+  with `package@version` and `path:line` evidence.
+- `uptimerobot scan --json` carries those providers under `thirdParty`; the
+  seed context schema is 2.
+- `uptimerobot scan --apply` resolves the providers against the catalog and
   the account, prints a proposal, asks, and creates a third-party service per
-  confirmed row. New flags: `--apply`, `--confirm`, `--only <provider>[=<id>]`,
-  `--skip <provider>`, `--include-build-time`, `--api-key`. An agent or a pipe
-  must pass `--confirm`; a missing or declined confirmation exits 2 with
-  `CONFIRMATION_REQUIRED`. New error code `TRACKED_SET_PARTIAL`.
+  confirmed row. An agent or a pipe must pass `--confirm`; a missing or
+  declined confirmation exits 2 with `CONFIRMATION_REQUIRED`. New error code
+  `TRACKED_SET_PARTIAL` (exit 1) when the account list could not be read in
+  full.
 - `uptimerobot init` offers to create the third-party services at an
-  interactive terminal and records the outcome in `uptimerobot-scan.md`;
-  `--no-third-party` skips the offer. The setup guide gains a third-party step
-  between discovery and the endpoint proposal.
+  interactive terminal, records the outcome in `uptimerobot-scan.md`, and its
+  `--json` output gains a `thirdParty` field; `--no-third-party` skips the
+  offer. The setup guide gains a third-party step between discovery and the
+  endpoint proposal.
 
 ### Changed
 
-- `uptimerobot verify` reports a repeated pagination cursor as a partial list.
-- A confirmation prompt whose input ends before an answer counts as a no
-  instead of leaving the command waiting.
+- A confirmation prompt whose input ends before an answer (Ctrl-D, Ctrl-C, a
+  closed stdin) counts as a no instead of leaving the command waiting.
 
 ## [1.1.0] - 2026-11-04
 
