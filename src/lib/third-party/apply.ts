@@ -72,10 +72,13 @@ export interface ApplyOutput {
 const CREATE = operations['monitors:create:third-party-service'];
 /**
  * The status the API answers a create for a provider the account already
- * tracks with. An assumption: the API documents no code for it, so the refusal
- * body is kept on the result for a reader to check.
+ * tracks with. An assumption: the API documents no code for it, so a 409 is
+ * believed only when the account's own list, read again, names the provider,
+ * and the refusal body is kept on the result for a reader to check.
  */
 const ALREADY_TRACKED_STATUS = 409;
+/** Characters a terminal would obey; nothing from the API or the catalog may carry them to the screen. */
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/g;
 
 function normalizeName(name: string): string {
   return name.trim().toLowerCase();
@@ -93,6 +96,20 @@ export function parseOnly(entry: string): { name: string; id?: number } {
 /** The first `--only` entry with an `=` but no usable id, if any. */
 export function malformedOnly(only: readonly string[]): string | undefined {
   return only.find((entry) => entry.includes('=') && parseOnly(entry).id === undefined);
+}
+
+/** The `--only` and `--skip` names that match no candidate: a typo would otherwise be a silent no-op. */
+export function unknownSelections(
+  candidates: readonly ThirdPartyCandidate[],
+  selection: ApplySelection,
+): string[] {
+  const known = new Set(candidates.map((candidate) => normalizeName(candidate.provider)));
+  return [
+    ...selection.only.map((entry) => ({ entry, name: parseOnly(entry).name })),
+    ...selection.skip.map((entry) => ({ entry, name: normalizeName(entry) })),
+  ]
+    .filter(({ name }) => !known.has(name))
+    .map(({ entry }) => entry);
 }
 
 /** The candidates `--only` and `--skip` leave in, before any search is made. */
@@ -184,7 +201,10 @@ export async function createProposed(
     } catch (error) {
       if (!(error instanceof ApiFailure)) throw error;
       const detail = { code: error.cliError.code, message: error.cliError.message };
-      if (error.cliError.status === ALREADY_TRACKED_STATUS) {
+      if (
+        error.cliError.status === ALREADY_TRACKED_STATUS &&
+        (await isTrackedNow(access, row.catalog.id))
+      ) {
         results.push({ provider: row.provider, status: 'already-tracked', detail });
         continue;
       }
@@ -195,11 +215,33 @@ export async function createProposed(
   return { results };
 }
 
+/** Whether the account's own list names the provider; a failed read reads as no. */
+async function isTrackedNow(access: ApiAccess, providerId: number): Promise<boolean> {
+  try {
+    const tracked = await readTrackedProviders(access);
+    return tracked.providerIds.includes(providerId);
+  } catch {
+    return false;
+  }
+}
+
 export interface ApplyRun {
   proposal: Proposal;
   confirmation: Confirmation;
   results: readonly CreateResult[];
   failure?: ApiFailure;
+  /** Why the creates were not attempted although confirmed. */
+  blocked?: CliError;
+}
+
+/** With a partial tracked set a create could duplicate a service the list never reached. */
+export function partialTrackedError(): CliError {
+  return {
+    code: 'TRACKED_SET_PARTIAL',
+    command: APPLY_COMMAND,
+    message:
+      'The account has more third-party services than the list could read, so a create could duplicate one. Nothing was created; create the proposed services by hand or retry later.',
+  };
 }
 
 /**
@@ -224,6 +266,9 @@ export async function runApply(options: {
         ? 'confirmed'
         : await options.confirm(proposal, toCreate);
   if (confirmation !== 'confirmed') return { proposal, confirmation, results: [] };
+  if (proposal.tracked.partial) {
+    return { proposal, confirmation, results: [], blocked: partialTrackedError() };
+  }
   const { results, failure } = await createProposed(proposal.proposal, options.access);
   return failure === undefined
     ? { proposal, confirmation, results }
@@ -272,9 +317,13 @@ function evidenceCell(row: ResolvedCandidate): string {
   return [...shown, ...(more > 0 ? [`+${more} more`] : [])].join(', ');
 }
 
-/** A table cell can hold an upstream message; a pipe in it would split the row. */
+/** Text from the API or the catalog: no control characters, and no pipe or newline in a table cell. */
+function plain(text: string): string {
+  return text.replaceAll(CONTROL_CHARACTERS, '').replaceAll(/\s+/g, ' ');
+}
+
 function cell(text: string): string {
-  return text.replaceAll('|', '/').replaceAll(/\s+/g, ' ');
+  return plain(text).replaceAll('|', '/');
 }
 
 /** The proposal as a Markdown table plus the allowance line. */
@@ -322,9 +371,9 @@ function describeResult(item: CreateResult): string {
     case 'created':
       return `${item.provider} (monitor ${item.monitorId ?? 'unknown'})`;
     case 'failed':
-      return `${item.provider} (${item.error.message})`;
+      return `${item.provider} (${plain(item.error.message)})`;
     default:
-      return `${item.provider} (${item.detail.message})`;
+      return `${item.provider} (${plain(item.detail.message)})`;
   }
 }
 

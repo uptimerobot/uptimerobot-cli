@@ -21,9 +21,12 @@ interface Stub {
 interface StubOptions {
   catalog?: Record<string, Record<string, unknown>[]>;
   allowance?: { used: number; limit: number } | 'none';
-  /** Status and body for the nth create (0-based); default creates. */
-  createReplies?: Record<number, { status: number; body: unknown }>;
+  /** Status and body for the nth create (0-based); default creates. `thenTrack` puts the
+   * monitor in the account list first, as a concurrent create would have. */
+  createReplies?: Record<number, { status: number; body: unknown; thenTrack?: boolean }>;
   monitors?: Record<string, unknown>[];
+  /** Every monitor page points at the same next cursor, so the list reads as partial. */
+  monitorsLoop?: boolean;
 }
 
 const row = (id: number, name: string, isTracked = false): Record<string, unknown> => ({
@@ -91,7 +94,10 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
       });
     }
     if (request.method === 'GET' && url.pathname === '/v3/monitors') {
-      return reply(200, { data: monitors });
+      return reply(
+        200,
+        options.monitorsLoop ? { data: monitors, nextCursor: 'again' } : { data: monitors },
+      );
     }
     if (request.method === 'GET' && url.pathname === '/v3/third-party-providers') {
       return reply(200, { data: catalog[url.searchParams.get('search') ?? ''] ?? [] });
@@ -99,8 +105,17 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
     if (request.method === 'POST' && url.pathname === '/v3/monitors') {
       const scripted = options.createReplies?.[creates];
       creates += 1;
-      if (scripted !== undefined) return reply(scripted.status, scripted.body);
       const providerId = providerIdOf(body);
+      if (scripted !== undefined) {
+        if (scripted.thenTrack === true) {
+          monitors.push({
+            id: 4000 + creates,
+            type: 'THIRD_PARTY_SERVICE',
+            config: { thirdPartyService: { providerId } },
+          });
+        }
+        return reply(scripted.status, scripted.body);
+      }
       const monitor = {
         id: nextId,
         friendlyName: `provider-${String(providerId)}`,
@@ -307,7 +322,11 @@ describe('uptimerobot scan --apply', () => {
   it('reports a create refused as already tracked and goes on', async () => {
     const stub = await startStub({
       createReplies: {
-        0: { status: 409, body: { code: 'ALREADY_TRACKED', message: 'Provider already tracked' } },
+        0: {
+          status: 409,
+          body: { code: 'ALREADY_TRACKED', message: 'Provider already tracked' },
+          thenTrack: true,
+        },
       },
     });
     const root = await writeRepository(REPOSITORY);
@@ -325,6 +344,88 @@ describe('uptimerobot scan --apply', () => {
       { provider: 'Stripe', status: 'created', monitorId: 5000 },
       { provider: 'Vercel', status: 'created', monitorId: 5001 },
     ]);
+  });
+
+  it('treats a 409 the account list does not explain as a failure that stops the run', async () => {
+    const stub = await startStub({
+      createReplies: { 0: { status: 409, body: { code: 'LIMIT', message: 'plan limit reached' } } },
+    });
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(8);
+    const output = JSON.parse(result.stdout);
+    expect(output.results).toEqual([
+      {
+        provider: 'Resend',
+        status: 'failed',
+        error: { code: 'HTTP_409', message: 'plan limit reached' },
+      },
+    ]);
+    expect(posts(stub)).toHaveLength(1);
+  });
+
+  it('refuses to create when the tracked set is partial', async () => {
+    const stub = await startStub({ monitorsLoop: true });
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stderr)).toMatchObject({ error: { code: 'TRACKED_SET_PARTIAL' } });
+    const output = JSON.parse(result.stdout);
+    expect(output.tracked.partial).toBe(true);
+    expect(output.confirmation).toBe('confirmed');
+    expect(output.results).toEqual([]);
+    expect(posts(stub)).toEqual([]);
+  });
+
+  it('rejects an --only or --skip name the scan did not find, and keeps the path an argument', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(REPOSITORY);
+
+    const typo = await runCli(['scan', root, '--apply', '--json', '--only', 'Vercell'], env(stub));
+    expect(typo.exitCode).toBe(2);
+    expect(JSON.parse(typo.stderr)).toMatchObject({
+      error: { code: 'INVALID_INPUT', message: 'No scanned provider matches Vercell.' },
+    });
+    expect(stub.hits).toEqual([]);
+
+    const pathAfterFlag = await runCli(
+      ['scan', '--apply', '--confirm', '--json', '--only', 'Resend', root],
+      env(stub),
+    );
+    expect(pathAfterFlag.exitCode).toBe(0);
+    expect(JSON.parse(pathAfterFlag.stdout).repoRoot).toBe(root);
+    expect(posts(stub)).toHaveLength(1);
+  });
+
+  it('keeps terminal control characters from the API off the screen', async () => {
+    const stub = await startStub({
+      catalog: {
+        ...DEFAULT_CATALOG,
+        stripe: [
+          {
+            ...row(801, 'Stripe'),
+            statusPageUrl: 'https://x.example/\u001b[2J\u001b]0;pwned\u0007|\nEVIL',
+          },
+        ],
+      },
+      createReplies: { 0: { status: 500, body: { message: 'boom\u001b[31m' } } },
+    });
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm'], {
+      UPTIMEROBOT_AGENT: '0',
+      UPTIMEROBOT_API_KEY: 'u123-secret',
+      UPTIMEROBOT_DEV_API_URL: stub.url,
+      UPTIMEROBOT_OUTPUT: 'table',
+    });
+
+    expect(result.stdout).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/);
+    expect(result.stdout).toContain('https://x.example/[2J]0;pwned/EVIL');
+    expect(result.stdout).toContain('Not created: Resend (boom[31m).');
   });
 
   it('limits the run with --only and --skip by provider name, case-insensitively', async () => {

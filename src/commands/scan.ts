@@ -21,6 +21,7 @@ import {
   formatSummary,
   malformedOnly,
   runApply,
+  unknownSelections,
 } from '../lib/third-party/apply.js';
 import { resolveFormat } from '../output/resolve-format.js';
 
@@ -66,11 +67,17 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
     'include-build-time': Flags.boolean({
       description: 'Also propose build-time providers (CI, code host, registries)',
     }),
+    // Non-greedy, so `--only Stripe ./repo` keeps the path an argument.
     only: Flags.string({
       description: 'Provider to include, repeatable; <provider>=<id> settles an ambiguous row',
       multiple: true,
+      multipleNonGreedy: true,
     }),
-    skip: Flags.string({ description: 'Provider to leave out, repeatable', multiple: true }),
+    skip: Flags.string({
+      description: 'Provider to leave out, repeatable',
+      multiple: true,
+      multipleNonGreedy: true,
+    }),
     // Named and spelled exactly as the generated commands spell it, so the one
     // hand-written command that prints a document is not the odd one out. It
     // matters most when redirecting: a pipe defaults to JSON, so saving the
@@ -113,6 +120,18 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
       // scan and before any request, like every other authenticated command.
       const access = await this.resolveAccess(flags['api-key'], mode);
       const context = await scanRepository(repoRoot);
+      const unknown = unknownSelections(context.thirdParty.candidates, selection);
+      if (unknown.length > 0) {
+        return this.fail(
+          {
+            code: 'INVALID_INPUT',
+            expected: 'a provider the scan found',
+            message: `No scanned provider matches ${unknown.join(', ')}.`,
+            path: 'only',
+          },
+          2,
+        );
+      }
       await this.apply(context, access, mode, machineOutput, selection, flags.confirm === true);
       return context;
     }
@@ -134,6 +153,17 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
       if (error instanceof AuthenticationError) {
         return this.fail({ code: error.code, message: error.message }, error.exitCode);
       }
+      if (error instanceof TypeError && error.message.includes('Invalid URL')) {
+        return this.fail(
+          {
+            code: 'INVALID_INPUT',
+            expected: 'an absolute URL',
+            message: 'UPTIMEROBOT_DEV_API_URL is not a valid URL.',
+            path: 'UPTIMEROBOT_DEV_API_URL',
+          },
+          2,
+        );
+      }
       throw error;
     }
   }
@@ -147,14 +177,22 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
     selection: ApplySelection,
     confirmFlag: boolean,
   ): Promise<void> {
-    const printProposal = (proposal: Proposal): void => {
-      if (!machineOutput) for (const line of formatProposal(proposal)) this.log(line);
+    const printProposal = (proposal: Proposal, toStderr = false): void => {
+      if (machineOutput && !toStderr) return;
+      for (const line of formatProposal(proposal)) {
+        if (toStderr) this.logToStderr(line);
+        else this.log(line);
+      }
     };
     // The prompt is the one every destructive generated command uses; an agent
     // or a pipe gets no prompt and must pass --confirm.
     const confirm = async (proposal: Proposal, toCreate: number): Promise<Confirmation> => {
-      printProposal(proposal);
-      if (!confirmationAvailable(mode)) return 'required';
+      if (!confirmationAvailable(mode)) {
+        printProposal(proposal);
+        return 'required';
+      }
+      // A person at a terminal must see what they confirm, even when stdout is JSON.
+      printProposal(proposal, machineOutput);
       const summary = `Create ${toCreate} third-party ${toCreate === 1 ? 'service' : 'services'}`;
       return (await requestConfirmation(summary, mode)) ? 'confirmed' : 'declined';
     };
@@ -191,6 +229,7 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
     if (run.confirmation === 'required' || run.confirmation === 'declined') {
       return this.fail(confirmationRequiredError(run.confirmation), 2);
     }
+    if (run.blocked !== undefined) return this.fail(run.blocked, 1);
     if (run.failure !== undefined) return this.fail(run.failure.cliError, run.failure.exitCode);
   }
 
