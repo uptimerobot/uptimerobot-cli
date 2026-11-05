@@ -108,7 +108,7 @@ uptimerobot monitors delete 797054213 --confirm
 
 ## Set up a repository for a coding agent
 
-`uptimerobot init` prepares a repository for agent-driven monitoring. It resolves credentials, scans the working tree for endpoints and scheduled jobs, writes what it found to `uptimerobot-scan.md` at the project root, detects which coding agent you use, and makes the UptimeRobot skills reachable from it.
+`uptimerobot init` prepares a repository for agent-driven monitoring. It resolves credentials, scans the working tree for endpoints, scheduled jobs and the third-party providers the code depends on, writes what it found to `uptimerobot-scan.md` at the project root, offers to create a third-party service for each provider it can match in the catalog, detects which coding agent you use, and makes the UptimeRobot skills reachable from it.
 
 ```sh
 uptimerobot init
@@ -116,14 +116,15 @@ uptimerobot init
 
 The scan is pattern matching over the working tree. It reaches no network, runs nothing, and never reads `.env` values. Its output sits between `<!-- uptimerobot:scan:begin ... -->` markers, so a rerun replaces only what a previous run wrote and refuses to overwrite a file it did not write.
 
-| Flag              | Effect                                                                     |
-| ----------------- | -------------------------------------------------------------------------- |
-| `--api-key <key>` | Key for this run, ahead of `UPTIMEROBOT_API_KEY` and the stored login      |
-| `--target <name>` | Agent to set up: `claude-code`, `codex`, `cursor`, `opencode`, or `gemini` |
-| `--no-agent`      | Scan and write the seed context only; skip agent setup                     |
-| `--uninstall`     | Remove what a previous run planted, then exit                              |
-| `--yes`           | Never prompt; run non-interactively                                        |
-| `--json`          | Structured JSON, which also implies `--yes`                                |
+| Flag               | Effect                                                                       |
+| ------------------ | ---------------------------------------------------------------------------- |
+| `--api-key <key>`  | Key for this run, ahead of `UPTIMEROBOT_API_KEY` and the stored login        |
+| `--target <name>`  | Agent to set up: `claude-code`, `codex`, `cursor`, `opencode`, or `gemini`   |
+| `--no-agent`       | Scan and write the seed context only; skip agent setup                       |
+| `--no-third-party` | Do not offer to create third-party services for the providers the scan found |
+| `--uninstall`      | Remove what a previous run planted, then exit                                |
+| `--yes`            | Never prompt; run non-interactively                                          |
+| `--json`           | Structured JSON, which also implies `--yes`                                  |
 
 `--uninstall` is terminal, cannot be combined with `--target` or `--no-agent`, and runs before the authentication check because it only removes local files — so it works logged out. Without `--target`, a non-interactive run that detects no agent, or more than one, fails and lists the candidates rather than guessing. Note that `--target` names the agent being set up, while `--agent` marks the invocation itself as agent-driven; they are different flags and can be passed together. `uptimerobot init --help` carries the full precedence rules.
 
@@ -149,7 +150,7 @@ uptimerobot monitors create http \
   --tag-names production
 ```
 
-Two smaller commands do parts of the same job on their own. `uptimerobot scan [PATH]` prints the seed context and nothing else — no API key, no network, no writes — so it can be run against any directory as often as you like:
+Two smaller commands do parts of the same job on their own. `uptimerobot scan [PATH]` prints the seed context and nothing else, no API key, no network, no writes, so it can be run against any directory as often as you like:
 
 ```sh
 uptimerobot scan
@@ -157,6 +158,60 @@ uptimerobot scan ../other-repo --json
 ```
 
 `uptimerobot skills install` only makes the skills reachable, using the same detection and the same `AGENTS.md` block. `uptimerobot skills install --uninstall` removes that block and leaves the rest of the file byte-identical.
+
+### Third-party providers in the scan
+
+The scan reads dependency manifests (`package.json`, `requirements*.txt`, `pyproject.toml`, `go.mod`, `Gemfile`, `composer.json`, `Cargo.toml`), deploy files (`vercel.json`, `fly.toml`, `wrangler.toml`, `serverless.yml`, ...), terraform providers and resource prefixes, CI files, container registries in `Dockerfile` and compose files, and the root git remote, and names the providers they point at. Only structured fields count: a package name in a README or a comment yields nothing, and `.env*` files are never opened. The report ends with a section like this:
+
+```
+## Third-party providers (candidates for third-party services)
+
+### Runtime (proposed by default)
+
+- AWS: boto3@1.35.80 (requirements.txt:2), infra/main.tf:1 (provider "aws"); signals: eu-central-1, s3
+- Stripe: stripe@17.4.0 (package.json:9)
+- Vercel: vercel.json
+
+### Build-time (optional, affects deploys, not users)
+
+- GitHub: git remote: github.com, .github/workflows/ci.yml
+
+### Skipped
+
+- next, react (framework or UI library)
+- pg (protocol client, self-hosted or unknown)
+```
+
+The JSON output carries the same data under `thirdParty` (`candidates`, `skipped`, `unknown`, `totals`), and the seed context schema is 2.
+
+`uptimerobot scan --apply` turns the runtime candidates into third-party services. It needs an API key like every other authenticated command and fails with the usual authentication error before any request when none resolves. It reads the account's third-party services and allowance, searches the catalog once per provider, prints a proposal, asks, then creates:
+
+```sh
+uptimerobot scan --apply                       # proposal, question, creates on yes
+uptimerobot scan --apply --json                # proposal only; exits 2 with CONFIRMATION_REQUIRED
+uptimerobot scan --apply --confirm --json      # creates every proposed row, reports monitor ids
+uptimerobot scan --apply --confirm --only Stripe --only Vercel
+uptimerobot scan --apply --confirm --skip Sentry
+uptimerobot scan --apply --confirm --only Vercel=862   # settles an ambiguous row
+uptimerobot scan --apply --include-build-time  # also proposes CI, code host and registries
+```
+
+| Flag                   | Effect                                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `--apply`              | Resolve the providers against the catalog and the account and create a third-party service per confirmed row |
+| `--confirm`            | Skip the question; required for an agent or a pipe                                                           |
+| `--only <provider>`    | Keep only these providers, repeatable; `<provider>=<id>` picks one of an ambiguous row's catalog ids         |
+| `--skip <provider>`    | Leave these providers out, repeatable                                                                        |
+| `--include-build-time` | Also propose build-time providers                                                                            |
+| `--api-key <key>`      | Key for this run, ahead of `UPTIMEROBOT_API_KEY` and the stored login                                        |
+
+Each proposal row ends in one status: `create`, `already-tracked`, `not-in-catalog`, `ambiguous` (the catalog has several exact matches; pick one with `--only <provider>=<id>`), `unresolved` (the lookup failed; retry), or `over-allowance` (the plan has no slot left; runtime rows keep slots first). A row is accepted only when its catalog name equals the provider's name exactly, so `Clerk.io` never stands in for `Clerk`. Whether a provider is already tracked comes from the account's own monitor list, not from the catalog's cached `isTracked`, so two confirmed runs in a row create each provider once.
+
+Creates run one at a time in proposal order and stop at the first failure, which is never retried. A create the API refuses because the provider is already tracked is reported as such and does not stop the run. Nothing from the repository reaches the request: the only value sent is a catalog id. When the account has more third-party services than the list could read, every create is refused with `TRACKED_SET_PARTIAL`, since one could duplicate a service the list never reached.
+
+Exit codes: 0 when the confirmed set was created in full or there was nothing to create; 2 when confirmation was required and absent, or declined at the prompt; the API's mapped exit code when a create failed. The `--json` document carries `schemaVersion`, `repoRoot`, `proposal[]` (each row with its `status`, `catalog` row or `choices`, `evidence`, `hints`), `allowance` (`used`, `limit`, `proposed`), `tracked` (`providerIds`, `partial`), `confirmation` (`required`, `declined`, `confirmed`, `not-needed`) and `results[]` (`created` with `monitorId`, `already-tracked`, or `failed` with the error).
+
+An interactive `uptimerobot init` makes the same offer before it starts the agent and records the outcome in `uptimerobot-scan.md`; `--no-third-party`, `--yes`, `--json`, an agent or a pipe skip it and the handoff points at `scan --apply` instead. The setup guide tells the agent to run `scan --apply --json`, show the proposal, and pass `--confirm` only after the user says yes in the conversation.
 
 ## Find the right command
 
@@ -210,6 +265,8 @@ uptimerobot monitors third-party-service incidents activity-log 800123456 123456
 ```
 
 `uptimerobot monitors delete <id>` stops tracking a service. A third-party service cannot be paused.
+
+To find the providers a repository depends on and track them in one go, see `uptimerobot scan --apply` under [Set up a repository for a coding agent](#set-up-a-repository-for-a-coding-agent).
 
 ## Heartbeat monitors
 
@@ -296,7 +353,7 @@ Those three commands report acceptance rather than completion. The API answers `
 
 ## Safety
 
-Destructive commands prompt in an interactive terminal. Agents and non-interactive processes must pass `--confirm` explicitly:
+Destructive commands, and `scan --apply`, prompt in an interactive terminal. Agents and non-interactive processes must pass `--confirm` explicitly:
 
 ```sh
 uptimerobot monitors delete 797054213 --confirm --json
