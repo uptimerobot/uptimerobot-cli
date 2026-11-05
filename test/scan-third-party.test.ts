@@ -197,6 +197,50 @@ describe('scanThirdParty', () => {
     ]);
   });
 
+  it('skips a nested checkout whose .git is a file, and tolerates a root .git file', async () => {
+    const root = await writeRepository({
+      '.git': 'gitdir: /somewhere/else/.git/worktrees/x\n',
+      'vercel.json': '{}',
+      'sub/.git': 'gitdir: ../.git/modules/sub\n',
+      'sub/netlify.toml': '',
+    });
+    expect(vendorsOf(await scanThirdParty(root))).toEqual(['Vercel']);
+  });
+
+  it('walks only the CI dot directories and reads root dotfiles', async () => {
+    const root = await writeRepository({
+      '.gitlab-ci.yml': 'stages: []\n',
+      '.circleci/config.yml': 'version: 2.1\n',
+      '.github/workflows/ci.yml': 'on: push\n',
+      '.github/package.json': '{ "dependencies": { "stripe": "1" } }',
+      '.vercel/project.json': '{}',
+      '.terraform/modules/x/main.tf': 'provider "aws" {}\n',
+      '.idea/vercel.json': '{}',
+    });
+    const findings = await scanThirdParty(root);
+    expect(summarize(findings)).toEqual([
+      'vendor CircleCI ci-file .circleci/config.yml:1 app=. ci: .circleci/config.yml',
+      'vendor Stripe npm .github/package.json:1 app=. stripe@1',
+      'vendor GitHub ci-file .github/workflows/ci.yml:1 app=. ci: .github/workflows/',
+      'vendor GitLab ci-file .gitlab-ci.yml:1 app=. ci: .gitlab-ci.yml',
+    ]);
+  });
+
+  it('reads two manifests in one directory and ignores a symlinked file', async () => {
+    const root = await writeRepository({
+      'svc/package.json': '{ "dependencies": { "stripe": "1" } }',
+      'svc/requirements.txt': 'boto3==1\n',
+      'other/vercel.json': '{}',
+    });
+    await symlink(join(root, 'other/vercel.json'), join(root, 'svc/vercel.json'));
+    const findings = await scanThirdParty(root);
+    expect(findings.map((f) => `${f.value} ${f.evidence.file} ${f.detail.app}`)).toEqual([
+      'Vercel other/vercel.json .',
+      'Stripe svc/package.json svc',
+      'AWS svc/requirements.txt svc',
+    ]);
+  });
+
   it('reads the root git remote host and nothing from a nested checkout', async () => {
     const root = await writeRepository({
       '.git/config':
@@ -245,6 +289,7 @@ describe('scanThirdParty', () => {
     });
     const onTruncated = vi.fn();
     const findings = await scanThirdParty(root, { maxFiles: 2, onTruncated });
+    expect(openedFiles).toHaveLength(2);
     expect(vendorsOf(findings)).toEqual(['Stripe', 'Resend']);
     expect(onTruncated).toHaveBeenCalledTimes(1);
 
@@ -278,6 +323,8 @@ describe('scanThirdParty', () => {
     'server.pem',
     'id.key',
     'Dockerfile.key',
+    'Dockerfile.KEY',
+    'ID_RSA.PEM',
     '.npmrc',
     '.pypirc',
     'credentials',
@@ -301,6 +348,18 @@ describe('scanThirdParty', () => {
     const findings = await scanThirdParty(root);
     expect(vendorsOf(findings)).toEqual(['Vercel']);
     expect(openedFiles.map((path) => path.slice(root.length + 1))).toEqual(['vercel.json']);
+  });
+
+  it('charges the root git config to the file budget', async () => {
+    const root = await writeRepository({
+      '.git/config': '[remote "origin"]\n\turl = https://github.com/acme/app.git\n',
+      'vercel.json': '{}',
+    });
+    const onTruncated = vi.fn();
+    const findings = await scanThirdParty(root, { maxFiles: 1, onTruncated });
+    expect(vendorsOf(findings)).toEqual(['GitHub']);
+    expect(onTruncated).toHaveBeenCalledTimes(1);
+    expect(await scanThirdParty(root, { maxFiles: 0 })).toEqual([]);
   });
 
   it('never reads a file over the byte budget', async () => {

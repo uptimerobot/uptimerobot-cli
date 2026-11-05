@@ -43,7 +43,7 @@ export interface ThirdPartyFinding extends ScanFinding {
 }
 
 export interface ScanThirdPartyOptions {
-  /** Bytes. Files larger than this are never read. Defaults to 512 KiB. */
+  /** Bytes. Files larger than this are never read, silently; `onTruncated` is about the walk. Defaults to 512 KiB. */
   maxFileBytes?: number;
   /** Files the scan may read before the walk stops. Defaults to 20000. */
   maxFiles?: number;
@@ -88,12 +88,18 @@ const SECRET_SUFFIXES = ['.tfstate', '.tfvars', '.pem', '.key'];
  * Files that may hold a secret, excluded before anything can open them even
  * when their name also looks like a candidate (`Dockerfile.key`, `.env.tf`).
  */
-export function isSecretFile(name: string): boolean {
+export function isSecretFile(fileName: string): boolean {
+  const name = fileName.toLowerCase();
   if (name === '.env' || name === '.envrc' || name.startsWith('.env.') || name.endsWith('.env')) {
     return true;
   }
   if (SECRET_NAMES.has(name)) return true;
   return SECRET_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
+
+function isToolingPath(path: string): boolean {
+  const first = path.slice(0, path.indexOf('/'));
+  return WALKED_DOT_DIRECTORIES.has(first);
 }
 
 export async function scanThirdParty(
@@ -109,12 +115,13 @@ export async function scanThirdParty(
   };
 
   const candidates: Candidate[] = [];
-  await collectRootGitConfig(repoRoot, candidates);
+  await collectRootGitConfig(repoRoot, budget, candidates);
   await collectFiles(repoRoot, repoRoot, budget, candidates);
   if (budget.truncated) options.onTruncated?.();
 
+  // A manifest under a CI directory (`.github/package.json`) is tooling, not an app.
   const appDirectories = candidates
-    .filter((candidate) => isManifestFile(candidate.path))
+    .filter((candidate) => isManifestFile(candidate.path) && !isToolingPath(candidate.path))
     .map((candidate) => directoryOf(candidate.path));
 
   const findings: ThirdPartyFinding[] = [];
@@ -133,10 +140,21 @@ export async function scanThirdParty(
   return findings;
 }
 
-async function collectRootGitConfig(repoRoot: string, candidates: Candidate[]): Promise<void> {
+/** Queues the root `.git/config`, charged to the file budget like any other candidate. */
+async function collectRootGitConfig(
+  repoRoot: string,
+  budget: WalkBudget,
+  candidates: Candidate[],
+): Promise<void> {
   const absolute = join(repoRoot, '.git', 'config');
   try {
-    if ((await stat(absolute)).isFile()) candidates.push({ absolute, path: '.git/config' });
+    if (!(await stat(absolute)).isFile()) return;
+    if (budget.files <= 0) {
+      budget.truncated = true;
+      return;
+    }
+    budget.files -= 1;
+    candidates.push({ absolute, path: '.git/config' });
   } catch {
     // No git directory, or a worktree's .git file: no remote to read.
   }
