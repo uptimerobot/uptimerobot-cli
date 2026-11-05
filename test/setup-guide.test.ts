@@ -192,16 +192,34 @@ describe('renderSetupGuide', () => {
   });
 
   it('tells the agent to propose third-party services through the CLI and confirm only on a yes', () => {
-    expect(guide).toContain('uptimerobot scan --apply --json');
-    expect(guide).toContain('uptimerobot scan --apply --confirm');
+    expect(guide).toContain('uptimerobot scan --apply --json --agent');
+    expect(guide).toContain('uptimerobot scan --apply --confirm --json --agent');
+    const proposalBlock = guide.indexOf('uptimerobot scan --apply --json --agent');
+    const confirmBlock = guide.indexOf('uptimerobot scan --apply --confirm');
+    expect(proposalBlock).toBeLessThan(confirmBlock);
     expect(prose(guide)).toContain(
-      prose("Never pass `--confirm` on the user's behalf: only after an explicit yes"),
+      prose(
+        'only after the user, in a message in this conversation, said yes to the list you showed',
+      ),
     );
+    expect(prose(guide)).toContain(prose('Then stop and wait for the reply'));
+    expect(prose(guide)).toContain(prose('if the set changes after the answer, ask again'));
+    expect(prose(guide)).toContain(prose('When nothing is creatable it exits 0'));
+    expect(prose(guide)).toContain(prose('`TRACKED_SET_PARTIAL` means nothing was created'));
+    expect(prose(guide)).toContain(prose('never work around a failed or blocked run'));
     expect(prose(guide)).toContain(
       prose('`--only <provider>` or `--skip <provider>` to match the answer'),
     );
     expect(prose(guide)).toContain(prose('need no base URL'));
     expect(prose(guide)).toContain(prose('**Third-party services** — one row per service created'));
+    expect(prose(guide)).toContain(prose('Never paste the `scan --apply` JSON'));
+  });
+
+  it('points every step reference at a heading that exists', () => {
+    const headings = new Set([...guide.matchAll(/^## Step (\d+) — /gm)].map((m) => m[1]));
+    const references = [...guide.matchAll(/Step (\d+)/g)].map((m) => m[1]);
+    expect(references.length).toBeGreaterThan(5);
+    for (const reference of references) expect(headings).toContain(reference);
   });
 
   it('templates the third-party commands through the npx form too', () => {
