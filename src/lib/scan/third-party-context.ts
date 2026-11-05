@@ -72,7 +72,9 @@ export function buildThirdPartyContext(findings: readonly ThirdPartyFinding[]): 
     if (vendorSignals.length === 0) {
       const hint = group[0];
       if (hint !== undefined) {
-        mentions.set(provider, { name: provider, reason: 'hint', evidence: hint.evidence });
+        if (!mentions.has(provider)) {
+          mentions.set(provider, { name: provider, reason: 'hint', evidence: hint.evidence });
+        }
       }
       continue;
     }
@@ -122,12 +124,14 @@ function hintsOf(findings: readonly ThirdPartyFinding[]): string[] {
     if (service !== '') words.add(service);
     if (region !== '') words.add(region);
   }
-  return [...words];
+  return [...words].sort();
 }
 
 // --- Rendering ---------------------------------------------------------------
 
 const PACKAGE_KINDS = new Set(['npm', 'pip', 'go', 'gem', 'composer', 'cargo']);
+/** Markdown shows this many evidence items per provider; the JSON output keeps them all. */
+const MAX_EVIDENCE_PER_LINE = 5;
 
 /** `stripe@17.4.0 (package.json:12)`, `vercel.json`, `infra/main.tf:10 (provider "aws")`. */
 function evidenceText(evidence: ThirdPartyEvidence): string {
@@ -142,7 +146,9 @@ function evidenceText(evidence: ThirdPartyEvidence): string {
 }
 
 function candidateLine(candidate: ThirdPartyCandidate): string {
-  const items = candidate.evidence.map(evidenceText);
+  const shown = candidate.evidence.slice(0, MAX_EVIDENCE_PER_LINE).map(evidenceText);
+  const hidden = candidate.evidence.length - shown.length;
+  const items = hidden > 0 ? [...shown, `+${hidden} more`] : shown;
   const hints = candidate.hints.length === 0 ? '' : `; signals: ${candidate.hints.join(', ')}`;
   return `- ${candidate.provider}: ${items.join(', ')}${hints}`;
 }

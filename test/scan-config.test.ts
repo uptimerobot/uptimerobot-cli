@@ -247,11 +247,13 @@ describe('terraform', () => {
     ]);
   });
 
-  it('shares the file region across providers as a hint', () => {
-    const contents = 'provider "google" {}\nprovider "aws" {\n  region = "eu-west-1"\n}\n';
+  it('shares the file region across cloud providers as a hint, never with others', () => {
+    const contents =
+      'provider "google" {}\nprovider "cloudflare" {}\nprovider "aws" {\n  region = "eu-west-1"\n}\n';
     const findings = matchConfig({ path: 'main.tf', contents });
     expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
       ['Google Cloud', 'eu-west-1'],
+      ['Cloudflare', ''],
       ['AWS', 'eu-west-1'],
     ]);
   });

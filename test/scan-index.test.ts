@@ -878,7 +878,7 @@ describe('health path recovered from an unreachable healthcheck', () => {
 });
 
 describe('scanRepository', () => {
-  it('aggregates all three scanners over a real tree', async () => {
+  it('aggregates every scanner over a real tree', async () => {
     const root = await makeRepo({
       'app/api/health/route.ts': 'export async function GET() { return Response.json({}); }\n',
       'app/blog/[slug]/page.tsx': 'export default function Post() { return null; }\n',

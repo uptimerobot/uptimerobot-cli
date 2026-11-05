@@ -14,9 +14,9 @@
  * - `serverless.yml`: `provider.name`, or the inline `provider:` value.
  * - `Procfile`: a Heroku hint, never a candidate.
  * - `*.tf`: `provider "<name>"`, `resource` and `data` types by prefix, and the
- *   first region-shaped `region = "..."` line, stamped on every finding of
- *   the file as a hint (a multi-provider file shares it); line and block
- *   comments skipped, heredocs not.
+ *   first region-shaped `region = "..."` line, stamped on every AWS, Google
+ *   Cloud and Azure finding of the file as a hint; line and block comments
+ *   skipped, heredocs not.
  * - CI files by path: `.yml` and `.yaml` files under a CI directory pattern,
  *   or a basename pattern at the root or any depth; build-time on their own.
  * - `Dockerfile*`, `*.Dockerfile`, compose files: the registry host of each
@@ -109,6 +109,8 @@ const SERVERLESS_PROVIDERS: ReadonlyMap<string, string> = new Map([
 ]);
 
 const HEROKU = VENDORS.find((entry) => entry.catalogName === 'Heroku');
+/** The providers a terraform `region` value describes; other providers in the same file share none of it. */
+const REGION_VENDORS: ReadonlySet<string> = new Set(['AWS', 'Google Cloud', 'Microsoft Azure']);
 
 /** The only shapes that may reach the report: an AWS or Google style region and a short service word. */
 /** AWS (`eu-central-1`, `us-gov-west-1`) and Google Cloud (`europe-west1`) region names; anything else is free text. */
@@ -282,7 +284,9 @@ function terraform(contents: string): Match[] {
     const value = TF_REGION.exec(line)?.[1];
     if (region === '' && value !== undefined && REGION.test(value)) region = value;
   }
-  return matches.map((match) => ({ ...match, region }));
+  return matches.map((match) =>
+    REGION_VENDORS.has(match.entry.catalogName) ? { ...match, region } : match,
+  );
 }
 
 function ciFile(path: string): Match[] {

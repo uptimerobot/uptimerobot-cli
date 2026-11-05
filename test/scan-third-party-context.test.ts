@@ -90,7 +90,7 @@ describe('buildThirdPartyContext', () => {
             app: '.',
           },
         ],
-        hints: ['eu-central-1', 's3', 'db'],
+        hints: ['db', 'eu-central-1', 's3'],
       },
       {
         provider: 'Stripe',
@@ -182,6 +182,24 @@ describe('buildThirdPartyContext', () => {
     ]);
   });
 
+  it('keeps a build-time provider a candidate when only a hint sits beside it', () => {
+    const context = buildThirdPartyContext([
+      finding('Heroku', {
+        outcome: 'hint',
+        kind: 'file',
+        file: 'Procfile',
+        detail: { signal: 'Procfile' },
+      }),
+      finding('Heroku', {
+        detail: { signal: 'heroku@1.0.0', scope: 'devDependencies', class: 'build-time' },
+      }),
+    ]);
+    expect(context.candidates.map((candidate) => [candidate.provider, candidate.class])).toEqual([
+      ['Heroku', 'build-time'],
+    ]);
+    expect(context.unknown).toEqual([]);
+  });
+
   it('keeps a provider a candidate when a hint sits beside a real signal', () => {
     const context = buildThirdPartyContext([
       finding('Heroku', {
@@ -266,6 +284,22 @@ describe('formatThirdPartySection', () => {
       '- pg (protocol client, self-hosted or unknown)',
       '- 2 other dependencies not in the vendor map, listed in the JSON output',
     ]);
+  });
+
+  it('shows at most five evidence items per provider and counts the rest', () => {
+    const context = buildThirdPartyContext(
+      Array.from({ length: 7 }, (_, index) =>
+        finding('Stripe', {
+          file: `apps/a${index}/package.json`,
+          detail: { app: `apps/a${index}` },
+        }),
+      ),
+    );
+    const line = formatThirdPartySection(context).find((text) => text.startsWith('- Stripe'));
+    expect(line).toBe(
+      '- Stripe: apps/a0: stripe@1.0.0 (apps/a0/package.json:1), apps/a1: stripe@1.0.0 (apps/a1/package.json:1), apps/a2: stripe@1.0.0 (apps/a2/package.json:1), apps/a3: stripe@1.0.0 (apps/a3/package.json:1), apps/a4: stripe@1.0.0 (apps/a4/package.json:1), +2 more',
+    );
+    expect(context.candidates[0]?.evidence).toHaveLength(7);
   });
 
   it('says so when there is nothing in a group', () => {
