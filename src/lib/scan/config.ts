@@ -13,8 +13,10 @@
  * - `serverless.yml`: `provider.name`, or the inline `provider:` value.
  * - `Procfile`: a Heroku hint, never a candidate.
  * - `*.tf`: `provider "<name>"`, `resource` and `data` types by prefix, and the
- *   plain-word `region = "..."` value; block comments skipped, and every
- *   pattern is anchored to the line start so a line comment never matches.
+ *   first plain-word `region = "..."` line, stamped on every finding of the
+ *   file as a hint (a multi-provider file shares it); block comments skipped,
+ *   and every pattern is anchored to the line start so a line comment never
+ *   matches.
  * - CI files by path; build-time on their own.
  * - `Dockerfile*`, `*.Dockerfile`, compose files: the registry host of each
  *   `FROM` or `image:` reference; build-time on their own.
@@ -98,8 +100,8 @@ const TF_REGION = /^\s*region\s*=\s*"([^"\n]{0,64})"/;
 const DOCKER_FROM = /^\s*from\s+(?:--platform=\S+\s+)?(\S+)/i;
 const COMPOSE_IMAGE = /^\s*-?\s*image:\s*["']?([^\s"'#]+)/;
 const GIT_URL = /^\s*url\s*=\s*(\S+)/;
-const SERVERLESS_INLINE = /^provider:\s*([a-z]+)\s*$/;
-const SERVERLESS_NAME = /^\s+name:\s*["']?([a-z]+)["']?\s*$/;
+const SERVERLESS_INLINE = /^provider:\s*([a-z]+)\s*(?:#.*)?$/;
+const SERVERLESS_NAME = /^(\s+)name:\s*["']?([a-z]+)["']?\s*(?:#.*)?$/;
 
 function basename(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
@@ -114,32 +116,41 @@ function entryFor(kind: ConfigSignal['kind'], pattern: string): VendorEntry | un
     ?.entry;
 }
 
-/** `*.pkg.dev` matches by suffix, anything else exactly. */
+/** Each `*` in a pattern stands for one or more labels (`*.dkr.ecr.*.amazonaws.com`). */
 function hostMatches(pattern: string, host: string): boolean {
-  if (pattern.startsWith('*.')) return host.endsWith(pattern.slice(1));
-  return host === pattern;
+  if (!pattern.includes('*')) return host === pattern;
+  const expression = pattern.split('*').map(escapeRegExp).join('[a-z0-9.-]+');
+  return new RegExp(`^${expression}$`).test(host);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function registryFor(reference: string): { entry: VendorEntry; pattern: string } | undefined {
   const slash = reference.indexOf('/');
   if (slash === -1) return undefined;
-  const host = reference.slice(0, slash).toLowerCase();
+  const host = reference.slice(0, slash).toLowerCase().replace(/:\d+$/, '');
   const item = SIGNALS.find(
     ({ signal }) => signal.kind === 'registry' && hostMatches(signal.pattern, host),
   );
   return item === undefined ? undefined : { entry: item.entry, pattern: item.signal.pattern };
 }
 
-function remoteHost(url: string): string | undefined {
+/** The host of an https, ssh or scp-style remote; userinfo up to its last `@` dropped. */
+function remoteHost(url: string): string {
   const scheme = url.indexOf('://');
-  const authority =
-    scheme === -1
-      ? url.replace(/^[^@]*@/, '').replace(/[:/].*$/, '')
-      : url
-          .slice(scheme + 3)
-          .replace(/^[^@/]*@/, '')
-          .replace(/[:/].*$/, '');
-  return authority.toLowerCase();
+  const rest = scheme === -1 ? url : url.slice(scheme + 3);
+  const authority = rest.slice(0, firstIndexOf(rest, scheme === -1 ? ':/' : '/'));
+  return authority
+    .slice(authority.lastIndexOf('@') + 1)
+    .replace(/:\d*$/, '')
+    .toLowerCase();
+}
+
+function firstIndexOf(text: string, characters: string): number {
+  const positions = [...characters].map((c) => text.indexOf(c)).filter((i) => i !== -1);
+  return positions.length === 0 ? text.length : Math.min(...positions);
 }
 
 function deployFile(path: string): Match[] {
@@ -153,12 +164,19 @@ function deployFile(path: string): Match[] {
   return entry === undefined ? [] : [{ kind: 'file', entry, signal: name, line: 1 }];
 }
 
+/**
+ * `provider: aws` inline, or `name:` as a direct child of `provider:` (the
+ * first child's indent fixes the depth, so `environment.name` never counts).
+ */
 function serverless(name: string, contents: string): Match[] {
   let inProvider = false;
+  let childIndent: string | undefined;
   for (const [index, line] of lines(contents).entries()) {
+    if (line.trim() === '') continue;
+    if (inProvider && childIndent === undefined) childIndent = /^\s*/.exec(line)?.[0];
     const inline = SERVERLESS_INLINE.exec(line);
     const nested = inProvider ? SERVERLESS_NAME.exec(line) : null;
-    const providerName = inline?.[1] ?? nested?.[1];
+    const providerName = inline?.[1] ?? (nested?.[1] === childIndent ? nested?.[2] : undefined);
     if (providerName !== undefined) {
       const tfName = SERVERLESS_PROVIDERS[providerName];
       const entry = tfName === undefined ? undefined : entryFor('terraform-provider', tfName);
@@ -166,7 +184,7 @@ function serverless(name: string, contents: string): Match[] {
         ? []
         : [{ kind: 'file', entry, signal: `${name} provider ${providerName}`, line: index + 1 }];
     }
-    if (/^provider:\s*$/.test(line)) inProvider = true;
+    if (/^provider:\s*(?:#.*)?$/.test(line)) inProvider = true;
     else if (inProvider && !/^\s/.test(line)) inProvider = false;
   }
   return [];
@@ -225,7 +243,9 @@ function terraform(contents: string): { matches: Match[]; region: string } {
 function ciFile(path: string): Match[] {
   const item = SIGNALS.find(({ signal }) => {
     if (signal.kind !== 'ci-file') return false;
-    if (signal.pattern.endsWith('/')) return path.startsWith(signal.pattern);
+    if (signal.pattern.endsWith('/')) {
+      return path.startsWith(signal.pattern) && /\.ya?ml$/.test(path);
+    }
     return path === signal.pattern || path.endsWith(`/${signal.pattern}`);
   });
   return item === undefined ? [] : [{ kind: 'ci-file', entry: item.entry, signal: path, line: 1 }];

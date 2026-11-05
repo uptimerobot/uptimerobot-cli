@@ -57,6 +57,20 @@ describe('deploy and platform files', () => {
         contents: 'provider:\n  runtime: nodejs20\ncustom:\n  name: google\n',
       }),
     ).toEqual([]);
+    expect(
+      matchConfig({
+        path: 'serverless.yml',
+        contents: 'provider:\n  stage: dev\n  environment:\n    name: google\n',
+      }),
+    ).toEqual([]);
+    expect(
+      vendors(
+        matchConfig({
+          path: 'serverless.yml',
+          contents: 'provider: # cloud\n\n  # which one\n  name: aws # for now\n',
+        }),
+      ),
+    ).toEqual(['AWS']);
   });
 
   it('treats a Procfile as a Heroku hint, never a candidate', () => {
@@ -212,6 +226,15 @@ describe('terraform', () => {
     ]);
   });
 
+  it('shares the file region across providers as a hint', () => {
+    const contents = 'provider "google" {}\nprovider "aws" {\n  region = "eu-west-1"\n}\n';
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['Google Cloud', 'eu-west-1'],
+      ['AWS', 'eu-west-1'],
+    ]);
+  });
+
   it('reads only .tf files', () => {
     expect(matchConfig({ path: 'notes.md', contents: 'provider "aws" {}' })).toEqual([]);
     expect(matchConfig({ path: 'main.tf.bak', contents: 'provider "aws" {}' })).toEqual([]);
@@ -240,6 +263,10 @@ describe('CI files', () => {
 
   it('ignores other files under .github', () => {
     expect(matchConfig({ path: '.github/dependabot.yml', contents: '' })).toEqual([]);
+    expect(matchConfig({ path: '.github/workflows/README.md', contents: '' })).toEqual([]);
+    expect(vendors(matchConfig({ path: '.github/workflows/vercel.json', contents: '' }))).toEqual([
+      'Vercel',
+    ]);
     expect(matchConfig({ path: '.github/workflows', contents: '' })).toEqual([]);
     expect(matchConfig({ path: 'docs/.github/workflows/ci.yml', contents: '' })).toEqual([]);
   });
@@ -250,7 +277,7 @@ describe('container registries', () => {
     const dockerfile = [
       'FROM node:22-alpine AS build',
       'FROM --platform=linux/amd64 ghcr.io/acme/base:1.4',
-      'from 123456789012.dkr.ecr.amazonaws.com/acme/api:prod',
+      'from 123456789012.dkr.ecr.eu-west-1.amazonaws.com/acme/api:prod',
       '# FROM gcr.io/commented/out',
       'RUN echo "FROM gcr.io/not-a-from"',
       'FROM europe-west1-docker.pkg.dev/acme-prod/images/api',
@@ -269,7 +296,7 @@ describe('container registries', () => {
       expect.objectContaining({
         value: 'AWS',
         evidence: { file: 'Dockerfile', line: 3 },
-        detail: expect.objectContaining({ signal: 'FROM *.dkr.ecr.amazonaws.com' }),
+        detail: expect.objectContaining({ signal: 'FROM *.dkr.ecr.*.amazonaws.com' }),
       }),
       expect.objectContaining({
         value: 'Google Cloud',
@@ -328,10 +355,18 @@ describe('container registries', () => {
   });
 
   it('matches registry hosts exactly or by dotted suffix, never by substring', () => {
-    const contents = ['FROM evilpkg.dev/x', 'FROM notgcr.io/x', 'FROM gcr.io.evil.example/x'].join(
-      '\n',
-    );
+    const contents = [
+      'FROM evilpkg.dev/x',
+      'FROM notgcr.io/x',
+      'FROM gcr.io.evil.example/x',
+      'FROM 1.dkr.ecr.amazonaws.com/x',
+    ].join('\n');
     expect(matchConfig({ path: 'Dockerfile', contents })).toEqual([]);
+    const regional = ['FROM eu.gcr.io/p/x', 'FROM ghcr.io:443/x/y'].join('\n');
+    expect(vendors(matchConfig({ path: 'Dockerfile', contents: regional }))).toEqual([
+      'Google Cloud',
+      'GitHub',
+    ]);
   });
 
   it('does not read FROM or image lines from other files', () => {
@@ -353,6 +388,8 @@ describe('git remotes', () => {
       '\turl = git@gitlab.com:acme/app.git',
       '[remote "legacy"]',
       '\turl = ssh://git@bitbucket.org:22/acme/app.git',
+      '[remote "odd"]',
+      '\turl = https://u:p@w@github.com/acme/app.git',
       '[remote "internal"]',
       '\turl = https://git.acme.internal/app.git',
       '',
@@ -376,11 +413,25 @@ describe('git remotes', () => {
         evidence: expect.objectContaining({ line: 9 }),
         detail: expect.objectContaining({ signal: 'git remote: bitbucket.org' }),
       }),
+      expect.objectContaining({ value: 'GitHub', evidence: expect.objectContaining({ line: 11 }) }),
     ]);
     const report = JSON.stringify(findings);
     expect(report).not.toContain('ghp_');
     expect(report).not.toContain('deploy');
     expect(report).not.toContain('acme');
+    expect(report).not.toContain('p@w');
+  });
+
+  it('drops host-confusion URLs', () => {
+    const config = [
+      '[remote "a"]',
+      '\turl = https://github.com@evil.example/x.git',
+      '[remote "b"]',
+      '\turl = https://evil.example/x@github.com',
+      '[remote "c"]',
+      '\turl = evil.example:x@github.com/y.git',
+    ].join('\n');
+    expect(matchConfig({ path: '.git/config', contents: config })).toEqual([]);
   });
 
   it('reads only the root repository config', () => {
