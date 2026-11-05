@@ -1,8 +1,8 @@
 /**
  * The one cursor loop every list reader shares: follow `nextCursor` until the
  * API stops handing one out, a cursor repeats (a loop that would never end),
- * or the page cap is reached. The cap is the only way `truncated` becomes
- * true, so a caller can say its list is a prefix rather than the whole.
+ * or the page cap is reached. A repeated cursor and the cap both make
+ * `truncated` true: either way the list is a prefix, not the whole.
  */
 import { isPlainRecord } from './objects.js';
 import { normalizeResult } from '../output/normalize-result.js';
@@ -32,9 +32,8 @@ export async function pageThrough(options: PageOptions): Promise<{ truncated: bo
       isPlainRecord(normalized) && typeof normalized.nextCursor === 'string'
         ? normalized.nextCursor
         : undefined;
-    if (next === undefined || next.length === 0 || seenCursors.has(next)) {
-      return { truncated: false };
-    }
+    if (next === undefined || next.length === 0) return { truncated: false };
+    if (seenCursors.has(next)) return { truncated: true };
     seenCursors.add(next);
     cursor = next;
   }

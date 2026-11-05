@@ -5,6 +5,7 @@ import {
   type ApiAccess,
   type ResolvedCandidate,
   ABORTED_CODE,
+  TIME_BUDGET_CODE,
   applyAllowance,
   readAllowance,
   readTrackedProviders,
@@ -131,10 +132,10 @@ describe('readTrackedProviders', () => {
     expect(requests).toEqual(['/v3/monitors?limit=200', '/v3/monitors?limit=200&cursor=p2']);
   });
 
-  it('stops on a cursor it has already followed', async () => {
+  it('stops on a cursor it has already followed and calls the set partial', async () => {
     const loop = ok({ data: [thirdPartyMonitor(1, 801)], nextCursor: 'again' });
     const { access, requests } = stubApi({ monitors: [loop, loop, loop] });
-    expect(await readTrackedProviders(access)).toEqual({ providerIds: [801], partial: false });
+    expect(await readTrackedProviders(access)).toEqual({ providerIds: [801], partial: true });
     expect(requests).toHaveLength(2);
   });
 
@@ -326,7 +327,8 @@ describe('resolveCandidates', () => {
       [861, false],
       [862, true],
     ]);
-    expect(resolved[1]).toMatchObject({ status: 'already-tracked', catalog: { id: 801 } });
+    // Both rows are tracked; the one the account's own list names is reported.
+    expect(resolved[1]).toMatchObject({ status: 'already-tracked', catalog: { id: 803 } });
   });
 
   it('resolves nothing for no candidates and searches by the search term, not the name', async () => {
@@ -467,6 +469,86 @@ describe('resolveCandidates', () => {
     ]);
   }, 30_000);
 
+  it('rejects a catalog that is not one, and rows without a usable id', async () => {
+    const { access } = stubApi({
+      searches: {
+        stripe: [{ status: 200, body: '<html>captive portal</html>' }],
+        vercel: [{ status: 200, body: { data: 'nope' } }],
+        resend: [
+          rows(row(0, 'Resend'), row(1.5, 'Resend'), row(-3, 'Resend'), {
+            ...row(7, 'Resend'),
+            id: '7',
+          }),
+        ],
+      },
+    });
+    const resolved = await resolveCandidates(
+      [candidate('Stripe'), candidate('Vercel'), candidate('Resend')],
+      { access, includeBuildTime: false, tracked: NONE },
+    );
+    expect(resolved[0]).toMatchObject({
+      status: 'unresolved',
+      failure: { code: 'INVALID_RESPONSE' },
+    });
+    expect(resolved[1]).toMatchObject({
+      status: 'unresolved',
+      failure: { code: 'INVALID_RESPONSE' },
+    });
+    expect(resolved[2]).toMatchObject({ status: 'not-in-catalog', seen: [] });
+  });
+
+  it('throws on a refused credential instead of marking the row unresolved', async () => {
+    const { access } = stubApi({ searches: { stripe: [{ status: 401, body: {} }] } });
+    await expect(
+      resolveCandidates([candidate('Stripe')], { access, includeBuildTime: false, tracked: NONE }),
+    ).rejects.toMatchObject({ cliError: { status: 401 } });
+  });
+
+  it('does not count a failure that belongs to one term toward the abort', async () => {
+    const missing: Reply = { status: 404, body: {} };
+    const { access } = stubApi({
+      searches: { a: [missing], b: [missing], c: [missing], d: [rows(row(1, 'D'))] },
+    });
+    const resolved = await resolveCandidates(
+      ['A', 'B', 'C', 'D'].map((name) => candidate(name)),
+      { access, includeBuildTime: false, tracked: NONE },
+    );
+    expect(statuses(resolved).map(([, status]) => status)).toEqual([
+      'unresolved',
+      'unresolved',
+      'unresolved',
+      'create',
+    ]);
+    expect(resolved[0]).toMatchObject({ failure: { code: 'HTTP_404' } });
+  });
+
+  it('leaves the rest unresolved once the time budget is spent', async () => {
+    const { access, requests } = stubApi({
+      searches: { a: [rows(row(1, 'A'))], b: [rows(row(2, 'B'))] },
+    });
+    const resolved = await resolveCandidates([candidate('A'), candidate('B')], {
+      access,
+      includeBuildTime: false,
+      tracked: NONE,
+      timeBudgetMs: -1,
+    });
+    expect(resolved.map((item) => item.status)).toEqual(['unresolved', 'unresolved']);
+    expect(resolved[0]).toMatchObject({ failure: { code: TIME_BUDGET_CODE } });
+    expect(requests).toEqual([]);
+  });
+
+  it('collapses duplicate rows with one id', async () => {
+    const { access } = stubApi({
+      searches: { stripe: [rows(row(801, 'Stripe'), row(801, 'Stripe'))] },
+    });
+    const [resolved] = await resolveCandidates([candidate('Stripe')], {
+      access,
+      includeBuildTime: false,
+      tracked: NONE,
+    });
+    expect(resolved).toMatchObject({ status: 'create', catalog: { id: 801 } });
+  });
+
   it('names the rows a search returned when none matched', async () => {
     const seen = Array.from({ length: 12 }, (_, index) =>
       row(100 + index, `Clerk Variant ${index}`),
@@ -597,6 +679,18 @@ describe('applyAllowance', () => {
     expect(statuses(rows)).toEqual([
       ['Supabase', 'already-tracked'],
       ['Stripe', 'create'],
+    ]);
+  });
+
+  it('rounds a fractional allowance down', () => {
+    const rows = applyAllowance(
+      [resolved('Stripe', 'runtime'), resolved('Vercel', 'runtime'), resolved('Resend', 'runtime')],
+      { used: 0, limit: 2.5 },
+    );
+    expect(statuses(rows).map(([, status]) => status)).toEqual([
+      'create',
+      'create',
+      'over-allowance',
     ]);
   });
 

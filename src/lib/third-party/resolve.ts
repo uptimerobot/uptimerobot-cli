@@ -8,10 +8,11 @@
  * API client, so a renamed path or parameter cannot leave this module talking
  * to a contract that no longer exists. `readTrackedProviders` and a refused
  * credential in `readAllowance` throw an `ApiFailure`; any other allowance
- * failure reads as "unknown" (null); a failed search marks its own row
- * `unresolved` and never stops the others, except that three failures in a
- * row abort the rest, since a rate limit or an outage will not clear by
- * asking again. Searches run one at a time: the catalog endpoint is rate
+ * failure reads as "unknown" (null); a refused credential on any search is
+ * thrown too. Any other failed search marks its own row `unresolved` and
+ * never stops the others, except that three transient failures in a row
+ * (rate limit, server error, transport) or a run past its time budget leave
+ * the rest unresolved, since those will not clear by asking again. Searches run one at a time: the catalog endpoint is rate
  * limited and sequential order keeps the proposal deterministic. The tracked
  * set comes from the account's monitor list, not from the search rows'
  * `isTracked`, because the catalog is cached (the `/third-party-providers`
@@ -85,9 +86,13 @@ const PROVIDERS_SEARCH = operations['third-party-providers:list'];
 const USER_ME = operations['user:me'];
 /** Names kept on a `not-in-catalog` row, enough to explain the miss without a repro. */
 const MAX_SEEN_NAMES = 10;
-/** Consecutive search failures after which the remaining candidates are left unresolved. */
+/** Consecutive transient failures after which the remaining candidates are left unresolved. */
 const MAX_CONSECUTIVE_FAILURES = 3;
+/** Wall-clock budget for the searches; each retried 429 can cost ten seconds. */
+const DEFAULT_TIME_BUDGET_MS = 60_000;
 export const ABORTED_CODE = 'ABORTED_AFTER_FAILURES';
+export const TIME_BUDGET_CODE = 'ABORTED_AFTER_TIME_BUDGET';
+const TRANSIENT_STATUSES = new Set([408, 429]);
 
 function trackedProviderId(item: unknown): number | undefined {
   if (!isPlainRecord(item) || item.type !== 'THIRD_PARTY_SERVICE') return undefined;
@@ -119,7 +124,8 @@ export async function readTrackedProviders(access: ApiAccess): Promise<TrackedPr
 function searchRow(item: unknown): CatalogChoice | undefined {
   if (!isPlainRecord(item)) return undefined;
   const { id, name, state, statusPageUrl, isTracked } = item;
-  if (typeof id !== 'number' || typeof name !== 'string') return undefined;
+  if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) return undefined;
+  if (typeof name !== 'string') return undefined;
   return {
     id,
     name,
@@ -132,8 +138,13 @@ function searchRow(item: unknown): CatalogChoice | undefined {
 async function search(access: ApiAccess, term: string): Promise<CatalogChoice[]> {
   const url = buildUrl(PROVIDERS_SEARCH, { path: {}, query: { search: term } }, access.apiUrl);
   const payload = await requestJson(access.client, url, PROVIDERS_SEARCH.method);
-  const items = isPlainRecord(payload) && Array.isArray(payload.data) ? payload.data : [];
-  return items.flatMap((item) => {
+  if (!isPlainRecord(payload) || !Array.isArray(payload.data)) {
+    throw new ApiFailure(
+      { code: 'INVALID_RESPONSE', message: 'The provider search did not return a catalog.' },
+      1,
+    );
+  }
+  return payload.data.flatMap((item) => {
     const row = searchRow(item);
     return row === undefined ? [] : [row];
   });
@@ -152,10 +163,15 @@ function resolveOne(
   const regionPrefix = `${candidate.provider.trim().toLowerCase()} `;
   const isTracked = (row: CatalogChoice): boolean =>
     row.isTracked || tracked.providerIds.includes(row.id);
-  const exact = rows
-    .filter((row) => normalizeCatalogName(row.name) === wanted)
-    .map((row) => ({ ...row, isTracked: isTracked(row) }));
-  const [row] = exact;
+  const exact = [
+    ...new Map(
+      rows
+        .filter((row) => normalizeCatalogName(row.name) === wanted)
+        .map((row) => [row.id, { ...row, isTracked: isTracked(row) }]),
+    ).values(),
+  ];
+  // Among rows the account tracks, the one its own monitor list names is the one to report.
+  const row = exact.find((item) => tracked.providerIds.includes(item.id)) ?? exact[0];
   if (row === undefined) {
     return {
       ...candidate,
@@ -179,6 +195,21 @@ export interface ResolveOptions {
   /** Build-time candidates are searched only when asked for. */
   includeBuildTime: boolean;
   tracked: TrackedProviders;
+  /** Milliseconds the searches may take in all; the rest are left unresolved. */
+  timeBudgetMs?: number;
+}
+
+/** A failure a retry may clear, which counts toward the abort; a 400 or 404 is this term's alone. */
+function isTransient(error: ApiFailure): boolean {
+  const status = error.cliError.status;
+  if (status === undefined) return true;
+  return TRANSIENT_STATUSES.has(status) || status >= 500;
+}
+
+function failureOf(error: unknown): ResolutionFailure {
+  return error instanceof ApiFailure
+    ? { code: error.cliError.code, message: error.cliError.message }
+    : { code: 'NETWORK_ERROR', message: error instanceof Error ? error.message : String(error) };
 }
 
 /**
@@ -197,17 +228,20 @@ export async function resolveCandidates(
       : []),
   ];
   const resolved: ResolvedCandidate[] = [];
+  const deadline = Date.now() + (options.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS);
   let consecutiveFailures = 0;
   for (const candidate of ordered) {
-    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-      resolved.push({
-        ...candidate,
-        status: 'unresolved',
-        failure: {
-          code: ABORTED_CODE,
-          message: `Not asked: the previous ${MAX_CONSECUTIVE_FAILURES} searches failed.`,
-        },
-      });
+    const aborted =
+      consecutiveFailures >= MAX_CONSECUTIVE_FAILURES
+        ? {
+            code: ABORTED_CODE,
+            message: `Not asked: the previous ${MAX_CONSECUTIVE_FAILURES} searches failed.`,
+          }
+        : Date.now() > deadline
+          ? { code: TIME_BUDGET_CODE, message: 'Not asked: the searches ran out of time.' }
+          : undefined;
+    if (aborted !== undefined) {
+      resolved.push({ ...candidate, status: 'unresolved', failure: aborted });
       continue;
     }
     try {
@@ -215,15 +249,14 @@ export async function resolveCandidates(
       resolved.push(resolveOne(candidate, rows, options.tracked));
       consecutiveFailures = 0;
     } catch (error) {
-      consecutiveFailures += 1;
-      const failure: ResolutionFailure =
-        error instanceof ApiFailure
-          ? { code: error.cliError.code, message: error.cliError.message }
-          : {
-              code: 'NETWORK_ERROR',
-              message: error instanceof Error ? error.message : String(error),
-            };
-      resolved.push({ ...candidate, status: 'unresolved', failure });
+      if (error instanceof ApiFailure) {
+        const status = error.cliError.status;
+        if (status === 401 || status === 403) throw error;
+        if (isTransient(error)) consecutiveFailures += 1;
+      } else {
+        consecutiveFailures += 1;
+      }
+      resolved.push({ ...candidate, status: 'unresolved', failure: failureOf(error) });
     }
   }
   return resolved;
@@ -261,11 +294,11 @@ export function applyAllowance(
   allowance: Allowance | null,
 ): ResolvedCandidate[] {
   if (allowance === null) return [...rows];
-  let remaining = Math.max(0, allowance.limit - allowance.used);
+  let remaining = Math.max(0, Math.floor(allowance.limit - allowance.used));
   const keep = new Set<ResolvedCandidate>();
   for (const cls of ['runtime', 'build-time'] as const) {
     for (const row of rows) {
-      if (row.status !== 'create' || row.class !== cls || remaining === 0) continue;
+      if (row.status !== 'create' || row.class !== cls || remaining <= 0) continue;
       keep.add(row);
       remaining -= 1;
     }
