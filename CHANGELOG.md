@@ -10,6 +10,20 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- A heartbeat monitor's `heartbeatUrl` is redacted. The API returns the ping
+  URL under that name, and only `url` and `pingUrl` were hidden, so JSON, JSONL,
+  `--all` tables, and agent mode printed the URL that anyone can report the
+  heartbeat with. `--reveal-secrets` and `--raw` still show it.
+
+### Changed
+
+- `pingUrl` mirrors the API's `heartbeatUrl` instead of being composed by the
+  CLI, as the 1.0.0 entry said it would once the API had the field. The values
+  are the same for the production API. `UPTIMEROBOT_HEARTBEAT_URL` now applies
+  only to responses without `heartbeatUrl`.
+
 ## [1.1.0] - 2026-11-04
 
 ### Added
