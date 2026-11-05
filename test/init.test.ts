@@ -931,7 +931,7 @@ describe('init', () => {
 
         expect(output).toMatchObject({
           thirdParty: {
-            offered: true,
+            kind: 'completed',
             confirmation: 'confirmed',
             proposal: [{ provider: 'Stripe', status: 'create' }],
             results: [{ provider: 'Stripe', status: 'created', monitorId: 5001 }],
@@ -945,6 +945,8 @@ describe('init', () => {
         expect(api.posts).toHaveLength(1);
         const content = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
         expect(content).toContain('### Outcome of `uptimerobot init`');
+        expect(content).toContain('<!-- uptimerobot:scan:third-party-outcome:begin -->');
+        expect(content).toContain('<!-- uptimerobot:scan:third-party-outcome:end -->');
         expect(content).toContain('Created: Stripe (monitor 5001).');
         expect(logged.join('\n')).toContain('| Stripe | stripe@17.4.0 | runtime |');
       } finally {
@@ -964,7 +966,9 @@ describe('init', () => {
 
         const output = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
 
-        expect(output).toMatchObject({ thirdParty: { offered: true, confirmation: 'declined' } });
+        expect(output).toMatchObject({
+          thirdParty: { kind: 'completed', confirmation: 'declined' },
+        });
         expect(api.posts).toEqual([]);
         const content = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
         expect(content).toContain('Nothing was created.');
@@ -1014,7 +1018,7 @@ describe('init', () => {
         const output = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
 
         expect(output).toMatchObject({
-          thirdParty: { offered: true, error: { code: 'HTTP_500' } },
+          thirdParty: { kind: 'failed', error: { code: 'HTTP_500' } },
           seedContext: { outcome: 'created' },
         });
         expect(api.posts).toEqual([]);
