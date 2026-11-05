@@ -195,7 +195,12 @@ function catalogCell(row: ResolvedCandidate): string {
 function evidenceCell(row: ResolvedCandidate): string {
   const shown = row.evidence.slice(0, 3).map((item) => item.signal);
   const more = row.evidence.length - shown.length;
-  return [...shown, ...(more > 0 ? [`+${more} more`] : [])].join(', ').replaceAll('|', '/');
+  return [...shown, ...(more > 0 ? [`+${more} more`] : [])].join(', ');
+}
+
+/** A table cell can hold an upstream message; a pipe in it would split the row. */
+function cell(text: string): string {
+  return text.replaceAll('|', '/').replaceAll(/\s+/g, ' ');
 }
 
 /** The proposal as a Markdown table plus the allowance line. */
@@ -205,9 +210,14 @@ export function formatProposal(proposal: Proposal): string[] {
     '| --- | --- | --- | --- | --- |',
   ];
   for (const row of proposal.proposal) {
-    lines.push(
-      `| ${row.provider} | ${evidenceCell(row)} | ${row.class} | ${catalogCell(row)} | ${ACTIONS[row.status]} |`,
-    );
+    const cells = [
+      row.provider,
+      evidenceCell(row),
+      row.class,
+      catalogCell(row),
+      ACTIONS[row.status],
+    ];
+    lines.push(`| ${cells.map(cell).join(' | ')} |`);
   }
   if (proposal.proposal.length === 0) lines.push('| (no candidates) | | | | |');
   const { allowance, tracked } = proposal;
