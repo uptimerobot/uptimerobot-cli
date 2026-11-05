@@ -2,11 +2,12 @@
  * Reads deploy, infrastructure, CI, container and git configuration and names
  * the third-party providers they point at, with `path:line` evidence.
  *
- * Every finding carries a pattern, a provider name or a plain word, never a
- * value copied from the repository: a terraform resource type but not its
- * label or bucket name, a registry pattern but not the image path, a remote's
- * host but not its URL. Pure: takes a path and the file's contents, reads
- * nothing else, never throws for a file's own sake.
+ * A finding carries a provider name, a matched pattern or a plain word, never
+ * a value from file contents: a terraform resource type but not its label or
+ * bucket name, a registry pattern but not the image path, a remote's host but
+ * not its URL. File paths are evidence and appear as such. Pure: takes a path
+ * and the file's contents, reads nothing else, never throws on malformed or
+ * hostile contents.
  *
  * Files read, and nothing else:
  * - Deploy files by basename (`vercel.json`, `fly.toml`, ...): existence alone.
@@ -17,7 +18,8 @@
  *   file as a hint (a multi-provider file shares it); block comments skipped,
  *   and every pattern is anchored to the line start so a line comment never
  *   matches.
- * - CI files by path; build-time on their own.
+ * - CI files by path: `.yml` and `.yaml` files under a CI directory pattern,
+ *   or a basename pattern at the root or any depth; build-time on their own.
  * - `Dockerfile*`, `*.Dockerfile`, compose files: the registry host of each
  *   `FROM` or `image:` reference; build-time on their own.
  * - The root `.git/config`: the host of each `url =` line; build-time.
@@ -30,6 +32,8 @@ type ConfigSignal = Exclude<VendorSignal, { kind: 'package' | 'hostname' }>;
 /**
  * `kind` is the signal kind that matched. `outcome` is `hint` for a file that
  * suggests a provider without proving it (`Procfile`), `vendor` otherwise.
+ * `detail.service` and `detail.region` are empty wherever they do not apply
+ * (every non-terraform finding, and a terraform file without a region line).
  */
 export interface ConfigFinding extends ScanFinding {
   kind: ConfigSignal['kind'];
@@ -38,9 +42,9 @@ export interface ConfigFinding extends ScanFinding {
     /** The matched pattern in context: `provider "aws"`, `FROM ghcr.io`, `git remote: github.com`. */
     signal: string;
     class: VendorClass;
-    /** The plain service word of a terraform resource type (`s3` of `aws_s3_bucket`), else empty. */
+    /** The plain service word of a terraform resource type (`s3` of `aws_s3_bucket`). */
     service: string;
-    /** A plain region word from the same terraform file (`eu-central-1`), else empty. */
+    /** The plain region word of the same terraform file (`eu-central-1`). */
     region: string;
   };
 }
@@ -51,22 +55,29 @@ export interface ConfigInput {
   contents: string;
 }
 
+/** One matched signal before it becomes a {@link ConfigFinding}. */
 interface Match {
   kind: ConfigSignal['kind'];
   entry: VendorEntry;
   signal: string;
   line: number;
   service?: string;
+  region?: string;
   outcome?: 'hint';
 }
 
+/** Any finding with a vendor class: a {@link ConfigFinding} or a manifest finding. */
 interface ClassedFinding {
   outcome: string;
   value: string;
   detail: { class: VendorClass };
 }
 
-/** Signals that make a provider build-time on their own, whatever its row says. */
+/**
+ * A CI file, a registry host or a git remote says the provider builds or
+ * hosts the code, not that the product calls it at runtime, so these kinds
+ * are build-time whatever the provider's row says.
+ */
 const BUILD_TIME_KINDS: ReadonlySet<ConfigSignal['kind']> = new Set([
   'ci-file',
   'registry',
@@ -81,7 +92,10 @@ const SIGNALS: readonly { entry: VendorEntry; signal: ConfigSignal }[] = VENDORS
     .map((signal) => ({ entry, signal })),
 );
 
-/** The `serverless.yml` provider names and the terraform provider they mean. */
+/**
+ * `serverless.yml` provider names, keyed to the `terraform-provider` pattern
+ * in `vendors.ts` that names the same cloud. Every value must exist there.
+ */
 const SERVERLESS_PROVIDERS: Readonly<Record<string, string>> = {
   aws: 'aws',
   google: 'google',
@@ -102,6 +116,9 @@ const COMPOSE_IMAGE = /^\s*-?\s*image:\s*["']?([^\s"'#]+)/;
 const GIT_URL = /^\s*url\s*=\s*(\S+)/;
 const SERVERLESS_INLINE = /^provider:\s*([a-z]+)\s*(?:#.*)?$/;
 const SERVERLESS_NAME = /^(\s+)name:\s*["']?([a-z]+)["']?\s*(?:#.*)?$/;
+/** The authority of `scheme://[user@]host[:port]/path` and of scp-style `[user@]host:path`. */
+const URL_AUTHORITY = /^[a-z+]+:\/\/([^/]*)/i;
+const SCP_AUTHORITY = /^([^:/]*):/;
 
 function basename(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
@@ -137,20 +154,17 @@ function registryFor(reference: string): { entry: VendorEntry; pattern: string }
   return item === undefined ? undefined : { entry: item.entry, pattern: item.signal.pattern };
 }
 
-/** The host of an https, ssh or scp-style remote; userinfo up to its last `@` dropped. */
-function remoteHost(url: string): string {
-  const scheme = url.indexOf('://');
-  const rest = scheme === -1 ? url : url.slice(scheme + 3);
-  const authority = rest.slice(0, firstIndexOf(rest, scheme === -1 ? ':/' : '/'));
+/**
+ * The host of an `https://`, `ssh://` or scp-style (`git@host:path`) remote.
+ * Userinfo is dropped up to its last `@`, so a credential holding `@` cannot
+ * smuggle a host in, and a port is dropped.
+ */
+function remoteHost(url: string): string | undefined {
+  const authority = (URL_AUTHORITY.exec(url) ?? SCP_AUTHORITY.exec(url))?.[1];
   return authority
-    .slice(authority.lastIndexOf('@') + 1)
+    ?.slice(authority.lastIndexOf('@') + 1)
     .replace(/:\d*$/, '')
     .toLowerCase();
-}
-
-function firstIndexOf(text: string, characters: string): number {
-  const positions = [...characters].map((c) => text.indexOf(c)).filter((i) => i !== -1);
-  return positions.length === 0 ? text.length : Math.min(...positions);
 }
 
 function deployFile(path: string): Match[] {
@@ -190,7 +204,7 @@ function serverless(name: string, contents: string): Match[] {
   return [];
 }
 
-function terraform(contents: string): { matches: Match[]; region: string } {
+function terraform(contents: string): Match[] {
   const matches: Match[] = [];
   let region = '';
   let inBlockComment = false;
@@ -237,7 +251,7 @@ function terraform(contents: string): { matches: Match[]; region: string } {
     const value = TF_REGION.exec(line)?.[1];
     if (region === '' && value !== undefined && PLAIN_WORD.test(value)) region = value;
   }
-  return { matches, region };
+  return matches.map((match) => ({ ...match, region }));
 }
 
 function ciFile(path: string): Match[] {
@@ -287,26 +301,26 @@ function isCompose(name: string): boolean {
   return /^(docker-)?compose([.-][\w.-]*)?\.ya?ml$/.test(name);
 }
 
-function collect(input: ConfigInput): { matches: Match[]; region: string } {
+/** The content reader for a file, picked by name; first match wins, one per file. */
+function contentMatches(input: ConfigInput): Match[] {
   const name = basename(input.path);
-  if (input.path === '.git/config') return { matches: gitRemotes(input.contents), region: '' };
+  if (input.path === '.git/config') return gitRemotes(input.contents);
   if (name.endsWith('.tf')) return terraform(input.contents);
   if (name === 'serverless.yml' || name === 'serverless.yaml') {
-    return { matches: serverless(name, input.contents), region: '' };
+    return serverless(name, input.contents);
   }
-  if (isDockerfile(name)) {
-    return { matches: registryLines(input.contents, DOCKER_FROM, 'FROM'), region: '' };
-  }
-  if (isCompose(name)) {
-    return { matches: registryLines(input.contents, COMPOSE_IMAGE, 'image:'), region: '' };
-  }
-  return { matches: [...ciFile(input.path), ...deployFile(input.path)], region: '' };
+  if (isDockerfile(name)) return registryLines(input.contents, DOCKER_FROM, 'FROM');
+  if (isCompose(name)) return registryLines(input.contents, COMPOSE_IMAGE, 'image:');
+  return deployFile(input.path);
 }
 
-/** Names every provider the file points at, one finding per matched signal. */
+/**
+ * Names every provider the file points at, one finding per matched signal.
+ * A file's path (a CI location) and its contents are matched independently,
+ * so a compose file inside a workflow directory yields both.
+ */
 export function matchConfig(input: ConfigInput): ConfigFinding[] {
-  const { matches, region } = collect(input);
-  return matches.map((match) => ({
+  return [...ciFile(input.path), ...contentMatches(input)].map((match) => ({
     kind: match.kind,
     outcome: match.outcome ?? 'vendor',
     value: match.entry.catalogName,
@@ -315,7 +329,7 @@ export function matchConfig(input: ConfigInput): ConfigFinding[] {
       signal: match.signal,
       class: BUILD_TIME_KINDS.has(match.kind) ? 'build-time' : match.entry.class,
       service: match.service ?? '',
-      region,
+      region: match.region ?? '',
     },
   }));
 }

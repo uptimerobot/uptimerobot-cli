@@ -3,8 +3,10 @@ import { type ConfigFinding, matchConfig, resolveVendorClasses } from '../src/li
 
 const vendors = (findings: readonly ConfigFinding[]) => findings.map((finding) => finding.value);
 const only = (findings: readonly ConfigFinding[]): ConfigFinding => {
-  expect(findings).toHaveLength(1);
-  return findings[0] as ConfigFinding;
+  const [first, ...rest] = findings;
+  if (first === undefined || rest.length > 0)
+    throw new Error(`expected one finding, got ${findings.length}`);
+  return first;
 };
 
 describe('deploy and platform files', () => {
@@ -37,40 +39,34 @@ describe('deploy and platform files', () => {
     expect(only(matchConfig({ path: 'serverless.yml', contents: nested }))).toMatchObject({
       kind: 'file',
       value: 'Google Cloud',
-      evidence: expect.objectContaining({ line: 3 }),
+      evidence: { line: 3 },
       detail: { signal: 'serverless.yml provider google', class: 'runtime' },
     });
-    expect(vendors(matchConfig({ path: 'serverless.yml', contents: 'provider: aws\n' }))).toEqual([
-      'AWS',
-    ]);
-    expect(
-      vendors(matchConfig({ path: 'serverless.yaml', contents: 'provider:\n  name: azure\n' })),
-    ).toEqual(['Microsoft Azure']);
-    expect(
-      matchConfig({ path: 'serverless.yml', contents: 'provider:\n  name: knative\n' }),
-    ).toEqual([]);
-    expect(matchConfig({ path: 'serverless.yml', contents: 'service: api\n' })).toEqual([]);
-    expect(matchConfig({ path: 'serverless.yml', contents: 'custom:\n  name: aws\n' })).toEqual([]);
-    expect(
-      matchConfig({
-        path: 'serverless.yml',
-        contents: 'provider:\n  runtime: nodejs20\ncustom:\n  name: google\n',
-      }),
-    ).toEqual([]);
-    expect(
-      matchConfig({
-        path: 'serverless.yml',
-        contents: 'provider:\n  stage: dev\n  environment:\n    name: google\n',
-      }),
-    ).toEqual([]);
-    expect(
-      vendors(
-        matchConfig({
-          path: 'serverless.yml',
-          contents: 'provider: # cloud\n\n  # which one\n  name: aws # for now\n',
-        }),
-      ),
-    ).toEqual(['AWS']);
+  });
+
+  it.each([
+    ['an inline provider', 'provider: aws\n', ['AWS']],
+    ['a nested name in serverless.yaml', 'provider:\n  name: azure\n', ['Microsoft Azure']],
+    [
+      'blank lines and comments inside the block',
+      'provider: # cloud\n\n  # which one\n  name: aws # for now\n',
+      ['AWS'],
+    ],
+    ['an unknown provider', 'provider:\n  name: knative\n', []],
+    ['no provider key', 'service: api\n', []],
+    ['a name under another key', 'custom:\n  name: aws\n', []],
+    [
+      'a name after the provider block closed',
+      'provider:\n  runtime: nodejs20\ncustom:\n  name: google\n',
+      [],
+    ],
+    [
+      'a name nested deeper than the provider children',
+      'provider:\n  stage: dev\n  environment:\n    name: google\n',
+      [],
+    ],
+  ])('handles %s', (_case, contents, expected) => {
+    expect(vendors(matchConfig({ path: 'serverless.yaml', contents }))).toEqual(expected);
   });
 
   it('treats a Procfile as a Heroku hint, never a candidate', () => {
@@ -267,6 +263,14 @@ describe('CI files', () => {
     expect(vendors(matchConfig({ path: '.github/workflows/vercel.json', contents: '' }))).toEqual([
       'Vercel',
     ]);
+    expect(
+      vendors(
+        matchConfig({
+          path: '.github/workflows/docker-compose.yml',
+          contents: 'image: ghcr.io/x/y',
+        }),
+      ),
+    ).toEqual(['GitHub', 'GitHub']);
     expect(matchConfig({ path: '.github/workflows', contents: '' })).toEqual([]);
     expect(matchConfig({ path: 'docs/.github/workflows/ci.yml', contents: '' })).toEqual([]);
   });
