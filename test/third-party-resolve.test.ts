@@ -158,6 +158,12 @@ describe('readTrackedProviders', () => {
               type: 'THIRD_PARTY_SERVICE',
               config: { thirdPartyService: { providerId: 'x' } },
             },
+            { id: 4, type: 'HTTP', config: { thirdPartyService: { providerId: 9 } } },
+            {
+              id: 5,
+              type: 'THIRD_PARTY_SERVICE',
+              config: { thirdPartyService: { providerId: 1.5 } },
+            },
             thirdPartyMonitor(3, 7),
           ],
         }),
@@ -378,6 +384,17 @@ describe('applyAllowance', () => {
     expect(statuses(applyAllowance(input, { used: 0, limit: 10 }))).toEqual([
       ['Stripe', 'create'],
       ['GitHub', 'create'],
+    ]);
+  });
+
+  it('never spends a slot on a row that is not a create', () => {
+    const rows = applyAllowance(
+      [resolved('Supabase', 'runtime', 'already-tracked'), resolved('Stripe', 'runtime')],
+      { used: 9, limit: 10 },
+    );
+    expect(statuses(rows)).toEqual([
+      ['Supabase', 'already-tracked'],
+      ['Stripe', 'create'],
     ]);
   });
 
