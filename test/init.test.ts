@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1136,6 +1136,25 @@ describe('init', () => {
 
         expect(rerun).toMatchObject({ thirdParty: null, seedContext: { outcome: 'unchanged' } });
         expect(await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8')).toBe(first);
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('does not offer when the seed file cannot be written, and hints instead', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      await mkdir(join(repository, SEED_CONTEXT_FILE));
+      const api = stubApi();
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+
+        await expect(
+          Init.run(['--no-launch', '--no-agent'], { root: projectRoot }),
+        ).rejects.toMatchObject({ cliError: { code: 'SEED_CONTEXT_WRITE_FAILED' } });
+        expect(catalogCalls(api.paths)).toEqual([]);
+        expect(api.posts).toEqual([]);
       } finally {
         restoreTerminal();
       }

@@ -20,6 +20,7 @@ import {
   type Proposal,
   formatProposal,
   formatSummary,
+  plain,
   runApply,
 } from './apply.js';
 import type { ResolvedCandidate } from './resolve.js';
@@ -48,7 +49,8 @@ export type OfferDecision =
   | 'opted-out'
   | 'nothing-to-offer'
   | 'not-interactive'
-  | 'foreign-seed-file';
+  | 'foreign-seed-file'
+  | 'seed-unwritable';
 
 export function decideOffer(options: {
   interactive: boolean;
@@ -57,6 +59,8 @@ export function decideOffer(options: {
   /** The seed file on disk before this run, when any. */
   previousSeed: string | undefined;
   seedBeginPrefix: string;
+  /** Whether the seed file, or its directory when absent, can be written. */
+  seedWritable: boolean;
 }): OfferDecision {
   if (options.optedOut) return 'opted-out';
   if (!options.hasRuntimeCandidates) return 'nothing-to-offer';
@@ -69,12 +73,19 @@ export function decideOffer(options: {
   ) {
     return 'foreign-seed-file';
   }
+  // Creating first and failing to record it afterwards is the one order this
+  // flow must never take; a file that cannot be written is checked up front.
+  if (!options.seedWritable) return 'seed-unwritable';
   return 'offer';
 }
 
 /** Whether the handoff should point at `scan --apply`: only when another run could make the offer. */
 export function wantsApplyHint(decision: OfferDecision): boolean {
-  return decision === 'not-interactive' || decision === 'foreign-seed-file';
+  return (
+    decision === 'not-interactive' ||
+    decision === 'foreign-seed-file' ||
+    decision === 'seed-unwritable'
+  );
 }
 
 export interface OfferIo {
@@ -115,7 +126,7 @@ export async function offerThirdParty(options: {
   } catch (error) {
     if (!(error instanceof ApiFailure)) throw error;
     const failure = { code: error.cliError.code, message: error.cliError.message };
-    io.log(`Third-party services were not resolved (${failure.code}): ${failure.message}`);
+    io.log(`Third-party services were not resolved (${failure.code}): ${plain(failure.message)}`);
     io.log('');
     return { kind: 'failed', error: failure };
   }
@@ -123,8 +134,8 @@ export async function offerThirdParty(options: {
     for (const line of formatProposal(run.proposal)) io.log(line);
   for (const line of formatSummary(run.proposal.proposal, run.results, run.confirmation))
     io.log(line);
-  if (run.blocked !== undefined) io.log(run.blocked.message);
-  if (run.failure !== undefined) io.log(run.failure.cliError.message);
+  if (run.blocked !== undefined) io.log(plain(run.blocked.message));
+  if (run.failure !== undefined) io.log(plain(run.failure.cliError.message));
   if (run.proposal.proposal.some((row) => row.status === 'ambiguous')) {
     io.log(
       `Settle an ambiguous row with \`${formatInvocation(invocation, 'scan --apply --only <provider>=<id>')}\`.`,
@@ -161,6 +172,11 @@ function notCreatedReason(options: {
   return 'not confirmed';
 }
 
+/** Text from the API in the block: one line, no control characters, and never one of our markers. */
+function blockText(text: string): string {
+  return plain(text).replaceAll(OUTCOME_BEGIN_MARKER, '').replaceAll(OUTCOME_END_MARKER, '');
+}
+
 /** What the offer did, for the seed file: the agent must not create these again. */
 export function renderOutcome(outcome: OfferOutcome, invocation: CliInvocation): readonly string[] {
   const lines = [
@@ -171,7 +187,7 @@ export function renderOutcome(outcome: OfferOutcome, invocation: CliInvocation):
   if (outcome.kind === 'failed') {
     return [
       ...lines,
-      `Not resolved (${outcome.error.code}): ${outcome.error.message}. Run \`${formatInvocation(invocation, 'scan --apply')}\` to retry.`,
+      `Not resolved (${outcome.error.code}): ${blockText(outcome.error.message)}. Run \`${formatInvocation(invocation, 'scan --apply')}\` to retry.`,
       OUTCOME_END_MARKER,
     ];
   }
@@ -184,7 +200,7 @@ export function renderOutcome(outcome: OfferOutcome, invocation: CliInvocation):
     item.status === 'created' ? [`${item.provider} (monitor ${item.monitorId ?? 'unknown'})`] : [],
   );
   const failed = results.flatMap((item) =>
-    item.status === 'failed' ? [`${item.provider} (${item.error.message})`] : [],
+    item.status === 'failed' ? [`${item.provider} (${blockText(item.error.message)})`] : [],
   );
   const attempted = new Set(results.map((item) => item.provider));
   const notAttempted = byRow('create').filter((provider) => !attempted.has(provider));
@@ -210,10 +226,15 @@ export function renderOutcome(outcome: OfferOutcome, invocation: CliInvocation):
   return [...lines, OUTCOME_END_MARKER];
 }
 
+/** The only lines of an earlier block that stay true: a service created or found tracked is still there. */
+const DURABLE_LINE = /^(Created|Already tracked): /;
+
 /**
- * The outcome block an earlier run left in our own seed file, markers
- * included, so a run that makes no offer keeps it. The last block wins when
- * a file somehow holds two; none when either marker is missing.
+ * The durable part of the outcome block an earlier run left in our own seed
+ * file, so a run that makes no offer keeps what was created. Declines,
+ * failures and ambiguities are not carried: the next run or `scan --apply`
+ * settles them afresh. The last block wins when a file somehow holds two;
+ * nothing is carried when either marker is missing or no line is durable.
  */
 export function carryOverOutcome(previousSeed: string | undefined): readonly string[] {
   if (previousSeed === undefined) return [];
@@ -221,5 +242,9 @@ export function carryOverOutcome(previousSeed: string | undefined): readonly str
   if (start === -1) return [];
   const end = previousSeed.indexOf(OUTCOME_END_MARKER, start);
   if (end === -1) return [];
-  return previousSeed.slice(start, end + OUTCOME_END_MARKER.length).split('\n');
+  const lines = previousSeed.slice(start, end).split('\n');
+  const heading = lines.find((line) => line.startsWith('### '));
+  const durable = lines.filter((line) => DURABLE_LINE.test(line));
+  if (heading === undefined || durable.length === 0) return [];
+  return [OUTCOME_BEGIN_MARKER, heading, '', ...durable, OUTCOME_END_MARKER];
 }

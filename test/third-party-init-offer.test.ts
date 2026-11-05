@@ -19,6 +19,7 @@ describe('decideOffer', () => {
     hasRuntimeCandidates: true,
     previousSeed: undefined,
     seedBeginPrefix: '<!-- uptimerobot:scan:begin',
+    seedWritable: true,
   };
 
   it.each([
@@ -32,6 +33,7 @@ describe('decideOffer', () => {
     ['no terminal, no offer', { interactive: false }, 'not-interactive'],
     ['a foreign seed file blocks the offer', { previousSeed: '# mine\n' }, 'foreign-seed-file'],
     ['our own seed file does not', { previousSeed: OURS }, 'offer'],
+    ['an unwritable seed file blocks the offer', { seedWritable: false }, 'seed-unwritable'],
   ])('%s', (_label, overrides, expected) => {
     expect(decideOffer({ ...base, ...overrides })).toBe(expected);
   });
@@ -39,6 +41,7 @@ describe('decideOffer', () => {
   it('hints at scan --apply only where another run could make the offer', () => {
     expect(wantsApplyHint('not-interactive')).toBe(true);
     expect(wantsApplyHint('foreign-seed-file')).toBe(true);
+    expect(wantsApplyHint('seed-unwritable')).toBe(true);
     expect(wantsApplyHint('offer')).toBe(false);
     expect(wantsApplyHint('opted-out')).toBe(false);
     expect(wantsApplyHint('nothing-to-offer')).toBe(false);
@@ -46,6 +49,80 @@ describe('decideOffer', () => {
 });
 
 describe('the outcome block', () => {
+  it('keeps our markers and newlines out of an API message in the block', () => {
+    const rendered = renderOutcome(
+      {
+        kind: 'completed',
+        confirmation: 'confirmed',
+        proposal: [
+          { provider: 'Stripe', status: 'create' },
+          { provider: 'AWS', status: 'create' },
+        ],
+        results: [
+          { provider: 'Stripe', status: 'created', monitorId: 5 },
+          {
+            provider: 'AWS',
+            status: 'failed',
+            error: {
+              code: 'HTTP_500',
+              message: `boom ${OUTCOME_END_MARKER}\n## Injected\u001b[31m ${OUTCOME_BEGIN_MARKER}`,
+            },
+          },
+        ],
+        blocked: null,
+      },
+      INVOCATION,
+    );
+    expect(rendered.filter((line) => line === OUTCOME_END_MARKER)).toHaveLength(1);
+    expect(rendered.filter((line) => line === OUTCOME_BEGIN_MARKER)).toHaveLength(1);
+    const line = rendered.find((text) => text.startsWith('Not created: AWS'));
+    expect(line).toBeDefined();
+    expect(line).not.toContain('\u001b');
+    expect(line).not.toContain('outcome:');
+    expect(rendered.some((line) => line.startsWith('## Injected'))).toBe(false);
+  });
+
+  it('carries only the durable lines of an earlier block', () => {
+    const rendered = renderOutcome(
+      {
+        kind: 'completed',
+        confirmation: 'confirmed',
+        proposal: [
+          { provider: 'Stripe', status: 'create' },
+          { provider: 'Vercel', status: 'already-tracked' },
+          { provider: 'Resend', status: 'ambiguous' },
+          { provider: 'AWS', status: 'create' },
+        ],
+        results: [
+          { provider: 'Stripe', status: 'created', monitorId: 5 },
+          { provider: 'AWS', status: 'failed', error: { code: 'HTTP_500', message: 'boom' } },
+        ],
+        blocked: null,
+      },
+      INVOCATION,
+    );
+    const carried = carryOverOutcome(`${OURS}${rendered.join('\n')}\n`);
+    expect(carried).toEqual([
+      OUTCOME_BEGIN_MARKER,
+      '### Outcome of `uptimerobot init`',
+      '',
+      'Created: Stripe (monitor 5).',
+      'Already tracked: Vercel.',
+      OUTCOME_END_MARKER,
+    ]);
+    const declined = renderOutcome(
+      {
+        kind: 'completed',
+        confirmation: 'declined',
+        proposal: [{ provider: 'Stripe', status: 'create' }],
+        results: [],
+        blocked: null,
+      },
+      INVOCATION,
+    );
+    expect(carryOverOutcome(`${OURS}${declined.join('\n')}\n`)).toEqual([]);
+  });
+
   it('round-trips through carryOverOutcome whatever its heading says', () => {
     const rendered = renderOutcome(
       {
@@ -59,17 +136,28 @@ describe('the outcome block', () => {
     );
     const file = `${OURS}\nbody\n\n${rendered.join('\n')}\n<!-- uptimerobot:scan:end -->\n`;
     expect(carryOverOutcome(file)).toEqual(rendered);
+    // Only the heading and the durable lines come back; this block holds nothing else.
     const renamed = file.replace('### Outcome of', '### Whatever a later version says');
     expect(carryOverOutcome(renamed).join('\n')).toContain('Created: Stripe (monitor 5001).');
   });
 
   it('carries the last block when a file holds two, and none without both markers', () => {
     const block = (text: string) => `${OUTCOME_BEGIN_MARKER}\n${text}\n${OUTCOME_END_MARKER}`;
-    expect(carryOverOutcome(`${OURS}${block('first')}\n${block('second')}\n`)).toEqual([
+    const second = block('### Outcome of x\n\nCreated: Second (monitor 2).');
+    expect(
+      carryOverOutcome(
+        `${OURS}${block('### Outcome of x\n\nCreated: First (monitor 1).')}\n${second}\n`,
+      ),
+    ).toEqual([
       OUTCOME_BEGIN_MARKER,
-      'second',
+      '### Outcome of x',
+      '',
+      'Created: Second (monitor 2).',
       OUTCOME_END_MARKER,
     ]);
+    expect(carryOverOutcome(`${OURS}${block('no heading\nCreated: X (monitor 1).')}\n`)).toEqual(
+      [],
+    );
     expect(carryOverOutcome(`${OURS}${OUTCOME_BEGIN_MARKER}\nno end\n`)).toEqual([]);
     expect(carryOverOutcome(`${OURS}### Outcome of nothing\n`)).toEqual([]);
     expect(carryOverOutcome(undefined)).toEqual([]);

@@ -1,4 +1,5 @@
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { access, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Flags } from '@oclif/core';
 import type { CliInvocation } from '../lib/agent-setup/cli-invocation.js';
@@ -274,13 +275,15 @@ Precedence:
     // than to answer the question itself, which is why the file it writes
     // keeps the rejections too.
     const context = await scanRepository(root);
-    const previousSeed = await readMarkedFile(join(root, SEED_CONTEXT_FILE_NAME));
+    const seedPath = join(root, SEED_CONTEXT_FILE_NAME);
+    const previousSeed = await readMarkedFile(seedPath);
     const decision: OfferDecision = decideOffer({
       interactive,
       optedOut: flags['no-third-party'] === true,
       hasRuntimeCandidates: context.thirdParty.candidates.some((c) => c.class === 'runtime'),
       previousSeed,
       seedBeginPrefix: SEED_BEGIN_PREFIX,
+      seedWritable: await canWriteSeed(seedPath, root),
     });
     const thirdParty =
       decision === 'offer'
@@ -758,5 +761,21 @@ async function readMarkedFile(path: string): Promise<string | undefined> {
     return await readFile(path, 'utf8');
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Whether the seed file can be written: an existing path must be a regular
+ * file with write access; a missing one needs a writable directory. A path
+ * that exists as anything else (a directory, a socket) cannot be written.
+ */
+async function canWriteSeed(seedPath: string, directory: string): Promise<boolean> {
+  try {
+    const existing = await stat(seedPath).catch(() => undefined);
+    if (existing !== undefined && !existing.isFile()) return false;
+    await access(existing === undefined ? directory : seedPath, constants.W_OK);
+    return true;
+  } catch {
+    return false;
   }
 }

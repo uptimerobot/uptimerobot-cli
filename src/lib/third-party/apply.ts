@@ -389,8 +389,8 @@ function evidenceCell(row: ResolvedCandidate): string {
   return [...shown, ...(more > 0 ? [`+${more} more`] : [])].join(', ');
 }
 
-/** Text from the API or the catalog: no control characters, and no pipe or newline in a table cell. */
-function plain(text: string): string {
+/** Text from the API or the catalog: no control characters, one line. */
+export function plain(text: string): string {
   return text.replaceAll(CONTROL_CHARACTERS, '').replaceAll(/\s+/g, ' ');
 }
 
