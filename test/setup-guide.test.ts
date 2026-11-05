@@ -197,7 +197,9 @@ describe('renderSetupGuide', () => {
     expect(prose(guide)).toContain(
       prose("Never pass `--confirm` on the user's behalf: only after an explicit yes"),
     );
-    expect(prose(guide)).toContain(prose('`--only <provider>` or `--skip <provider>` to match the answer'));
+    expect(prose(guide)).toContain(
+      prose('`--only <provider>` or `--skip <provider>` to match the answer'),
+    );
     expect(prose(guide)).toContain(prose('need no base URL'));
     expect(prose(guide)).toContain(prose('**Third-party services** — one row per service created'));
   });
