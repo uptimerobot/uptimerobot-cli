@@ -54,9 +54,9 @@ const summarize = (findings: readonly ThirdPartyFinding[]): string[] =>
       `${finding.outcome} ${finding.value} ${finding.kind} ${finding.evidence.file}:${finding.evidence.line} app=${finding.detail.app} ${finding.detail.signal}`,
   );
 
-const vendorsOf = (findings: readonly ThirdPartyFinding[]): string[] => [
-  ...new Set(findings.filter((f) => f.outcome === 'vendor').map((f) => f.value)),
-];
+/** The distinct providers found, sorted: a claim about the set, not the order. */
+const vendorsOf = (findings: readonly ThirdPartyFinding[]): string[] =>
+  [...new Set(findings.filter((f) => f.outcome === 'vendor').map((f) => f.value))].sort();
 
 const NEXT_PACKAGE_JSON = JSON.stringify(
   {
@@ -116,10 +116,10 @@ describe('scanThirdParty', () => {
     const findings = await scanThirdParty(root);
     expect(vendorsOf(findings)).toEqual([
       'GitHub',
+      'Resend',
+      'Sentry',
       'Stripe',
       'Supabase',
-      'Sentry',
-      'Resend',
       'Vercel',
     ]);
     expect(summarize(findings)).toContain('vendor Vercel file vercel.json:1 app=. vercel.json');
@@ -290,7 +290,7 @@ describe('scanThirdParty', () => {
     const onTruncated = vi.fn();
     const findings = await scanThirdParty(root, { maxFiles: 2, onTruncated });
     expect(openedFiles).toHaveLength(2);
-    expect(vendorsOf(findings)).toEqual(['Stripe', 'Resend']);
+    expect(vendorsOf(findings)).toEqual(['Resend', 'Stripe']);
     expect(onTruncated).toHaveBeenCalledTimes(1);
 
     const untruncated = vi.fn();

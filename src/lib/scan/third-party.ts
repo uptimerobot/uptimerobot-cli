@@ -12,7 +12,15 @@
  * followed.
  *
  * Every finding names its app: the nearest directory at or above the file
- * that holds a manifest, relative to the root, or `.` for the root itself.
+ * that holds a manifest, relative to the root, or `.` for the root itself; a
+ * manifest under a CI directory is tooling and never an app.
+ *
+ * Findings come out in a fixed order: the root `.git/config` first, then a
+ * depth-first walk in byte order with manifest findings before configuration
+ * findings for the same file. `onTruncated` reports the walk budgets only. An
+ * unreadable directory or file, and a file over the byte budget, is skipped
+ * without a word, so a result is partial whenever the repository is: a
+ * permission error never fails the scan.
  */
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -26,20 +34,19 @@ import {
   compareStrings,
   repoRelativePath,
 } from './support.js';
-import type { VendorClass } from './vendors.js';
 
 export type ThirdPartyOutcome = ConfigFinding['outcome'] | ManifestFinding['outcome'];
 
 /**
  * One signal from one file. `kind` is the signal kind (`npm`, `file`,
  * `registry`, ...), `value` the provider's catalog name for a `vendor` or
- * `hint` outcome and the normalized package name otherwise. `detail` carries
- * the matcher's own fields plus `app`.
+ * `hint` outcome and the normalized package name otherwise. `detail` is the
+ * matcher's own detail plus `app`.
  */
 export interface ThirdPartyFinding extends ScanFinding {
   kind: ConfigFinding['kind'] | ManifestFinding['kind'];
   outcome: ThirdPartyOutcome;
-  detail: Record<string, string> & { signal: string; class: VendorClass; app: string };
+  detail: (ConfigFinding['detail'] | ManifestFinding['detail']) & { app: string };
 }
 
 export interface ScanThirdPartyOptions {
@@ -85,8 +92,9 @@ const SECRET_NAMES = new Set(['.npmrc', '.pypirc', 'credentials']);
 const SECRET_SUFFIXES = ['.tfstate', '.tfvars', '.pem', '.key'];
 
 /**
- * Files that may hold a secret, excluded before anything can open them even
- * when their name also looks like a candidate (`Dockerfile.key`, `.env.tf`).
+ * The one rule for file names that may hold a secret. Such a file is excluded
+ * before anything can open it, even when its name also looks like a candidate
+ * (`Dockerfile.key`, `.env.tf`). Case-insensitive.
  */
 export function isSecretFile(fileName: string): boolean {
   const name = fileName.toLowerCase();
@@ -97,9 +105,8 @@ export function isSecretFile(fileName: string): boolean {
   return SECRET_SUFFIXES.some((suffix) => name.endsWith(suffix));
 }
 
-function isToolingPath(path: string): boolean {
-  const first = path.slice(0, path.indexOf('/'));
-  return WALKED_DOT_DIRECTORIES.has(first);
+function isUnderCiDirectory(path: string): boolean {
+  return WALKED_DOT_DIRECTORIES.has(path.split('/')[0] ?? '');
 }
 
 export async function scanThirdParty(
@@ -119,10 +126,11 @@ export async function scanThirdParty(
   await collectFiles(repoRoot, repoRoot, budget, candidates);
   if (budget.truncated) options.onTruncated?.();
 
-  // A manifest under a CI directory (`.github/package.json`) is tooling, not an app.
-  const appDirectories = candidates
-    .filter((candidate) => isManifestFile(candidate.path) && !isToolingPath(candidate.path))
-    .map((candidate) => directoryOf(candidate.path));
+  const appDirectories = new Set(
+    candidates
+      .filter((candidate) => isManifestFile(candidate.path) && !isUnderCiDirectory(candidate.path))
+      .map((candidate) => directoryOf(candidate.path)),
+  );
 
   const findings: ThirdPartyFinding[] = [];
   for (const candidate of candidates) {
@@ -220,11 +228,11 @@ function directoryOf(path: string): string {
 }
 
 /** The longest app directory that holds the file, or `.`. */
-function appOf(path: string, appDirectories: readonly string[]): string {
-  const directory = directoryOf(path);
-  return appDirectories
-    .filter((app) => app === '.' || directory === app || directory.startsWith(`${app}/`))
-    .reduce((best, app) => (app.length > best.length ? app : best), '.');
+function appOf(path: string, appDirectories: ReadonlySet<string>): string {
+  for (let directory = directoryOf(path); directory !== '.'; directory = directoryOf(directory)) {
+    if (appDirectories.has(directory)) return directory;
+  }
+  return '.';
 }
 
 async function readTextFile(path: string, maxFileBytes: number): Promise<string | undefined> {
