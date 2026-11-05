@@ -83,6 +83,13 @@ describe('matchManifest on package.json', () => {
   it('lists frameworks as skipped and protocol clients as unknown, never as vendors', () => {
     const skipped = findings.filter((finding) => finding.outcome === 'skip').map((f) => f.value);
     expect(skipped).toEqual(expect.arrayContaining(['next', 'react', 'typescript']));
+    expect(findings.find((finding) => finding.value === 'resend')).toBeUndefined();
+    expect(
+      matchManifest({
+        path: 'package.json',
+        contents: '{ "dependencies": { "left-pad": "1" } }',
+      })[0],
+    ).toMatchObject({ outcome: 'unmapped', value: 'left-pad' });
     expect(findings.find((finding) => finding.value === 'pg')).toMatchObject({
       outcome: 'protocol-client',
       evidence: { line: 13 },
@@ -157,6 +164,91 @@ describe('matchManifest on pyproject.toml', () => {
   });
 });
 
+describe('matchManifest on pyproject.toml edge cases', () => {
+  it('ends an inline array on the same line and keeps extras brackets out of it', () => {
+    const contents = [
+      '[project]',
+      'dependencies = ["psycopg[binary]>=3",',
+      '  "stripe"]',
+      'keywords = [',
+      '  "sendgrid",',
+      ']',
+      '',
+    ].join('\n');
+    const findings = matchManifest({ path: 'pyproject.toml', contents });
+    expect(byProvider(findings, 'Stripe')?.evidence.line).toBe(3);
+    expect(byProvider(findings, 'SendGrid')).toBeUndefined();
+    expect(findings.find((finding) => finding.value === 'psycopg')?.outcome).toBe(
+      'protocol-client',
+    );
+  });
+
+  it('classes every optional, group and dev table as build-time, except the main group', () => {
+    const contents = [
+      '[project.optional-dependencies]',
+      'dev = ["stripe"]',
+      '',
+      '[dependency-groups]',
+      'test = ["sendgrid"]',
+      '',
+      '[tool.poetry.dev-dependencies]',
+      'twilio = "^9"',
+      '',
+      '[tool.poetry.group.lint.dependencies]',
+      'resend = "^2"',
+      '',
+      '[tool.poetry.group.main.dependencies]',
+      'openai = "^1"',
+      '',
+    ].join('\n');
+    const findings = matchManifest({ path: 'pyproject.toml', contents });
+    for (const provider of ['Stripe', 'SendGrid', 'Twilio', 'Resend']) {
+      expect(byProvider(findings, provider)?.detail.class).toBe('build-time');
+    }
+    expect(byProvider(findings, 'OpenAI')?.detail.class).toBe('runtime');
+  });
+
+  it('reads subtables and ignores array-of-table headers and header comments', () => {
+    const contents = [
+      '[tool.poetry.dependencies]',
+      'python = "^3.12"',
+      '',
+      '[tool.poetry.dependencies.stripe]',
+      'version = "11.0.0"',
+      'extras = ["async"]',
+      '',
+      '[[tool.poetry.source]]',
+      'name = "openai"',
+      'url = "https://example.invalid"',
+      '',
+      '[tool.poetry.group.docs.dependencies] # docs only',
+      'sentry-sdk = "2.0"',
+      '',
+    ].join('\n');
+    const findings = matchManifest({ path: 'pyproject.toml', contents });
+    expect(byProvider(findings, 'Stripe')).toMatchObject({
+      evidence: { line: 5 },
+      detail: { signal: 'stripe@11.0.0', class: 'runtime' },
+    });
+    expect(byProvider(findings, 'OpenAI')).toBeUndefined();
+    expect(findings.map((finding) => finding.value)).not.toContain('name');
+    expect(findings.map((finding) => finding.value)).not.toContain('python');
+    expect(byProvider(findings, 'Sentry')?.detail.class).toBe('build-time');
+  });
+
+  it('reports nothing from a pyproject.toml without dependency tables', () => {
+    const contents = [
+      '[build-system]',
+      'requires = ["setuptools"]',
+      '',
+      '[tool.black]',
+      'line-length = 88',
+      '',
+    ].join('\n');
+    expect(matchManifest({ path: 'pyproject.toml', contents })).toEqual([]);
+  });
+});
+
 describe('matchManifest on go.mod', () => {
   const findings = matchManifest({ path: 'go.mod', contents: GO_MOD });
 
@@ -182,6 +274,85 @@ describe('matchManifest on go.mod', () => {
 });
 
 describe('matchManifest on Gemfile, composer.json and Cargo.toml', () => {
+  it('classes gems inside a group block or with a group option as build-time', () => {
+    const findings = matchManifest({
+      path: 'Gemfile',
+      contents: [
+        "gem 'stripe'",
+        "gem 'twilio-ruby', group: :development",
+        'group :test, :development do',
+        "  gem 'sendgrid-ruby'",
+        'end',
+        "gem 'resend'",
+        '',
+      ].join('\n'),
+    });
+    expect(byProvider(findings, 'Stripe')?.detail.class).toBe('runtime');
+    expect(byProvider(findings, 'Resend')?.detail.class).toBe('runtime');
+    expect(
+      findings.find((finding) => finding.detail.package === 'sendgrid-ruby')?.detail.class,
+    ).toBe('build-time');
+    expect(findings.find((finding) => finding.detail.package === 'twilio-ruby')?.detail.class).toBe(
+      'build-time',
+    );
+  });
+
+  it('classes a runtime vendor that only sits in a dev section as build-time', () => {
+    const npm = matchManifest({
+      path: 'package.json',
+      contents: '{ "devDependencies": { "stripe": "17.4.0" } }',
+    });
+    expect(byProvider(npm, 'Stripe')?.detail.class).toBe('build-time');
+    const composer = matchManifest({
+      path: 'composer.json',
+      contents: '{ "require-dev": { "stripe/stripe-php": "^16" } }',
+    });
+    expect(byProvider(composer, 'Stripe')?.detail.class).toBe('build-time');
+  });
+
+  it('reads Cargo subtables and survives array-of-table headers', () => {
+    const findings = matchManifest({
+      path: 'Cargo.toml',
+      contents: [
+        '[dependencies.async-stripe]',
+        'version = "0.39"',
+        '',
+        '[dependencies]',
+        'aws-sdk-s3 = "1.60.0"',
+        '',
+        '[[bin]]',
+        'name = "openai"',
+        'path = "src/main.rs"',
+        '',
+      ].join('\n'),
+    });
+    expect(byProvider(findings, 'Stripe')).toMatchObject({
+      evidence: { line: 2 },
+      detail: { signal: 'async-stripe@0.39' },
+    });
+    expect(byProvider(findings, 'AWS')).toBeDefined();
+    expect(byProvider(findings, 'OpenAI')).toBeUndefined();
+    expect(findings.map((finding) => finding.value)).not.toContain('name');
+  });
+
+  it('never throws on malformed or empty manifests', () => {
+    for (const [path, contents] of [
+      ['package.json', '[1, 2]'],
+      ['package.json', '{ "dependencies": ["stripe"] }'],
+      ['composer.json', 'null'],
+      ['pyproject.toml', '[project\ndependencies = ['],
+      ['Cargo.toml', '= = ='],
+      ['go.mod', 'require ('],
+      ['Gemfile', 'group do'],
+      ['requirements.txt', ''],
+    ] as const) {
+      expect(() => matchManifest({ path, contents })).not.toThrow();
+      expect(
+        matchManifest({ path, contents }).filter((finding) => finding.outcome === 'vendor'),
+      ).toEqual([]);
+    }
+  });
+
   it('reads Gemfile gem lines', () => {
     const findings = matchManifest({
       path: 'Gemfile',

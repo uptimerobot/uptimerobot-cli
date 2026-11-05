@@ -18,12 +18,17 @@ import {
   normalizePackageName,
 } from './vendors.js';
 
-export type ManifestOutcome = 'vendor' | 'skip' | 'protocol-client';
+/**
+ * `vendor`: a mapped provider. `skip`: a framework or library on the skip list.
+ * `protocol-client`: a database or queue client whose server is unknown.
+ * `unmapped`: a name the map does not know; the scan does not search it.
+ */
+export type ManifestOutcome = 'vendor' | 'skip' | 'protocol-client' | 'unmapped';
 
 /**
  * One dependency the manifest declares. For a `vendor` outcome `value` is the
- * provider's catalog name and `detail.signal` is `package@version`; for `skip`
- * and `protocol-client` `value` is the package name. `kind` is the ecosystem.
+ * provider's catalog name and `detail.signal` is `package@version`; for every
+ * other outcome `value` is the normalized package name. `kind` is the ecosystem.
  */
 export interface ManifestFinding extends ScanFinding {
   outcome: ManifestOutcome;
@@ -55,6 +60,8 @@ const DEV_SCOPES = new Set([
   'require-dev',
   'dev-dependencies',
   'build-dependencies',
+  'project.optional-dependencies',
+  'dependency-groups',
 ]);
 
 function basename(path: string): string {
@@ -76,7 +83,7 @@ function ecosystemFor(path: string): PackageEcosystem | undefined {
 export function matchManifest(input: ManifestInput): ManifestFinding[] {
   const ecosystem = ecosystemFor(input.path);
   if (ecosystem === undefined) return [];
-  const declared = PARSERS[ecosystem](input.contents);
+  const declared = PARSERS[ecosystem](input.contents, basename(input.path));
   return declared.map((dependency) => classify(ecosystem, input.path, dependency));
 }
 
@@ -109,7 +116,11 @@ function classify(
   }
   const match = matchPackage(ecosystem, dependency.name);
   if (match === undefined) {
-    return { ...base, outcome: 'skip', value: normalizePackageName(ecosystem, dependency.name) };
+    return {
+      ...base,
+      outcome: 'unmapped',
+      value: normalizePackageName(ecosystem, dependency.name),
+    };
   }
   // A vendor only in a dev section is build-time; a build-time vendor stays so.
   const vendorClass: VendorClass =
@@ -122,18 +133,14 @@ function classify(
   };
 }
 
-const PARSERS: Record<PackageEcosystem, (contents: string) => Declared[]> = {
+const PARSERS: Record<PackageEcosystem, (contents: string, name: string) => Declared[]> = {
   npm: (contents) => parseJsonSections(contents, ['dependencies', 'devDependencies']),
   composer: (contents) => parseJsonSections(contents, ['require', 'require-dev']),
-  pip: parsePip,
+  pip: (contents, name) =>
+    name === 'pyproject.toml' ? parsePyproject(contents) : parseRequirements(contents),
   go: parseGoMod,
   gem: parseGemfile,
-  cargo: (contents) =>
-    parseTomlTables(contents, {
-      dependencies: 'dependencies',
-      'dev-dependencies': 'dev-dependencies',
-      'build-dependencies': 'build-dependencies',
-    }),
+  cargo: parseCargo,
 };
 
 function scopeClass(scope: string): VendorClass {
@@ -158,7 +165,7 @@ function parseJsonSections(contents: string, sections: readonly string[]): Decla
   const declared: Declared[] = [];
   for (const scope of sections) {
     const section = (parsed as Record<string, unknown>)[scope];
-    if (typeof section !== 'object' || section === null) continue;
+    if (typeof section !== 'object' || section === null || Array.isArray(section)) continue;
     const start = lines.findIndex((line) => line.includes(`"${scope}"`));
     for (const [name, version] of Object.entries(section as Record<string, unknown>)) {
       const line = findLine(lines, (text) => text.includes(`"${name}"`), start);
@@ -198,8 +205,7 @@ function parseRequirement(text: string, line: number, scope: string): Declared |
   };
 }
 
-function parsePip(contents: string): Declared[] {
-  if (/^\s*\[(project|tool\.poetry)/m.test(contents)) return parsePyproject(contents);
+function parseRequirements(contents: string): Declared[] {
   const declared: Declared[] = [];
   contents.split('\n').forEach((text, index) => {
     const dependency = parseRequirement(text, index + 1, 'requirements');
@@ -208,91 +214,166 @@ function parsePip(contents: string): Declared[] {
   return declared;
 }
 
+/** One `key = value` pair from a TOML file, with the table it sits in. */
+interface TomlAssignment {
+  table: string;
+  key: string;
+  /** The value's lines, so array items keep their own line numbers. */
+  value: readonly { text: string; line: number }[];
+  line: number;
+}
+
+/** Characters of `text` outside quoted strings, with `#` comments removed. */
+function tomlCode(text: string): string {
+  let out = '';
+  let quote: string | undefined;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index] ?? '';
+    if (quote !== undefined) {
+      if (char === '\\' && quote === '"') index += 1;
+      else if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === '"' || char === "'") quote = char;
+    else if (char === '#') break;
+    else out += char;
+  }
+  return out;
+}
+
+const TOML_HEADER = /^\[\[?\s*([^\]]+?)\s*\]\]?\s*$/;
+const TOML_KEY = /^("[^"]*"|'[^']*'|[A-Za-z0-9._-]+)\s*=\s*(.*)$/;
+
 /**
- * PEP 621 (`[project] dependencies = [...]`, `[project.optional-dependencies]`)
- * and Poetry (`[tool.poetry.dependencies]`, `[tool.poetry.group.*.dependencies]`)
- * read line by line: a TOML parser is not a dependency of this package, and
- * these tables are regular enough for one.
+ * A line-level TOML reader: enough for dependency tables, no more. Tracks the
+ * current table (`[x]` and `[[x]]`, trailing comments allowed), and joins the
+ * lines of an array or inline table opened on a key's line until its brackets
+ * balance outside quotes. A TOML parser is not a dependency of this package.
+ */
+function readToml(contents: string): TomlAssignment[] {
+  const assignments: TomlAssignment[] = [];
+  let table = '';
+  let open: { assignment: TomlAssignment; depth: number } | undefined;
+  contents.split('\n').forEach((raw, index) => {
+    const line = index + 1;
+    const code = tomlCode(raw);
+    if (open !== undefined) {
+      open.assignment.value = [...open.assignment.value, { text: raw, line }];
+      open.depth += depthDelta(code);
+      if (open.depth <= 0) open = undefined;
+      return;
+    }
+    // Headers keep their quoted segments (`[target.'cfg(unix)'.dependencies]`).
+    const header = TOML_HEADER.exec(raw.trim().replace(/\s+#.*$/, ''));
+    if (header !== null) {
+      table = header[1] ?? '';
+      return;
+    }
+    const match = TOML_KEY.exec(raw.trim());
+    if (match === null || match[1] === undefined) return;
+    const key = match[1].replaceAll(/^["']|["']$/g, '');
+    const assignment: TomlAssignment = {
+      table,
+      key,
+      value: [{ text: match[2] ?? '', line }],
+      line,
+    };
+    assignments.push(assignment);
+    const depth = depthDelta(tomlCode(match[2] ?? ''));
+    if (depth > 0) open = { assignment, depth };
+  });
+  return assignments;
+}
+
+function depthDelta(code: string): number {
+  let depth = 0;
+  for (const char of code) {
+    if (char === '[' || char === '{') depth += 1;
+    else if (char === ']' || char === '}') depth -= 1;
+  }
+  return depth;
+}
+
+/** Every quoted string in the value, with the line it sits on. */
+function quotedItems(assignment: TomlAssignment): { text: string; line: number }[] {
+  const items: { text: string; line: number }[] = [];
+  for (const { text, line } of assignment.value) {
+    for (const found of text.matchAll(/"((?:[^"\\]|\\.)*)"|'([^']*)'/g)) {
+      items.push({ text: found[1] ?? found[2] ?? '', line });
+    }
+  }
+  return items;
+}
+
+/** `"1.0"` or `{ version = "1.0", ... }` on the key's line; '' when neither. */
+function versionOf(assignment: TomlAssignment): string {
+  const text = assignment.value.map((part) => part.text).join(' ');
+  const quoted = /^\s*"([^"]*)"/.exec(text);
+  if (quoted !== null) return quoted[1] ?? '';
+  return /version\s*=\s*"([^"]*)"/.exec(text)?.[1] ?? '';
+}
+
+/**
+ * PEP 621 (`[project] dependencies`, `[project.optional-dependencies]`), PEP 735
+ * (`[dependency-groups]`) and Poetry (`[tool.poetry.dependencies]`,
+ * `dev-dependencies`, `group.<name>.dependencies`, and the `[table.<name>]`
+ * subtable form). Only the main dependencies are runtime; every optional, dev
+ * or group table is build-time, except Poetry's `main` group.
  */
 function parsePyproject(contents: string): Declared[] {
   const declared: Declared[] = [];
-  let table = '';
-  let inArray = false;
-  let arrayScope = '';
-  contents.split('\n').forEach((raw, index) => {
-    const text = raw.trim();
-    const line = index + 1;
-    const header = /^\[([^\]]+)\]$/.exec(text);
-    if (header !== null) {
-      table = header[1] ?? '';
-      inArray = false;
-      return;
+  const push = (dependency: Declared | undefined) => {
+    if (dependency !== undefined && dependency.name !== 'python') declared.push(dependency);
+  };
+  for (const assignment of readToml(contents)) {
+    const { table, key } = assignment;
+    if (table === 'project' && key === 'dependencies') {
+      for (const item of quotedItems(assignment))
+        push(parseRequirement(item.text, item.line, 'dependencies'));
+    } else if (table === 'project.optional-dependencies' || table === 'dependency-groups') {
+      for (const item of quotedItems(assignment))
+        push(parseRequirement(item.text, item.line, table));
+    } else {
+      const poetry =
+        /^tool\.poetry\.(dependencies|dev-dependencies|group\.([^.]+)\.dependencies)(?:\.([^.]+))?$/.exec(
+          table,
+        );
+      if (poetry === null) continue;
+      const scope = poetry[1] ?? '';
+      const subtable = poetry[3];
+      if (subtable !== undefined && key !== 'version') continue;
+      const name = subtable ?? key;
+      const cls: VendorClass =
+        scope === 'dependencies' || poetry[2] === 'main' ? 'runtime' : 'build-time';
+      push({ name, version: versionOf(assignment), line: assignment.line, scope, class: cls });
     }
-    if (inArray) {
-      if (text.startsWith(']')) {
-        inArray = false;
-        return;
-      }
-      const item = /^"([^"]+)"/.exec(text);
-      if (item?.[1] !== undefined) {
-        const dependency = parseRequirement(item[1], line, arrayScope);
-        if (dependency !== undefined) declared.push(dependency);
-      }
-      return;
-    }
-    if (table === 'project' || table.startsWith('project.optional-dependencies')) {
-      const start = /^([\w-]+)\s*=\s*\[/.exec(text);
-      if (start !== null && (table !== 'project' || start[1] === 'dependencies')) {
-        arrayScope = table === 'project' ? 'dependencies' : 'optional-dependencies';
-        inArray = !text.includes(']');
-        for (const item of text.matchAll(/"([^"]+)"/g)) {
-          const dependency = parseRequirement(item[1] ?? '', line, arrayScope);
-          if (dependency !== undefined) declared.push(dependency);
-        }
-      }
-      return;
-    }
-    const poetry = /^tool\.poetry(?:\.group\.([\w-]+))?\.dependencies$/.exec(table);
-    if (poetry === null) return;
-    const entry = parseTomlAssignment(text);
-    if (entry === undefined || entry.name === 'python') return;
-    const group = poetry[1];
-    const scope =
-      group === undefined ? 'dependencies' : group === 'dev' ? 'devDependencies' : group;
-    declared.push({ ...entry, line, scope, class: scopeClass(scope) });
-  });
+  }
   return declared;
 }
 
-/** `name = "1.0"` or `name = { version = "1.0", ... }` on one line. */
-function parseTomlAssignment(text: string): { name: string; version: string } | undefined {
-  const match = /^([A-Za-z0-9._-]+)\s*=\s*(.*)$/.exec(text);
-  if (match === null || match[1] === undefined) return undefined;
-  const rest = match[2] ?? '';
-  const quoted = /^"([^"]*)"/.exec(rest);
-  if (quoted !== null) return { name: match[1], version: quoted[1] ?? '' };
-  const inline = /version\s*=\s*"([^"]*)"/.exec(rest);
-  return { name: match[1], version: inline?.[1] ?? '' };
-}
-
-/** Cargo: `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, also target-specific ones. */
-function parseTomlTables(contents: string, scopes: Readonly<Record<string, string>>): Declared[] {
+/**
+ * Cargo: `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, the
+ * `[target.<cfg>.<table>]` forms and the `[<table>.<name>]` subtable form.
+ */
+function parseCargo(contents: string): Declared[] {
   const declared: Declared[] = [];
-  let scope: string | undefined;
-  contents.split('\n').forEach((raw, index) => {
-    const text = raw.trim();
-    const header = /^\[([^\]]+)\]$/.exec(text);
-    if (header !== null) {
-      const table = header[1] ?? '';
-      const key = Object.keys(scopes).find((name) => table === name || table.endsWith(`.${name}`));
-      scope = key === undefined ? undefined : scopes[key];
-      return;
-    }
-    if (scope === undefined || text === '' || text.startsWith('#')) return;
-    const entry = parseTomlAssignment(text);
-    if (entry === undefined) return;
-    declared.push({ ...entry, line: index + 1, scope, class: scopeClass(scope) });
-  });
+  for (const assignment of readToml(contents)) {
+    const match =
+      /^(?:target\.[^.]+\.)?(dependencies|dev-dependencies|build-dependencies)(?:\.([^.]+))?$/.exec(
+        assignment.table,
+      );
+    if (match === null) continue;
+    const scope = match[1] ?? '';
+    const subtable = match[2];
+    if (subtable !== undefined && assignment.key !== 'version') continue;
+    declared.push({
+      name: subtable ?? assignment.key,
+      version: versionOf(assignment),
+      line: assignment.line,
+      scope,
+      class: scopeClass(scope),
+    });
+  }
   return declared;
 }
 
@@ -325,18 +406,32 @@ function parseGoMod(contents: string): Declared[] {
   return declared;
 }
 
-/** `gem 'name', 'constraint'`; groups are not tracked, every gem is runtime. */
+/**
+ * `gem 'name', 'constraint'`. A gem inside a `group ... do` block or carrying
+ * a `group:` option is not loaded in production, so it is build-time.
+ */
 function parseGemfile(contents: string): Declared[] {
   const declared: Declared[] = [];
+  let groupDepth = 0;
   contents.split('\n').forEach((raw, index) => {
-    const match = /^\s*gem\s+['"]([^'"]+)['"](?:\s*,\s*['"]([^'"]+)['"])?/.exec(raw);
+    const text = raw.trim();
+    if (/^group\b.*\bdo$/.test(text)) {
+      groupDepth += 1;
+      return;
+    }
+    if (text === 'end' && groupDepth > 0) {
+      groupDepth -= 1;
+      return;
+    }
+    const match = /^gem\s+['"]([^'"]+)['"](?:\s*,\s*['"]([^'"]+)['"])?(.*)$/.exec(text);
     if (match === null || match[1] === undefined) return;
+    const grouped = groupDepth > 0 || /\bgroup:/.test(match[3] ?? '');
     declared.push({
       name: match[1],
       version: match[2] ?? '',
       line: index + 1,
-      scope: 'gem',
-      class: 'runtime',
+      scope: grouped ? 'group' : 'gem',
+      class: grouped ? 'build-time' : 'runtime',
     });
   });
   return declared;
