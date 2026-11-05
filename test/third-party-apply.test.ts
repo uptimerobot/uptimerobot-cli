@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ThirdPartyCandidate } from '../src/lib/scan/index.js';
 import {
+  CREATE_COMMAND,
+  applyOnlyChoices,
   formatProposal,
   formatSummary,
+  malformedOnly,
+  parseOnly,
   selectCandidates,
-  settleChoices,
 } from '../src/lib/third-party/apply.js';
 import type { ResolvedCandidate } from '../src/lib/third-party/resolve.js';
 
@@ -39,6 +42,29 @@ const choice = (id: number, name: string, isTracked = false) => ({
 
 const NONE = { providerIds: [], partial: false };
 
+describe('parseOnly', () => {
+  it.each([
+    ['Stripe', { name: 'stripe' }],
+    [' Stripe =801', { name: 'stripe', id: 801 }],
+    ['Stripe=0', { name: 'stripe' }],
+    ['Stripe=-1', { name: 'stripe' }],
+    ['Stripe=abc', { name: 'stripe' }],
+    ['Stripe=1.5', { name: 'stripe' }],
+    ['a=b=5', { name: 'a=b', id: 5 }],
+  ])('parses %s', (entry, expected) => {
+    expect(parseOnly(entry)).toEqual(expected);
+  });
+
+  it('names the first entry with a malformed id', () => {
+    expect(malformedOnly(['Stripe', 'Vercel=861'])).toBeUndefined();
+    expect(malformedOnly(['Stripe', 'Vercel=abc', 'Resend=0'])).toBe('Vercel=abc');
+  });
+
+  it('spells the hand-run command from the generated command id', () => {
+    expect(CREATE_COMMAND).toBe('uptimerobot monitors create third-party-service --provider-id');
+  });
+});
+
 describe('selectCandidates', () => {
   it('keeps only the named providers, drops the skipped ones, ignores case and an =id suffix', () => {
     const all = [candidate('Stripe'), candidate('Vercel'), candidate('Resend')];
@@ -60,7 +86,7 @@ describe('selectCandidates', () => {
   });
 });
 
-describe('settleChoices', () => {
+describe('applyOnlyChoices', () => {
   const ambiguous: ResolvedCandidate = {
     ...candidate('Vercel'),
     status: 'ambiguous',
@@ -68,27 +94,27 @@ describe('settleChoices', () => {
   };
 
   it('turns an ambiguous row into a create when --only names an untracked choice', () => {
-    const [row] = settleChoices([ambiguous], ['vercel=861'], NONE);
+    const [row] = applyOnlyChoices([ambiguous], ['vercel=861'], NONE);
     expect(row).toMatchObject({ status: 'create', catalog: { id: 861 }, regionDefaulted: false });
     expect(row).not.toHaveProperty('choices');
   });
 
   it('turns it into already-tracked when the chosen row is tracked by the search or the account', () => {
-    expect(settleChoices([ambiguous], ['Vercel=862'], NONE)[0]).toMatchObject({
+    expect(applyOnlyChoices([ambiguous], ['Vercel=862'], NONE)[0]).toMatchObject({
       status: 'already-tracked',
       catalog: { id: 862 },
     });
     expect(
-      settleChoices([ambiguous], ['Vercel=861'], { providerIds: [861], partial: false })[0],
+      applyOnlyChoices([ambiguous], ['Vercel=861'], { providerIds: [861], partial: false })[0],
     ).toMatchObject({
       status: 'already-tracked',
     });
   });
 
   it('leaves the row alone when the id is not one of its choices or no id was given', () => {
-    expect(settleChoices([ambiguous], ['Vercel=999'], NONE)[0]).toBe(ambiguous);
-    expect(settleChoices([ambiguous], ['Vercel'], NONE)[0]).toBe(ambiguous);
-    expect(settleChoices([ambiguous], ['Vercel=abc'], NONE)[0]).toBe(ambiguous);
+    expect(applyOnlyChoices([ambiguous], ['Vercel=999'], NONE)[0]).toBe(ambiguous);
+    expect(applyOnlyChoices([ambiguous], ['Vercel'], NONE)[0]).toBe(ambiguous);
+    expect(applyOnlyChoices([ambiguous], ['Vercel=abc'], NONE)[0]).toBe(ambiguous);
   });
 });
 
@@ -138,7 +164,11 @@ describe('rendering', () => {
       '9 of 10 third-party slots used, 1 proposed. Tracked set read from the account (2 services, partial: the list stopped at its page cap).',
     ]);
     expect(
-      formatProposal({ proposal: [], allowance: { proposed: 0 }, tracked: NONE }).slice(-1)[0],
+      formatProposal({
+        proposal: [],
+        allowance: { used: null, limit: null, proposed: 0 },
+        tracked: NONE,
+      }).slice(-1)[0],
     ).toBe('Allowance unknown, 0 proposed. Tracked set read from the account (0 services).');
   });
 
@@ -176,6 +206,20 @@ describe('rendering', () => {
       'Not created: Stripe (Slow down).',
       'Not attempted: Resend.',
     ]);
+    const refused = formatSummary(
+      [create],
+      [
+        {
+          provider: 'Stripe',
+          status: 'already-tracked',
+          detail: { code: 'HTTP_409', message: 'Provider already tracked' },
+        },
+      ],
+      'confirmed',
+    );
+    expect(refused[0]).toBe(
+      'Already tracked (refused by the API): Stripe (Provider already tracked).',
+    );
     expect(formatSummary([create], [], 'declined')[0]).toBe('Nothing was created.');
     expect(formatSummary([create], [], 'required')[0]).toBe('Nothing was created.');
     expect(formatSummary([create], [], 'required')).toContain(

@@ -1,52 +1,41 @@
 import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Args, Flags } from '@oclif/core';
-import { createApiClient } from '../api/client.js';
 import { ApiFailure } from '../api/errors.js';
-import { AuthenticationError, PRODUCTION_API_URL, resolveApiKey } from '../lib/auth.js';
+import { type ApiAccess, AuthenticationError, resolveApiAccess } from '../lib/auth.js';
 import { BaseCommand } from '../lib/base-command.js';
 import {
   type InvocationMode,
   confirmationAvailable,
   detectInvocationMode,
-  isCI,
   requestConfirmation,
 } from '../lib/invocation.js';
 import { type SeedContext, formatSeedContext, scanRepository } from '../lib/scan/index.js';
 import {
+  type ApplySelection,
   type Confirmation,
-  type CreateResult,
   type Proposal,
+  buildApplyOutput,
   confirmationRequiredError,
-  createProposed,
   formatProposal,
   formatSummary,
-  parseOnly,
-  prepareProposal,
+  malformedOnly,
+  runApply,
 } from '../lib/third-party/apply.js';
-import type { ApiAccess } from '../lib/third-party/resolve.js';
 import { resolveFormat } from '../output/resolve-format.js';
 
 /**
- * Prints the seed context `uptimerobot init` hands its agent, on its own.
+ * Prints the seed context `uptimerobot init` hands its agent, on its own, and
+ * with `--apply` turns its third-party providers into third-party services.
  *
- * Two things follow from the scan being a pure, offline library. It needs no
- * API key, so this command never touches the credential store — unlike `init`,
- * which resolves authentication before it does anything. And it has no side
- * effects, so it can be run against any directory, as often as the caller
- * likes, to see exactly what `init` would work from.
+ * Without `--apply` the scan is a pure, offline library call: it needs no API
+ * key, so this command never touches the credential store, and it has no
+ * side effects, so it can be run against any directory as often as the caller
+ * likes to see exactly what `init` would work from. With `--apply` it
+ * resolves credentials first, like every authenticated command, then reads the
+ * account and the catalog, prints a proposal, and creates only what was
+ * confirmed.
  */
-/** The `--apply` result, in the shape the Command contract documents. */
-export interface ApplyOutput {
-  schemaVersion: number;
-  repoRoot: string;
-  proposal: Proposal['proposal'];
-  allowance: Proposal['allowance'];
-  tracked: Proposal['tracked'];
-  confirmation: Confirmation;
-  results: CreateResult[];
-}
-
 export default class Scan extends BaseCommand {
   static override args = {
     path: Args.string({
@@ -55,9 +44,11 @@ export default class Scan extends BaseCommand {
     }),
   };
 
-  static override description = `Report what this repository looks like to monitor discovery: the endpoints that could become monitors, the ones that were skipped and why, and the scheduled jobs that could become heartbeats.
+  static override description = `Report what this repository looks like to monitor discovery: the endpoints that could become monitors, the ones that were skipped and why, the scheduled jobs that could become heartbeats, and the third-party providers it depends on.
 
-No authentication is required. The scan reads the working tree and nothing else — it never reaches the network, never opens a dotenv file, and writes nothing — so it runs without an API key, which is where it differs from \`uptimerobot init\`.
+Without --apply no authentication is required. The scan reads the working tree and nothing else, never reaches the network, never opens a dotenv file, and writes nothing, so it runs without an API key, which is where it differs from \`uptimerobot init\`.
+
+With --apply the third-party providers are resolved against the catalog and the account, a proposal is printed, and after confirmation one third-party service is created per proposed provider. An agent or a pipe gets no prompt and must pass --confirm.
 
 Skipped candidates are reported alongside the accepted ones, each with its reason and the file and line it was found at, because knowing why something must not be monitored is as useful as knowing what can be.`;
 
@@ -101,16 +92,28 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
     const machineOutput = format === 'json' || format === 'jsonl';
 
     if (flags.apply === true) {
+      const selection: ApplySelection = {
+        includeBuildTime: flags['include-build-time'] === true,
+        only: flags.only ?? [],
+        skip: flags.skip ?? [],
+      };
+      const malformed = malformedOnly(selection.only);
+      if (malformed !== undefined) {
+        return this.fail(
+          {
+            code: 'INVALID_INPUT',
+            expected: '<provider> or <provider>=<catalog id>',
+            message: `--only ${malformed} names no catalog id.`,
+            path: 'only',
+          },
+          2,
+        );
+      }
       // Credentials come first, so a run without an account fails before the
       // scan and before any request, like every other authenticated command.
       const access = await this.resolveAccess(flags['api-key'], mode);
       const context = await scanRepository(repoRoot);
-      await this.apply(context, access, mode, machineOutput, {
-        confirm: flags.confirm === true,
-        includeBuildTime: flags['include-build-time'] === true,
-        only: flags.only ?? [],
-        skip: flags.skip ?? [],
-      });
+      await this.apply(context, access, mode, machineOutput, selection, flags.confirm === true);
       return context;
     }
 
@@ -125,101 +128,70 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
     explicitApiKey: string | undefined,
     mode: InvocationMode,
   ): Promise<ApiAccess> {
-    const apiUrl = new URL(process.env.UPTIMEROBOT_DEV_API_URL ?? PRODUCTION_API_URL);
-    let apiKey: string;
     try {
-      apiKey = await resolveApiKey(explicitApiKey, apiUrl.toString());
+      return await resolveApiAccess({ explicitApiKey, mode, version: this.config.pjson.version });
     } catch (error) {
       if (error instanceof AuthenticationError) {
         return this.fail({ code: error.code, message: error.message }, error.exitCode);
       }
       throw error;
     }
-    const client = createApiClient({
-      apiKey,
-      apiUrl,
-      environment: isCI() ? 'ci' : 'local',
-      mode,
-      version: this.config.pjson.version,
-    });
-    return { client, apiUrl };
   }
 
-  /** Proposal, confirmation, creates, summary; exits as the Command contract says. */
+  /** Prints, prompts and exits as the Command contract says; the flow itself is `runApply`. */
   private async apply(
     context: SeedContext,
     access: ApiAccess,
     mode: InvocationMode,
     machineOutput: boolean,
-    flags: { confirm: boolean; includeBuildTime: boolean; only: string[]; skip: string[] },
+    selection: ApplySelection,
+    confirmFlag: boolean,
   ): Promise<void> {
-    const malformed = flags.only.find(
-      (entry) => entry.includes('=') && parseOnly(entry).id === undefined,
-    );
-    if (malformed !== undefined) {
-      return this.fail(
-        {
-          code: 'INVALID_INPUT',
-          expected: '<provider> or <provider>=<catalog id>',
-          message: `--only ${malformed} names no catalog id.`,
-          path: 'only',
-        },
-        2,
-      );
-    }
-    let proposal: Proposal;
+    const printProposal = (proposal: Proposal): void => {
+      if (!machineOutput) for (const line of formatProposal(proposal)) this.log(line);
+    };
+    // The prompt is the one every destructive generated command uses; an agent
+    // or a pipe gets no prompt and must pass --confirm.
+    const confirm = async (proposal: Proposal, toCreate: number): Promise<Confirmation> => {
+      printProposal(proposal);
+      if (!confirmationAvailable(mode)) return 'required';
+      const summary = `Create ${toCreate} third-party ${toCreate === 1 ? 'service' : 'services'}`;
+      return (await requestConfirmation(summary, mode)) ? 'confirmed' : 'declined';
+    };
+
+    let run;
     try {
+      run = await runApply({
+        candidates: context.thirdParty.candidates,
+        selection,
+        access,
+        confirmFlag,
+        confirm,
+      });
+    } catch (error) {
       // A refused credential anywhere, the allowance read included, ends the
       // run: a key that cannot read the account is not trusted to write to it.
-      proposal = await prepareProposal(context.thirdParty.candidates, flags, access);
-    } catch (error) {
       if (error instanceof ApiFailure) return this.fail(error.cliError, error.exitCode);
       throw error;
     }
-    const toCreate = proposal.proposal.filter((row) => row.status === 'create').length;
-
-    if (!machineOutput) for (const line of formatProposal(proposal)) this.log(line);
-
-    let confirmation: Confirmation = toCreate === 0 ? 'not-needed' : 'confirmed';
-    if (toCreate > 0 && !flags.confirm) {
-      const summary = `Create ${toCreate} third-party ${toCreate === 1 ? 'service' : 'services'}?`;
-      // The prompt is the one every destructive generated command uses; an agent
-      // or a pipe gets no prompt and must pass --confirm.
-      const asked = confirmationAvailable(mode);
-      confirmation =
-        asked && (await requestConfirmation(summary.slice(0, -1), mode))
-          ? 'confirmed'
-          : asked
-            ? 'declined'
-            : 'required';
+    // The prompt printed the proposal; a run that never asked still shows it.
+    if (run.confirmation === 'confirmed' || run.confirmation === 'not-needed') {
+      printProposal(run.proposal);
     }
 
-    let results: CreateResult[] = [];
-    let failure: ApiFailure | undefined;
-    if (confirmation === 'confirmed' && toCreate > 0) {
-      ({ results, failure } = await createProposed(proposal.proposal, access));
-    }
-
-    const output: ApplyOutput = {
-      schemaVersion: context.schemaVersion,
-      repoRoot: context.repoRoot,
-      proposal: proposal.proposal,
-      allowance: proposal.allowance,
-      tracked: proposal.tracked,
-      confirmation,
-      results,
-    };
-    if (machineOutput) this.log(JSON.stringify(output));
+    if (machineOutput) this.log(JSON.stringify(buildApplyOutput(context, run)));
     else {
       this.log('');
-      for (const line of formatSummary(proposal.proposal, results, confirmation)) this.log(line);
+      for (const line of formatSummary(run.proposal.proposal, run.results, run.confirmation)) {
+        this.log(line);
+      }
     }
     // A declined prompt exits like a missing confirmation: the generated
     // destructive commands do the same, and a script must tell "no" from "done".
-    if (confirmation === 'required' || confirmation === 'declined') {
-      return this.fail(confirmationRequiredError(confirmation), 2);
+    if (run.confirmation === 'required' || run.confirmation === 'declined') {
+      return this.fail(confirmationRequiredError(run.confirmation), 2);
     }
-    if (failure !== undefined) return this.fail(failure.cliError, failure.exitCode);
+    if (run.failure !== undefined) return this.fail(run.failure.cliError, run.failure.exitCode);
   }
 
   /**

@@ -46,6 +46,15 @@ const DEFAULT_CATALOG: Record<string, Record<string, unknown>[]> = {
 
 const stubs: Stub[] = [];
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+function providerIdOf(body: unknown): unknown {
+  const config = isRecord(body) ? body.config : undefined;
+  const service = isRecord(config) ? config.thirdPartyService : undefined;
+  return isRecord(service) ? service.providerId : undefined;
+}
+
 function readBody(request: IncomingMessage): Promise<unknown> {
   return new Promise((resolve) => {
     let text = '';
@@ -91,11 +100,7 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
       const scripted = options.createReplies?.[creates];
       creates += 1;
       if (scripted !== undefined) return reply(scripted.status, scripted.body);
-      const providerId =
-        typeof body === 'object' && body !== null
-          ? (body as { config?: { thirdPartyService?: { providerId?: unknown } } }).config
-              ?.thirdPartyService?.providerId
-          : undefined;
+      const providerId = providerIdOf(body);
       const monitor = {
         id: nextId,
         friendlyName: `provider-${String(providerId)}`,
@@ -312,7 +317,11 @@ describe('uptimerobot scan --apply', () => {
     expect(result.exitCode).toBe(0);
     const output = JSON.parse(result.stdout);
     expect(output.results).toEqual([
-      { provider: 'Resend', status: 'already-tracked' },
+      {
+        provider: 'Resend',
+        status: 'already-tracked',
+        detail: { code: 'HTTP_409', message: 'Provider already tracked' },
+      },
       { provider: 'Stripe', status: 'created', monitorId: 5000 },
       { provider: 'Vercel', status: 'created', monitorId: 5001 },
     ]);

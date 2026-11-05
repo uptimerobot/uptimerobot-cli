@@ -8,13 +8,15 @@
  * prompt in an interactive human run. Creates run one at a time in proposal
  * order and stop at the first failure, which is never retried; a create the
  * API refuses because the provider is already tracked is reported as such and
- * does not stop the run.
+ * does not stop the run. `runApply` is the whole flow without the printing,
+ * so `init` can offer the same proposal.
  */
 import { requestJson } from '../../api/client.js';
 import { ApiFailure } from '../../api/errors.js';
 import { operations } from '../../generated/operations.js';
 import { isPlainRecord } from '../objects.js';
 import { buildUrl } from '../request.js';
+import type { SeedContext } from '../scan/index.js';
 import type { ThirdPartyCandidate } from '../scan/third-party-context.js';
 import type { CliError } from '../types.js';
 import {
@@ -35,22 +37,44 @@ export interface ApplySelection {
   includeBuildTime: boolean;
 }
 
+/** The account's allowance, null fields when the account did not say, and what this run proposes. */
+export interface ProposalAllowance {
+  used: number | null;
+  limit: number | null;
+  proposed: number;
+}
+
 export interface Proposal {
   proposal: readonly ResolvedCandidate[];
-  allowance: { used: number; limit: number; proposed: number } | { proposed: number };
+  allowance: ProposalAllowance;
   tracked: TrackedProviders;
 }
 
 export type CreateResult =
   | { provider: string; status: 'created'; monitorId: number | null }
-  | { provider: string; status: 'already-tracked' }
+  | { provider: string; status: 'already-tracked'; detail: { code: string; message: string } }
   | { provider: string; status: 'failed'; error: { code: string; message: string } };
 
 /** `not-needed` when the proposal held nothing to create, so no one was asked. */
 export type Confirmation = 'required' | 'declined' | 'confirmed' | 'not-needed';
 
+/** The `--apply` result, in the shape the Command contract documents. */
+export interface ApplyOutput {
+  schemaVersion: number;
+  repoRoot: string;
+  proposal: readonly ResolvedCandidate[];
+  allowance: ProposalAllowance;
+  tracked: TrackedProviders;
+  confirmation: Confirmation;
+  results: readonly CreateResult[];
+}
+
 const CREATE = operations['monitors:create:third-party-service'];
-/** The status the API answers a create for a provider the account already tracks with. */
+/**
+ * The status the API answers a create for a provider the account already
+ * tracks with. An assumption: the API documents no code for it, so the refusal
+ * body is kept on the result for a reader to check.
+ */
 const ALREADY_TRACKED_STATUS = 409;
 
 function normalizeName(name: string): string {
@@ -64,6 +88,11 @@ export function parseOnly(entry: string): { name: string; id?: number } {
   const id = Number(entry.slice(equals + 1));
   const name = normalizeName(entry.slice(0, equals));
   return Number.isSafeInteger(id) && id > 0 ? { name, id } : { name };
+}
+
+/** The first `--only` entry with an `=` but no usable id, if any. */
+export function malformedOnly(only: readonly string[]): string | undefined {
+  return only.find((entry) => entry.includes('=') && parseOnly(entry).id === undefined);
 }
 
 /** The candidates `--only` and `--skip` leave in, before any search is made. */
@@ -81,7 +110,7 @@ export function selectCandidates(
 }
 
 /** Settles an ambiguous row whose `--only Name=<id>` names one of its choices. */
-export function settleChoices(
+export function applyOnlyChoices(
   rows: readonly ResolvedCandidate[],
   only: readonly string[],
   tracked: TrackedProviders,
@@ -118,11 +147,11 @@ export async function prepareProposal(
     tracked,
   });
   const allowance = await readAllowance(access);
-  const proposal = applyAllowance(settleChoices(resolved, selection.only, tracked), allowance);
+  const proposal = applyAllowance(applyOnlyChoices(resolved, selection.only, tracked), allowance);
   const proposed = proposal.filter((row) => row.status === 'create').length;
   return {
     proposal,
-    allowance: allowance === null ? { proposed } : { ...allowance, proposed },
+    allowance: { used: allowance?.used ?? null, limit: allowance?.limit ?? null, proposed },
     tracked,
   };
 }
@@ -134,7 +163,8 @@ function monitorIdOf(payload: unknown): number | null {
 
 /**
  * Creates one third-party service per `create` row, in order, and stops at the
- * first failure. Returns the results and, when a create failed, the failure.
+ * first failure. Sequential on purpose: the order is the proposal's, and a
+ * failure must leave the later rows untouched.
  */
 export async function createProposed(
   proposal: readonly ResolvedCandidate[],
@@ -153,19 +183,63 @@ export async function createProposed(
       results.push({ provider: row.provider, status: 'created', monitorId: monitorIdOf(payload) });
     } catch (error) {
       if (!(error instanceof ApiFailure)) throw error;
+      const detail = { code: error.cliError.code, message: error.cliError.message };
       if (error.cliError.status === ALREADY_TRACKED_STATUS) {
-        results.push({ provider: row.provider, status: 'already-tracked' });
+        results.push({ provider: row.provider, status: 'already-tracked', detail });
         continue;
       }
-      results.push({
-        provider: row.provider,
-        status: 'failed',
-        error: { code: error.cliError.code, message: error.cliError.message },
-      });
+      results.push({ provider: row.provider, status: 'failed', error: detail });
       return { results, failure: error };
     }
   }
   return { results };
+}
+
+export interface ApplyRun {
+  proposal: Proposal;
+  confirmation: Confirmation;
+  results: readonly CreateResult[];
+  failure?: ApiFailure;
+}
+
+/**
+ * The whole flow without printing: prepare, ask through `confirm` when the
+ * proposal holds something to create and `--confirm` is absent, create. The
+ * caller prints the proposal between the two by passing a `confirm` that does
+ * so; it answers `confirmed`, `declined`, or `required` when it could not ask.
+ */
+export async function runApply(options: {
+  candidates: readonly ThirdPartyCandidate[];
+  selection: ApplySelection;
+  access: ApiAccess;
+  confirmFlag: boolean;
+  confirm: (proposal: Proposal, toCreate: number) => Promise<Confirmation>;
+}): Promise<ApplyRun> {
+  const proposal = await prepareProposal(options.candidates, options.selection, options.access);
+  const toCreate = proposal.allowance.proposed;
+  const confirmation: Confirmation =
+    toCreate === 0
+      ? 'not-needed'
+      : options.confirmFlag
+        ? 'confirmed'
+        : await options.confirm(proposal, toCreate);
+  if (confirmation !== 'confirmed') return { proposal, confirmation, results: [] };
+  const { results, failure } = await createProposed(proposal.proposal, options.access);
+  return failure === undefined
+    ? { proposal, confirmation, results }
+    : { proposal, confirmation, results, failure };
+}
+
+export function buildApplyOutput(context: SeedContext, run: ApplyRun): ApplyOutput {
+  return {
+    schemaVersion: context.schemaVersion,
+    repoRoot: context.repoRoot,
+    proposal: run.proposal.proposal,
+    allowance: run.proposal.allowance,
+    tracked: run.proposal.tracked,
+    confirmation: run.confirmation,
+    results: run.results,
+  };
 }
 
 // --- Rendering -------------------------------------------------------------
@@ -222,7 +296,7 @@ export function formatProposal(proposal: Proposal): string[] {
   if (proposal.proposal.length === 0) lines.push('| (no candidates) | | | | |');
   const { allowance, tracked } = proposal;
   const slots =
-    'used' in allowance
+    allowance.used !== null && allowance.limit !== null
       ? `${allowance.used} of ${allowance.limit} third-party slots used, ${allowance.proposed} proposed.`
       : `Allowance unknown, ${allowance.proposed} proposed.`;
   const set = `Tracked set read from the account (${tracked.providerIds.length} ${
@@ -232,35 +306,53 @@ export function formatProposal(proposal: Proposal): string[] {
   return lines;
 }
 
-const CLI_COMMAND = 'uptimerobot monitors create third-party-service --provider-id';
+/** The hand-run equivalent of one create, spelled from the generated command id. */
+export const CREATE_COMMAND = `uptimerobot ${CREATE.commandId.replaceAll(':', ' ')} --provider-id`;
 
-/** What happened, then the lines to repeat each create by hand, then where endpoints go. */
-export function formatSummary(
+const LEFTOVER_LABELS: readonly [ResolvedCandidate['status'], string][] = [
+  ['already-tracked', 'Already tracked before this run'],
+  ['not-in-catalog', 'Not in catalog'],
+  ['over-allowance', 'Over allowance'],
+  ['ambiguous', 'Ambiguous, pick with --only <provider>=<id>'],
+  ['unresolved', 'Unresolved, retry later'],
+];
+
+function describeResult(item: CreateResult): string {
+  switch (item.status) {
+    case 'created':
+      return `${item.provider} (monitor ${item.monitorId ?? 'unknown'})`;
+    case 'failed':
+      return `${item.provider} (${item.error.message})`;
+    default:
+      return `${item.provider} (${item.detail.message})`;
+  }
+}
+
+function outcomeLines(results: readonly CreateResult[], confirmation: Confirmation): string[] {
+  const lines: string[] = [];
+  if (confirmation === 'required' || confirmation === 'declined')
+    lines.push('Nothing was created.');
+  if (confirmation === 'not-needed') lines.push('Nothing to create.');
+  const byStatus = (status: CreateResult['status']): string =>
+    results
+      .filter((item) => item.status === status)
+      .map(describeResult)
+      .join(', ');
+  const created = byStatus('created');
+  const refused = byStatus('already-tracked');
+  const failed = byStatus('failed');
+  if (created !== '') lines.push(`Created: ${created}.`);
+  if (refused !== '') lines.push(`Already tracked (refused by the API): ${refused}.`);
+  if (failed !== '') lines.push(`Not created: ${failed}.`);
+  return lines;
+}
+
+function leftoverLines(
   proposal: readonly ResolvedCandidate[],
   results: readonly CreateResult[],
   confirmation: Confirmation,
 ): string[] {
   const lines: string[] = [];
-  const created = results.filter((item) => item.status === 'created');
-  const refused = results.filter((item) => item.status === 'already-tracked');
-  const failed = results.filter((item) => item.status === 'failed');
-  const describe = (items: readonly CreateResult[]): string =>
-    items
-      .map((item) =>
-        item.status === 'created'
-          ? `${item.provider} (monitor ${item.monitorId ?? 'unknown'})`
-          : item.status === 'failed'
-            ? `${item.provider} (${item.error.message})`
-            : item.provider,
-      )
-      .join(', ');
-  if (confirmation === 'required' || confirmation === 'declined')
-    lines.push('Nothing was created.');
-  if (confirmation === 'not-needed') lines.push('Nothing to create.');
-  if (created.length > 0) lines.push(`Created: ${describe(created)}.`);
-  if (refused.length > 0) lines.push(`Already tracked: ${describe(refused)}.`);
-  if (failed.length > 0) lines.push(`Not created: ${describe(failed)}.`);
-
   const attempted = new Set(results.map((item) => item.provider));
   const remaining = proposal.filter(
     (row) => row.status === 'create' && !attempted.has(row.provider),
@@ -268,39 +360,50 @@ export function formatSummary(
   if (confirmation === 'confirmed' && remaining.length > 0) {
     lines.push(`Not attempted: ${remaining.map((row) => row.provider).join(', ')}.`);
   }
-  const byStatus = (status: ResolvedCandidate['status']): string[] =>
-    proposal.filter((row) => row.status === status).map((row) => row.provider);
-  const tracked = byStatus('already-tracked');
-  if (tracked.length > 0) lines.push(`Already tracked before this run: ${tracked.join(', ')}.`);
-  const missing = byStatus('not-in-catalog');
-  if (missing.length > 0) lines.push(`Not in catalog: ${missing.join(', ')}.`);
-  const over = byStatus('over-allowance');
-  if (over.length > 0) lines.push(`Over allowance: ${over.join(', ')}.`);
-  const ambiguous = byStatus('ambiguous');
-  if (ambiguous.length > 0)
-    lines.push(`Ambiguous, pick with --only <provider>=<id>: ${ambiguous.join(', ')}.`);
-  const unresolved = byStatus('unresolved');
-  if (unresolved.length > 0) lines.push(`Unresolved, retry later: ${unresolved.join(', ')}.`);
-
-  // After a confirmed run the created rows need no repeating; what is left is
-  // what stopped, what was never reached, and what the allowance refused.
-  const createdProviders = new Set(created.map((item) => item.provider));
-  const commands = proposal.flatMap((row) =>
-    (row.status === 'create' && !createdProviders.has(row.provider)) ||
-    row.status === 'over-allowance'
-      ? [`${CLI_COMMAND} ${row.catalog.id}`]
-      : [],
-  );
-  if (commands.length > 0)
-    lines.push('', 'To repeat a create by hand:', ...commands.map((c) => `  ${c}`));
-  lines.push('', 'Endpoints and heartbeats need a base URL and go through `uptimerobot init`.');
+  for (const [status, label] of LEFTOVER_LABELS) {
+    const names = proposal.filter((row) => row.status === status).map((row) => row.provider);
+    if (names.length > 0) lines.push(`${label}: ${names.join(', ')}.`);
+  }
   return lines;
 }
+
+/** The creates still worth repeating by hand: not the ones a confirmed run made. */
+function manualCommands(
+  proposal: readonly ResolvedCandidate[],
+  results: readonly CreateResult[],
+): string[] {
+  const created = new Set(
+    results.filter((item) => item.status === 'created').map((item) => item.provider),
+  );
+  return proposal.flatMap((row) =>
+    (row.status === 'create' && !created.has(row.provider)) || row.status === 'over-allowance'
+      ? [`  ${CREATE_COMMAND} ${row.catalog.id}`]
+      : [],
+  );
+}
+
+/** What happened, then the lines to repeat each create by hand, then where endpoints go. */
+export function formatSummary(
+  proposal: readonly ResolvedCandidate[],
+  results: readonly CreateResult[],
+  confirmation: Confirmation,
+): string[] {
+  const commands = manualCommands(proposal, results);
+  return [
+    ...outcomeLines(results, confirmation),
+    ...leftoverLines(proposal, results, confirmation),
+    ...(commands.length > 0 ? ['', 'To repeat a create by hand:', ...commands] : []),
+    '',
+    'Endpoints and heartbeats need a base URL and go through `uptimerobot init`.',
+  ];
+}
+
+export const APPLY_COMMAND = 'scan --apply';
 
 export function confirmationRequiredError(confirmation: 'required' | 'declined'): CliError {
   return {
     code: 'CONFIRMATION_REQUIRED',
-    command: 'scan --apply',
+    command: APPLY_COMMAND,
     message:
       confirmation === 'declined'
         ? 'Nothing was created: the confirmation was declined.'

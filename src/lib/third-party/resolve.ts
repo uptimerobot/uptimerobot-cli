@@ -19,7 +19,8 @@
  * description in `openapi/openapi.yaml` says one minute) and a row can say
  * "not tracked" right after a create.
  */
-import { type ApiClient, requestJson } from '../../api/client.js';
+import { requestJson } from '../../api/client.js';
+import type { ApiAccess } from '../auth.js';
 import { ApiFailure } from '../../api/errors.js';
 import { operations } from '../../generated/operations.js';
 import { isPlainRecord } from '../objects.js';
@@ -28,10 +29,7 @@ import { buildUrl } from '../request.js';
 import type { ThirdPartyCandidate } from '../scan/third-party-context.js';
 import { normalizeCatalogName } from '../scan/vendors.js';
 
-export interface ApiAccess {
-  client: ApiClient;
-  apiUrl: URL;
-}
+export type { ApiAccess } from '../auth.js';
 
 /** The provider ids of the account's third-party services, and whether the list was cut short. */
 export interface TrackedProviders {
