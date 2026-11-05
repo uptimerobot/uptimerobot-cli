@@ -85,6 +85,8 @@ describe('renderSetupGuide', () => {
     ['the carve-out for heartbeats with no declared schedule', 'no schedule declared'],
     ['paging the duplicate pre-check', '--cursor'],
     ['the truncated-scan instruction', 'stopped early'],
+    ['the third-party part of the scan file', 'Third-party providers'],
+    ['the third-party confirm guardrail', 'Never pass `--confirm` to `scan --apply`'],
   ])('states %s', (_label, substring) => {
     expect(prose(guide)).toContain(prose(substring));
   });
@@ -176,6 +178,34 @@ describe('renderSetupGuide', () => {
     expect(guide).toContain('No separate "type yes" step');
     // The strict shown-diff-then-yes gate stays, but only for the file edits.
     expect(guide).toContain('one file, one diff, one yes');
+  });
+
+  it('puts the third-party step between discovery and the endpoint proposal', () => {
+    const discover = guide.indexOf('## Step 1 — Discover');
+    const thirdParty = guide.indexOf('## Step 2 — Third-party services');
+    const propose = guide.indexOf('## Step 3 — Propose, then stop');
+    expect(discover).toBeGreaterThan(-1);
+    expect(thirdParty).toBeGreaterThan(discover);
+    expect(propose).toBeGreaterThan(thirdParty);
+    expect(guide).toContain('## Step 7 — Verify');
+    expect(guide).not.toContain('## Step 6 — Verify');
+  });
+
+  it('tells the agent to propose third-party services through the CLI and confirm only on a yes', () => {
+    expect(guide).toContain('uptimerobot scan --apply --json');
+    expect(guide).toContain('uptimerobot scan --apply --confirm');
+    expect(prose(guide)).toContain(
+      prose("Never pass `--confirm` on the user's behalf: only after an explicit yes"),
+    );
+    expect(prose(guide)).toContain(prose('`--only` or `--skip` to match the answer'));
+    expect(prose(guide)).toContain(prose('need no base URL'));
+    expect(prose(guide)).toContain(prose('**Third-party services** — one row per service created'));
+  });
+
+  it('templates the third-party commands through the npx form too', () => {
+    const viaNpx = renderSetupGuide(VIA_NPX);
+    expect(viaNpx).toContain('npx @uptimerobot/cli scan --apply --json');
+    expect(viaNpx).toContain('npx @uptimerobot/cli scan --apply --confirm');
   });
 
   it('tells the agent to attach an alert contact so monitors are not silent', () => {

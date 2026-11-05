@@ -267,6 +267,9 @@ describe('formatThirdPartySection', () => {
     expect(formatThirdPartySection(context)).toEqual([
       '## Third-party providers (candidates for third-party services)',
       '',
+      '> These need no base URL: `uptimerobot scan --apply` resolves them against the catalog',
+      '> and creates a third-party service per confirmed row.',
+      '',
       '### Runtime (proposed by default)',
       '',
       '- AWS: apps/api: boto3@1.35.80 (requirements.txt:3), infra/main.tf:10 (provider "aws"), infra/main.tf:14 (aws_s3); signals: eu-central-1, s3',
@@ -352,6 +355,9 @@ describe('formatThirdPartySection', () => {
   it('says so when there is nothing in a group', () => {
     expect(formatThirdPartySection(buildThirdPartyContext([]))).toEqual([
       '## Third-party providers (candidates for third-party services)',
+      '',
+      '> These need no base URL: `uptimerobot scan --apply` resolves them against the catalog',
+      '> and creates a third-party service per confirmed row.',
       '',
       '### Runtime (proposed by default)',
       '',
