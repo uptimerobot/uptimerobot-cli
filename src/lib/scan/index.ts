@@ -31,6 +31,16 @@ import type { ScanEvidence, ScanFinding } from './finding.js';
 import { compareStrings as compare } from './support.js';
 import { type ScanRoutesOptions, isHealthPath, scanRoutes } from './routes.js';
 import { type ScanScheduledOptions, scanScheduled } from './scheduled.js';
+import {
+  type ThirdPartyContext,
+  buildThirdPartyContext,
+  formatThirdPartySection,
+} from './third-party-context.js';
+import {
+  type ScanThirdPartyOptions,
+  type ThirdPartyFinding,
+  scanThirdParty,
+} from './third-party.js';
 
 export { DEFAULT_CONTAINER_SCAN_LIMITS, scanContainers } from './containers.js';
 export type { ContainerFinding, ContainerScanLimits } from './containers.js';
@@ -39,9 +49,19 @@ export { scanRoutes } from './routes.js';
 export type { RouteFinding, ScanRoutesOptions } from './routes.js';
 export { scanScheduled } from './scheduled.js';
 export type { ScanScheduledOptions, ScheduledFinding } from './scheduled.js';
+export { scanThirdParty } from './third-party.js';
+export type { ScanThirdPartyOptions, ThirdPartyFinding } from './third-party.js';
+export { buildThirdPartyContext, formatThirdPartySection } from './third-party-context.js';
+export type {
+  ThirdPartyCandidate,
+  ThirdPartyContext,
+  ThirdPartyEvidence,
+  ThirdPartyMention,
+} from './third-party-context.js';
 
 /** Bumped whenever a consumer would have to change to read the document. */
-export const SEED_CONTEXT_SCHEMA_VERSION = 1;
+/** 2 added `thirdParty` and `summary.thirdPartyProviders`. */
+export const SEED_CONTEXT_SCHEMA_VERSION = 2;
 
 /** How a candidate has to be used before it can become a monitor. */
 export type CandidateTarget =
@@ -138,6 +158,8 @@ export interface SeedContextSummary {
   accepted: number;
   rejected: number;
   heartbeats: number;
+  /** Third-party providers proposed as candidates, runtime and build-time together. */
+  thirdPartyProviders: number;
   /** Count per reason, e.g. { loopback: 3 }. Reasons that did not fire are absent. */
   rejectedByReason: Record<string, number>;
   /**
@@ -166,23 +188,28 @@ export interface SeedContext {
   accepted: readonly ScanCandidate[];
   rejected: readonly RejectedCandidate[];
   heartbeats: readonly HeartbeatCandidate[];
+  /** The third-party providers the repository depends on, grouped per provider. */
+  thirdParty: ThirdPartyContext;
 }
 
-/** The raw output of the three scanners, before any rule is applied. */
+/** The raw output of the scanners, before any rule is applied. */
 export interface ScanFindings {
   containers: readonly ScanFinding[];
   routes: readonly ScanFinding[];
   scheduled: readonly ScanFinding[];
+  /** Absent means the third-party scanner did not run; the section is then empty. */
+  thirdParty?: readonly ThirdPartyFinding[];
 }
 
 export interface ScanRepositoryOptions {
   containers?: Partial<ContainerScanLimits>;
   routes?: ScanRoutesOptions;
   scheduled?: ScanScheduledOptions;
+  thirdParty?: ScanThirdPartyOptions;
 }
 
 /**
- * Runs all three scanners over `repoRoot` and returns the seed context. None of
+ * Runs all four scanners over `repoRoot` and returns the seed context. None of
  * them throws for a repository's own sake, so neither does this.
  */
 export async function scanRepository(
@@ -193,12 +220,13 @@ export async function scanRepository(
   const onTruncated = (): void => {
     truncated = true;
   };
-  const [containers, routes, scheduled] = await Promise.all([
+  const [containers, routes, scheduled, thirdParty] = await Promise.all([
     scanContainers(repoRoot, options.containers ?? {}),
     scanRoutes(repoRoot, { ...options.routes, onTruncated }),
     scanScheduled(repoRoot, { ...options.scheduled, onTruncated }),
+    scanThirdParty(repoRoot, { ...options.thirdParty, onTruncated }),
   ]);
-  return buildSeedContext(repoRoot, { containers, routes, scheduled }, { truncated });
+  return buildSeedContext(repoRoot, { containers, routes, scheduled, thirdParty }, { truncated });
 }
 
 /**
@@ -269,6 +297,7 @@ export function buildSeedContext(
     candidate.reason,
   ]);
   heartbeats.sort(compareHeartbeats);
+  const thirdParty = buildThirdPartyContext(findings.thirdParty ?? []);
 
   return {
     schemaVersion: SEED_CONTEXT_SCHEMA_VERSION,
@@ -278,12 +307,14 @@ export function buildSeedContext(
       accepted: uniqueAccepted.length,
       rejected: uniqueRejected.length,
       heartbeats: heartbeats.length,
+      thirdPartyProviders: thirdParty.candidates.length,
       rejectedByReason: countReasons(uniqueRejected),
       truncated: options.truncated ?? false,
     },
     accepted: uniqueAccepted,
     rejected: uniqueRejected,
     heartbeats,
+    thirdParty,
   };
 }
 
@@ -942,6 +973,8 @@ export function formatSeedContext(context: SeedContext): string {
     `Repository: ${context.repoRoot}`,
     `${summary.accepted} accepted, ${summary.rejected} skipped, ${summary.heartbeats} scheduled ${
       summary.heartbeats === 1 ? 'job' : 'jobs'
+    }, ${summary.thirdPartyProviders} third-party ${
+      summary.thirdPartyProviders === 1 ? 'provider' : 'providers'
     }.`,
   ];
 
@@ -1011,6 +1044,8 @@ export function formatSeedContext(context: SeedContext): string {
     );
     for (const heartbeat of inferred) lines.push(heartbeatLine(heartbeat));
   }
+
+  lines.push('', ...formatThirdPartySection(context.thirdParty));
 
   return `${lines.join('\n')}\n`;
 }

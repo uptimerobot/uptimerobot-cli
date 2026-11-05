@@ -563,6 +563,7 @@ describe('the seed-context document', () => {
       rejected: 1,
       heartbeats: 1,
       rejectedByReason: { loopback: 1 },
+      thirdPartyProviders: 0,
       truncated: false,
     });
     // urls, then paths, then ports.

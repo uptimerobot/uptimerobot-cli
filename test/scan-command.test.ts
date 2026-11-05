@@ -25,6 +25,13 @@ const projectRoot = fileURLToPath(new URL('../', import.meta.url));
  * path and port, two rejections with different reasons, and one scheduled job.
  */
 const REPOSITORY = {
+  'package.json': [
+    '{',
+    '  "description": "datadog is only a word here",',
+    '  "dependencies": { "next": "15.1.0", "stripe": "17.4.0", "pg": "8.13.0" }',
+    '}',
+    '',
+  ].join('\n'),
   '.github/workflows/nightly.yml': ['on:', '  schedule:', "    - cron: '0 3 * * *'", ''].join('\n'),
   'app/api/health/route.ts': 'export async function GET() {\n  return new Response("ok");\n}\n',
   Dockerfile: [
@@ -81,7 +88,7 @@ describe('uptimerobot scan', () => {
 
     const context = await Scan.run([root, '--json'], { root: projectRoot });
 
-    expect(context.schemaVersion).toBe(1);
+    expect(context.schemaVersion).toBe(2);
     expect(context.repoRoot).toBe(root);
     expect(context.summary).toEqual({
       accepted: 4,
@@ -89,6 +96,7 @@ describe('uptimerobot scan', () => {
       heartbeats: 1,
       rejected: 2,
       rejectedByReason: { 'container-internal': 1, loopback: 1 },
+      thirdPartyProviders: 2,
       truncated: false,
     });
     // `/healthz` is recovered from the loopback compose healthcheck: the URL
@@ -101,6 +109,56 @@ describe('uptimerobot scan', () => {
     ]);
     expect(context.heartbeats.map((heartbeat) => heartbeat.schedule)).toEqual(['0 3 * * *']);
     expect(JSON.parse(printed())).toEqual(context);
+  });
+
+  it('reports third-party providers with evidence in JSON and Markdown', async () => {
+    const root = await makeRepository();
+
+    const context = await Scan.run([root, '--json'], { root: projectRoot });
+
+    expect(context.thirdParty).toEqual({
+      candidates: [
+        {
+          provider: 'GitHub',
+          searchTerm: 'github',
+          class: 'build-time',
+          evidence: [
+            {
+              file: '.github/workflows/nightly.yml',
+              line: 1,
+              kind: 'ci-file',
+              signal: 'ci: .github/workflows/',
+              app: '.',
+            },
+          ],
+          hints: [],
+        },
+        {
+          provider: 'Stripe',
+          searchTerm: 'stripe',
+          class: 'runtime',
+          evidence: [
+            { file: 'package.json', line: 3, kind: 'npm', signal: 'stripe@17.4.0', app: '.' },
+          ],
+          hints: [],
+        },
+      ],
+      skipped: [{ name: 'next', reason: 'framework', evidence: { file: 'package.json', line: 3 } }],
+      unknown: [
+        { name: 'pg', reason: 'protocol-client', evidence: { file: 'package.json', line: 3 } },
+      ],
+    });
+    expect(JSON.stringify(context)).not.toContain('datadog');
+
+    log.mockClear();
+    vi.stubEnv('UPTIMEROBOT_OUTPUT', 'table');
+    await Scan.run([root], { root: projectRoot });
+    const output = printed();
+    expect(output).toContain('## Third-party providers (candidates for third-party services)');
+    expect(output).toContain('- Stripe: stripe@17.4.0 (package.json:3)');
+    expect(output).toContain('- GitHub: .github/workflows/nightly.yml');
+    expect(output).toContain('- next (framework or UI library)');
+    expect(output).toContain('- pg (protocol client, self-hosted or unknown)');
   });
 
   it('reports every rejected candidate with its reason and evidence', async () => {
@@ -124,9 +182,9 @@ describe('uptimerobot scan', () => {
     await Scan.run([root], { root: projectRoot });
 
     const output = printed();
-    expect(output).toContain('# Scan seed context (schema 1)');
+    expect(output).toContain('# Scan seed context (schema 2)');
     expect(output).toContain(`Repository: ${root}`);
-    expect(output).toContain('4 accepted, 2 skipped, 1 scheduled job.');
+    expect(output).toContain('4 accepted, 2 skipped, 1 scheduled job, 2 third-party providers.');
     expect(output).toContain('## Skipped, and why');
     expect(output).toContain('**loopback**');
     expect(output).toContain('**container-internal**');
@@ -145,7 +203,7 @@ describe('uptimerobot scan', () => {
     await Scan.run([root, '--format', 'table'], { root: projectRoot });
 
     const output = printed();
-    expect(output).toContain('# Scan seed context (schema 1)');
+    expect(output).toContain('# Scan seed context (schema 2)');
     expect(output).not.toContain('"schemaVersion"');
   });
 
@@ -154,7 +212,7 @@ describe('uptimerobot scan', () => {
 
     await Scan.run([root, '--format', 'json'], { root: projectRoot });
 
-    expect(JSON.parse(printed())).toMatchObject({ schemaVersion: 1 });
+    expect(JSON.parse(printed())).toMatchObject({ schemaVersion: 2 });
   });
 
   it('scans the current directory when no path is given', async () => {
