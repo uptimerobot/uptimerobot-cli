@@ -10,6 +10,13 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `incidents list --limit` sets the page size (1 to 200, default 50), from the
+  updated public API contract. The API now pages incidents with an opaque cursor
+  in `nextLink`, which `--cursor` passes through unchanged; an incident id from
+  an earlier page is still accepted.
+
 ### Fixed
 
 - A heartbeat monitor's `heartbeatUrl` is redacted. The API returns the ping

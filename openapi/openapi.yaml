@@ -23,8 +23,9 @@ paths:
                 $ref: '#/components/schemas/BulkOperationResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -57,8 +58,9 @@ paths:
                 $ref: '#/components/schemas/BulkOperationResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -91,8 +93,9 @@ paths:
                 $ref: '#/components/schemas/BulkOperationResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -105,17 +108,32 @@ paths:
   /incidents:
     get:
       description: >-
-        List all incidents in a user's account with optional filtering. Values
-        can be paginated with the cursor parameter.
+        List all incidents in a user's account with optional filtering. Sorted
+        by start date descending, newest first. Values can be paginated with the
+        cursor parameter.
       operationId: IncidentsController_list
       parameters:
+        - name: limit
+          required: false
+          in: query
+          description: >-
+            Maximum number of items to return per page. Default: 50, Min: 1,
+            Max: 200.
+          schema:
+            minimum: 1
+            maximum: 200
+            example: 50
+            type: number
         - name: cursor
           required: false
           in: query
-          description: Cursor to paginate through incidents (incident ID)
+          description: >-
+            Opaque cursor taken from the previous page’s `nextLink`. An incident
+            ID from an earlier version of this endpoint is still accepted and
+            resumes right after that incident.
           schema:
-            pattern: /^\d+$/
-            example: '12345'
+            pattern: /^[A-Za-z0-9_-]+$/
+            example: MTc4OTA0NTYwMDAwMHwxNDAwfDMxOTg0OTk3MTM4MTQ2NzcxMg
             type: string
         - name: monitor_id
           required: false
@@ -163,10 +181,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IncidentSummaryPaginationDto'
+        '400':
+          description: >-
+            Invalid `cursor`: unknown, belonging to another account, or
+            malformed. Omit `cursor` to start again from the first page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -196,8 +223,9 @@ paths:
                 $ref: '#/components/schemas/IncidentDetailDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -259,8 +287,9 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -315,8 +344,9 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -373,8 +403,9 @@ paths:
                 $ref: '#/components/schemas/ActivityLogResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -425,8 +456,9 @@ paths:
                 $ref: '#/components/schemas/PublicSentAlertsResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -468,8 +500,9 @@ paths:
                 $ref: '#/components/schemas/IncidentCommentDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -518,8 +551,9 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -578,8 +612,9 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -621,8 +656,9 @@ paths:
                 $ref: '#/components/schemas/MonitorGroupPaginationDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -652,8 +688,9 @@ paths:
                 $ref: '#/components/schemas/MonitorGroupDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -688,8 +725,9 @@ paths:
                 $ref: '#/components/schemas/MonitorGroupDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -752,8 +790,9 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -779,8 +818,9 @@ paths:
                 $ref: '#/components/schemas/StormProtectionSettingsResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -811,8 +851,9 @@ paths:
                 $ref: '#/components/schemas/StormProtectionSettingsResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -910,8 +951,9 @@ paths:
                 $ref: '#/components/schemas/MonitorPaginationDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1101,8 +1143,9 @@ paths:
                 $ref: '#/components/schemas/MonitorDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1170,8 +1213,9 @@ paths:
                 $ref: '#/components/schemas/UptimeStatsDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1219,8 +1263,9 @@ paths:
                 $ref: '#/components/schemas/MonitorUptimeStatsDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1278,8 +1323,9 @@ paths:
                 $ref: '#/components/schemas/MonitorResponseTimeStatsByRegionDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1353,8 +1399,9 @@ paths:
                 $ref: '#/components/schemas/MonitorResponseTimeStatsDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1387,8 +1434,9 @@ paths:
                 $ref: '#/components/schemas/MonitorThirdPartyServiceStatusDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1421,8 +1469,9 @@ paths:
                 $ref: '#/components/schemas/MonitorThirdPartyServiceIncidentsDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1469,8 +1518,9 @@ paths:
                 $ref: '#/components/schemas/MonitorThirdPartyServiceIncidentDetailDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1521,8 +1571,9 @@ paths:
                   #/components/schemas/MonitorThirdPartyServiceIncidentActivityLogDto
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1551,8 +1602,9 @@ paths:
                 $ref: '#/components/schemas/MonitorDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1585,8 +1637,9 @@ paths:
                 $ref: '#/components/schemas/MonitorDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1609,8 +1662,9 @@ paths:
           description: ''
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1646,8 +1700,9 @@ paths:
           description: ''
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1688,8 +1743,9 @@ paths:
                 $ref: '#/components/schemas/MonitorDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1730,8 +1786,9 @@ paths:
                 $ref: '#/components/schemas/MonitorDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1772,8 +1829,9 @@ paths:
                 $ref: '#/components/schemas/PspPaginationDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1815,8 +1873,9 @@ paths:
                 $ref: '#/components/schemas/PspDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1845,8 +1904,9 @@ paths:
                 $ref: '#/components/schemas/PspDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1893,8 +1953,9 @@ paths:
                 $ref: '#/components/schemas/PspDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -1918,8 +1979,9 @@ paths:
           description: ''
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2003,8 +2065,9 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2063,8 +2126,9 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2118,8 +2182,9 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2184,8 +2249,9 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2236,8 +2302,9 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2289,8 +2356,9 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2342,8 +2410,9 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponseDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2383,8 +2452,9 @@ paths:
                 $ref: '#/components/schemas/MaintenanceWindowPaginationDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2413,8 +2483,9 @@ paths:
                 $ref: '#/components/schemas/MaintenanceWindowDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2444,8 +2515,9 @@ paths:
                 $ref: '#/components/schemas/MaintenanceWindowDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2480,8 +2552,9 @@ paths:
                 $ref: '#/components/schemas/MaintenanceWindowDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2505,8 +2578,9 @@ paths:
           description: ''
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2530,8 +2604,9 @@ paths:
                 $ref: '#/components/schemas/UserDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2557,8 +2632,9 @@ paths:
                   $ref: '#/components/schemas/AlertContactDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2586,8 +2662,9 @@ paths:
                   $ref: '#/components/schemas/AllAlertContactDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2638,8 +2715,9 @@ paths:
                 $ref: '#/components/schemas/IntegrationPaginationDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2698,8 +2776,9 @@ paths:
                 $ref: '#/components/schemas/IntegrationDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2729,8 +2808,9 @@ paths:
                 $ref: '#/components/schemas/IntegrationDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2796,8 +2876,9 @@ paths:
                 $ref: '#/components/schemas/IntegrationDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2821,8 +2902,9 @@ paths:
           description: ''
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2866,8 +2948,9 @@ paths:
                 $ref: '#/components/schemas/AlertContactPaginationDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2899,8 +2982,9 @@ paths:
                 $ref: '#/components/schemas/AlertContactDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2930,8 +3014,9 @@ paths:
                 $ref: '#/components/schemas/AlertContactDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2966,8 +3051,9 @@ paths:
                 $ref: '#/components/schemas/AlertContactDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -2992,8 +3078,9 @@ paths:
           description: ''
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -3036,8 +3123,9 @@ paths:
                 $ref: '#/components/schemas/SimpleTagPaginationDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -3063,8 +3151,9 @@ paths:
           description: Tag deleted successfully
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -3102,8 +3191,9 @@ paths:
                 $ref: '#/components/schemas/ThirdPartyProviderSearchDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -3137,8 +3227,9 @@ paths:
                 $ref: '#/components/schemas/ThirdPartyProviderDetailDto'
         default:
           description: >-
-            An error response. `code` is a member of the published error code
-            vocabulary.
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
           content:
             application/json:
               schema:
@@ -3150,7 +3241,162 @@ paths:
         - Third-party providers
 info:
   title: UptimeRobot API
-  description: ''
+  description: >-
+    ## Error codes
+
+
+    Every error response carries a `code`. Branch on `code`, not on the message
+    text.
+
+
+    **Error code stability policy.** A listed code never changes meaning and is
+    never removed; it can only be deprecated. Expect that new codes may be added
+    at any time: when you receive a code you do not know, fall back to the HTTP
+    status.
+
+
+    | Code | HTTP status | Meaning |
+
+    | --- | --- | --- |
+
+    | `000-003` | 403 | The feature this request uses is not included in the
+    plan of the account. The message names the feature. |
+
+    | `000-004` | 404 | The requested resource does not exist or is not visible
+    to you. |
+
+    | `000-005` | 401 | The API key is missing, invalid or expired. |
+
+    | `000-006` | 403 | The API key is valid but is not allowed to access this
+    resource or perform this action. |
+
+    | `000-009` | 422 | The request is well-formed but cannot be processed in
+    the current state. The message says why. |
+
+    | `000-012` | 400 | The request is malformed or a field is invalid. The
+    message names what to fix. |
+
+    | `000-013` | 413, 415, 500 | An unexpected server error (500). Also
+    returned with any other status that has no generic code of its own, such as
+    413 (request body too large) or 415 (unsupported content type); branch on
+    the HTTP status for those. A 500 may succeed if retried later. |
+
+    | `000-014` | 429 | Too many requests. Wait for the number of seconds in the
+    Retry-After header before retrying. |
+
+    | `000-015` | 503 | Incident history is temporarily unavailable. Retry later
+    rather than reading the absence of data as no downtime. |
+
+    | `000-016` | 409 | The request conflicts with the current state of the
+    resource, for example a duplicate. |
+
+    | `000-017` | 502 | An upstream service we depend on failed. Retrying later
+    may succeed. |
+
+    | `000-018` | 503 | The service is temporarily unavailable. Retry later. |
+
+    | `000-019` | 504 | An upstream service we depend on timed out. Retrying
+    later may succeed. |
+
+    | `003-001` | 401 | A request that changes data was refused. If the API key
+    is read-only, use the main API key; if the user has no write rights in the
+    account, an account admin has to grant them. |
+
+    | `003-005` | 401 | The API key is missing or not valid: it was not sent, is
+    mistyped, was regenerated, or belongs to a deleted account. |
+
+    | `003-008` | 403 | The request needs an active subscription and the account
+    has none. |
+
+    | `009-001` | 403 | The monitor URL is blocklisted and cannot be monitored.
+    |
+
+    | `009-002` | 403 | The monitoring interval is shorter than the plan allows.
+    Use a longer interval. |
+
+    | `009-003` | 403 | The plan has reached its maximum number of monitors. |
+
+    | `009-005` | 403 | The request uses settings that need a paid plan. |
+
+    | `009-010` | 400 | The URL is not valid for this monitor type. |
+
+    | `009-011` | 409 | A monitor like this one already exists on the account. |
+
+    | `009-012` | 400 | The custom fields are invalid. The message names what to
+    fix. |
+
+    | `009-013` | 403 | Custom fields are not available on the plan. |
+
+    | `009-014` | 403 | Monitoring from multiple regions is not available on the
+    plan. |
+
+    | `009-015` | 400 | A monitor cannot change its type after it is created. |
+
+    | `009-016` | 400 | A config field is not supported for this monitor type.
+    The message names the field. |
+
+    | `009-017` | 400 | One or more alert contacts in the request cannot be
+    assigned from this account. |
+
+    | `009-019` | 400 | The storm protection setting id in the request does not
+    exist. The message names the id. |
+
+    | `009-020` | 400 | A storm protection threshold is out of range. The
+    message says which one and the allowed range. |
+
+    | `009-022` | 403 | Visual comparison monitoring is not available on the
+    plan. |
+
+    | `009-030` | 403 | Choosing the region a monitor runs from is not available
+    on the plan. |
+
+    | `009-033` | 400 | A config field is reserved for internal use and cannot
+    be set. |
+
+    | `009-034` | 400 | The API assertions are invalid. The message names what
+    to fix. |
+
+    | `009-036` | 400 | portAlertCondition can only be set on PORT monitors. |
+
+    | `013-002` | 403 | The plan of the account allows no more status pages.
+    Delete one or upgrade the plan. |
+
+    | `013-006` | 400 | Monitors of this type cannot be added to a status page.
+    The message lists the monitors. |
+
+    | `013-008` | 403 | Manual monitor sorting on status pages is temporarily
+    turned off. Choose another sort order. |
+
+    | `021-001` | 409 | An integration with the same settings already exists. |
+
+    | `021-002` | 403 | The integration is missing data it needs, so it cannot
+    be created. Check the required fields for its type. |
+
+    | `021-003` | 403 | This integration type is not available on the plan of
+    the account. |
+
+    | `021-005` | 404 | No integration has this ID. The ID may belong to a
+    personal alert contact, which is managed under alert contacts. |
+
+    | `021-047` | 404 | No personal alert contact has this ID. The ID may belong
+    to an integration, which is managed under integrations. |
+
+    | `026-006` | 403 | Third party service monitoring is not available on the
+    Free plan. |
+
+    | `026-008` | 400 | config.thirdPartyService.providerId is required to
+    create a third party service. |
+
+    | `026-009` | 400 | The third party service config is invalid. |
+
+    | `026-017` | 400 | Third party services cannot be created through this
+    endpoint. |
+
+    | `026-018` | 400 | Third party services cannot be paused or started in
+    bulk. The message lists the offending monitors. |
+
+    | `026-019` | 403 | The plan has used up its allowance of third party
+    services. |
   version: '3.0'
   contact: {}
 tags:
@@ -3184,107 +3430,29 @@ components:
         code:
           type: string
           description: >-
-            A stable, machine-readable error code. Always a member of the
-            published vocabulary.
-          enum:
-            - 000-001
-            - 000-002
-            - 000-003
-            - 000-004
+            A stable, machine-readable error code. See "Error codes" in the API
+            description for each code, its meaning and the stability policy.
+          x-extensible-enum:
+            - 000-012
             - 000-005
             - 000-006
-            - 000-007
-            - 000-008
+            - 000-004
+            - 000-016
             - 000-009
-            - 000-010
-            - 000-011
-            - 000-012
-            - 000-013
             - 000-014
+            - 000-013
+            - 000-017
+            - 000-018
             - 000-015
+            - 000-019
+            - 000-003
             - 003-001
-            - 003-002
-            - 003-003
-            - 003-004
             - 003-005
-            - 003-006
-            - 003-007
             - 003-008
-            - 003-009
-            - 003-010
-            - 003-011
-            - 003-012
-            - 003-013
-            - 003-014
-            - 003-015
-            - 003-016
-            - 003-017
-            - 003-018
-            - 003-019
-            - 003-020
-            - 003-021
-            - 004-001
-            - 004-002
-            - 004-033
-            - 004-034
-            - 004-035
-            - 004-036
-            - 004-037
-            - 004-038
-            - 004-039
-            - 004-040
-            - 004-041
-            - 004-042
-            - 004-003
-            - 004-004
-            - 004-005
-            - 004-006
-            - 004-007
-            - 004-008
-            - 004-009
-            - 004-010
-            - 004-011
-            - 004-012
-            - 004-013
-            - 004-014
-            - 004-015
-            - 004-016
-            - 004-017
-            - 004-018
-            - 004-019
-            - 004-020
-            - 004-021
-            - 004-022
-            - 004-023
-            - 004-024
-            - 004-025
-            - 004-026
-            - 004-027
-            - 004-028
-            - 004-029
-            - 004-030
-            - 004-031
-            - 004-032
-            - 004-043
-            - 004-044
-            - 004-045
-            - 004-046
-            - 004-047
-            - 004-048
-            - 004-049
-            - 004-050
-            - 005-001
-            - 005-002
-            - 006-001
             - 009-001
             - 009-002
             - 009-003
-            - 009-004
             - 009-005
-            - 009-006
-            - 009-007
-            - 009-008
-            - 009-009
             - 009-010
             - 009-011
             - 009-012
@@ -3294,239 +3462,26 @@ components:
             - 009-016
             - 009-017
             - 009-022
-            - 009-023
-            - 009-024
-            - 009-025
-            - 009-018
-            - 009-019
-            - 009-020
-            - 009-026
-            - 009-027
-            - 009-028
+            - 009-030
             - 009-033
             - 009-034
-            - 009-021
-            - 009-033
-            - 009-030
             - 009-036
-            - 009-037
-            - 011-001
-            - 011-002
-            - 011-003
-            - 011-004
-            - 011-005
-            - 011-006
-            - 011-007
-            - 011-008
-            - 011-009
-            - 011-010
-            - 011-011
-            - 011-012
-            - 011-013
-            - 011-014
-            - 011-015
-            - 011-016
-            - 011-017
-            - 011-018
-            - 011-019
-            - 011-020
-            - 011-021
-            - 011-022
-            - 011-023
-            - 011-024
-            - 011-025
-            - 011-026
-            - 011-027
-            - 011-028
-            - 011-029
-            - 011-030
-            - 011-031
-            - 011-032
-            - 011-033
-            - 011-034
-            - 013-001
-            - 013-002
-            - 013-003
-            - 013-004
-            - 013-005
             - 013-006
-            - 013-007
+            - 013-002
             - 013-008
-            - 017-001
-            - 017-002
-            - 018-001
-            - 018-002
-            - 018-003
-            - 018-004
-            - 018-005
-            - 018-006
-            - 018-007
-            - 018-008
-            - 018-009
-            - 018-010
-            - 018-011
-            - 018-012
-            - 018-013
-            - 018-014
-            - 018-015
+            - 009-019
+            - 009-020
             - 021-001
             - 021-002
             - 021-003
-            - 021-004
             - 021-005
-            - 021-006
-            - 021-007
-            - 021-008
-            - 021-009
-            - 021-010
-            - 021-011
-            - 021-012
-            - 021-013
-            - 021-014
-            - 021-015
-            - 021-016
-            - 021-017
-            - 021-018
-            - 021-019
-            - 021-020
-            - 021-021
-            - 021-022
-            - 021-023
-            - 021-024
-            - 021-025
-            - 021-026
-            - 021-027
-            - 021-028
-            - 021-029
-            - 021-030
-            - 021-031
-            - 021-032
-            - 021-033
-            - 021-034
-            - 021-035
-            - 021-036
-            - 021-037
-            - 021-038
-            - 021-039
-            - 021-040
-            - 021-041
-            - 021-042
-            - 021-043
-            - 021-044
-            - 021-045
-            - 021-046
             - 021-047
-            - 021-048
-            - 021-049
-            - 021-050
-            - 021-051
-            - 021-052
-            - 022-001
-            - 024-001
-            - 024-002
-            - 024-003
-            - 024-004
-            - 024-005
-            - 024-006
-            - 024-007
-            - 024-008
-            - 025-002
-            - 025-003
-            - 025-004
-            - 025-005
-            - 025-006
-            - 025-007
-            - 025-008
-            - 025-009
-            - 025-010
-            - 025-011
-            - 025-012
-            - 025-013
-            - 025-014
-            - 025-015
-            - 025-016
-            - 025-017
-            - 025-018
-            - 025-019
-            - 025-020
-            - 025-021
-            - 025-022
-            - 021-053
-            - 021-054
-            - 021-055
-            - 021-056
-            - 021-057
-            - 021-058
-            - 021-059
-            - 021-060
-            - 021-061
-            - 021-062
-            - 021-065
-            - 021-066
-            - 021-067
-            - 021-068
-            - 021-069
-            - 026-001
-            - 026-002
-            - 026-003
-            - 026-004
-            - 026-005
             - 026-006
-            - 026-007
             - 026-008
             - 026-009
-            - 026-016
             - 026-017
             - 026-018
             - 026-019
-            - 026-020
-            - 027-001
-            - 027-002
-            - 027-003
-            - 027-004
-            - 027-005
-            - 027-006
-            - 027-007
-            - 027-008
-            - 027-009
-            - 027-010
-            - 027-011
-            - 027-012
-            - 027-013
-            - 027-014
-            - 027-015
-            - 027-016
-            - 028-001
-            - 028-002
-            - 029-001
-            - 029-002
-            - 029-003
-            - 029-004
-            - 029-005
-            - 029-006
-            - 029-007
-            - 029-008
-            - 029-009
-            - 029-010
-            - 029-011
-            - 029-012
-            - 029-013
-            - 029-014
-            - 029-015
-            - 030-001
-            - 030-002
-            - 030-003
-            - 030-004
-            - 030-005
-            - 030-006
-            - 030-007
-            - 030-008
-            - 030-009
-            - 031-001
-            - 031-002
-            - 031-003
-            - 031-004
-            - 031-005
         message:
           description: >-
             Human-readable error detail. An array of per-field messages for
