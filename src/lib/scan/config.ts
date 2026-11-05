@@ -334,6 +334,22 @@ function isCompose(name: string): boolean {
   return /^(docker-)?compose([.-][\w.-]*)?\.ya?ml$/.test(name);
 }
 
+/** Whether {@link matchConfig} can read anything from this path, judged from its name. */
+export function isConfigFile(path: string): boolean {
+  const name = basename(path);
+  return (
+    path === '.git/config' ||
+    name.endsWith('.tf') ||
+    name === 'serverless.yml' ||
+    name === 'serverless.yaml' ||
+    name === 'Procfile' ||
+    isDockerfile(name) ||
+    isCompose(name) ||
+    entryFor('file', name) !== undefined ||
+    ciFile(path).length > 0
+  );
+}
+
 /** The content reader for a file, picked by name; first match wins, one per file. */
 function contentMatches(input: ConfigInput): Match[] {
   const name = basename(input.path);
