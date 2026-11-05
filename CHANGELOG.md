@@ -13,16 +13,10 @@ may change in minor releases.
 ### Added
 
 - `incidents list --limit` sets the page size (1 to 200, default 50), from the
-  updated public API contract. The API now pages incidents with an opaque cursor
-  in `nextLink`, which `--cursor` passes through unchanged. `--cursor` still
-  accepts an incident id, the cursor of the earlier version of the endpoint.
-
-### Fixed
-
-- A heartbeat monitor's `heartbeatUrl` is redacted. The API returns the ping
-  URL under that name, and only `url` and `pingUrl` were hidden, so JSON, JSONL,
-  `--all` tables, and agent mode printed the URL that anyone can report the
-  heartbeat with. `--reveal-secrets` and `--raw` still show it.
+  updated public API contract. The API now pages incidents with an opaque
+  cursor, which the CLI reports as `nextCursor` and `--cursor` accepts
+  unchanged. `--cursor` still accepts an incident id, the cursor of the earlier
+  version of the endpoint.
 
 ### Changed
 
@@ -30,6 +24,13 @@ may change in minor releases.
   CLI, as the 1.0.0 entry said it would once the API had the field. The values
   are the same for the production API. `UPTIMEROBOT_HEARTBEAT_URL` now applies
   only to responses without `heartbeatUrl`.
+
+### Fixed
+
+- A heartbeat monitor's `heartbeatUrl` is redacted. The API returns the ping
+  URL under that name, and only `url` and `pingUrl` were hidden, so JSON, JSONL,
+  `--all` tables, and agent mode printed the URL that anyone can report the
+  heartbeat with. `--reveal-secrets` and `--raw` still show it.
 
 ## [1.1.0] - 2026-11-04
 
