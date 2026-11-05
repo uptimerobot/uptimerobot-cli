@@ -13,7 +13,8 @@
  * - `serverless.yml`: `provider.name`, or the inline `provider:` value.
  * - `Procfile`: a Heroku hint, never a candidate.
  * - `*.tf`: `provider "<name>"`, `resource` and `data` types by prefix, and the
- *   plain-word `region = "..."` value; line and block comments skipped.
+ *   plain-word `region = "..."` value; block comments skipped, and every
+ *   pattern is anchored to the line start so a line comment never matches.
  * - CI files by path; build-time on their own.
  * - `Dockerfile*`, `*.Dockerfile`, compose files: the registry host of each
  *   `FROM` or `image:` reference; build-time on their own.
@@ -88,9 +89,8 @@ const SERVERLESS_PROVIDERS: Readonly<Record<string, string>> = {
 
 const HEROKU = VENDORS.find((entry) => entry.catalogName === 'Heroku');
 
-/** The only shape a region or registry host may have before it reaches the report. */
+/** The only shape a region may have before it reaches the report. */
 const PLAIN_WORD = /^[a-z0-9-]{2,32}$/;
-const HOST = /^[a-z0-9.-]{3,253}$/;
 
 const TF_PROVIDER = /^\s*provider\s+"([a-z0-9_-]{1,64})"/;
 const TF_RESOURCE = /^\s*(?:resource|data)\s+"([a-z0-9_]{1,128})"/;
@@ -123,8 +123,7 @@ function hostMatches(pattern: string, host: string): boolean {
 function registryFor(reference: string): { entry: VendorEntry; pattern: string } | undefined {
   const slash = reference.indexOf('/');
   if (slash === -1) return undefined;
-  const host = reference.slice(0, slash).toLowerCase().replace(/:\d+$/, '');
-  if (!host.includes('.') || !HOST.test(host)) return undefined;
+  const host = reference.slice(0, slash).toLowerCase();
   const item = SIGNALS.find(
     ({ signal }) => signal.kind === 'registry' && hostMatches(signal.pattern, host),
   );
@@ -140,8 +139,7 @@ function remoteHost(url: string): string | undefined {
           .slice(scheme + 3)
           .replace(/^[^@/]*@/, '')
           .replace(/[:/].*$/, '');
-  const host = authority.toLowerCase();
-  return host.includes('.') && HOST.test(host) ? host : undefined;
+  return authority.toLowerCase();
 }
 
 function deployFile(path: string): Match[] {
@@ -184,7 +182,6 @@ function terraform(contents: string): { matches: Match[]; region: string } {
       continue;
     }
     const line = raw.trimStart();
-    if (line.startsWith('#') || line.startsWith('//')) continue;
     if (line.startsWith('/*')) {
       inBlockComment = !line.includes('*/');
       continue;

@@ -50,6 +50,13 @@ describe('deploy and platform files', () => {
       matchConfig({ path: 'serverless.yml', contents: 'provider:\n  name: knative\n' }),
     ).toEqual([]);
     expect(matchConfig({ path: 'serverless.yml', contents: 'service: api\n' })).toEqual([]);
+    expect(matchConfig({ path: 'serverless.yml', contents: 'custom:\n  name: aws\n' })).toEqual([]);
+    expect(
+      matchConfig({
+        path: 'serverless.yml',
+        contents: 'provider:\n  runtime: nodejs20\ncustom:\n  name: google\n',
+      }),
+    ).toEqual([]);
   });
 
   it('treats a Procfile as a Heroku hint, never a candidate', () => {
@@ -182,6 +189,29 @@ describe('terraform', () => {
     ).toBe('');
   });
 
+  it('does not let a line comment open a block comment', () => {
+    const contents = ['# /* not a block comment', 'provider "aws" {}', '// /* nor this'].join('\n');
+    expect(vendors(matchConfig({ path: 'main.tf', contents }))).toEqual(['AWS']);
+  });
+
+  it('takes the first uncommented region and ignores later ones', () => {
+    const contents = [
+      '# region = "us-east-1"',
+      'provider "aws" {',
+      '  region = "eu-central-1"',
+      '}',
+      'provider "aws" {',
+      '  alias  = "us"',
+      '  region = "us-west-2"',
+      '}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => finding.detail.region)).toEqual([
+      'eu-central-1',
+      'eu-central-1',
+    ]);
+  });
+
   it('reads only .tf files', () => {
     expect(matchConfig({ path: 'notes.md', contents: 'provider "aws" {}' })).toEqual([]);
     expect(matchConfig({ path: 'main.tf.bak', contents: 'provider "aws" {}' })).toEqual([]);
@@ -297,9 +327,17 @@ describe('container registries', () => {
     expect(vendors(matchConfig({ path: `svc/${name}`, contents: line }))).toEqual(['GitHub']);
   });
 
+  it('matches registry hosts exactly or by dotted suffix, never by substring', () => {
+    const contents = ['FROM evilpkg.dev/x', 'FROM notgcr.io/x', 'FROM gcr.io.evil.example/x'].join(
+      '\n',
+    );
+    expect(matchConfig({ path: 'Dockerfile', contents })).toEqual([]);
+  });
+
   it('does not read FROM or image lines from other files', () => {
     expect(matchConfig({ path: 'Makefile', contents: 'FROM ghcr.io/x/y' })).toEqual([]);
     expect(matchConfig({ path: 'k8s/deploy.yaml', contents: 'image: ghcr.io/x/y' })).toEqual([]);
+    expect(matchConfig({ path: 'decompose.yaml', contents: 'image: ghcr.io/x/y' })).toEqual([]);
   });
 });
 
@@ -368,8 +406,8 @@ describe('resolveVendorClasses', () => {
       finding('Google Cloud', 'build-time'),
       finding('Google Cloud', 'runtime'),
       finding('GitHub', 'build-time'),
-      finding('Stripe', 'build-time'),
       finding('Stripe', 'runtime'),
+      finding('Stripe', 'build-time'),
     ]);
     expect([...classes]).toEqual([
       ['Google Cloud', 'runtime'],
