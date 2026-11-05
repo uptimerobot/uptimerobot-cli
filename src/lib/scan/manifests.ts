@@ -186,9 +186,8 @@ const PIP_REQUIREMENT =
 
 /** `requirements*.txt` or a `pyproject.toml`: one grammar for the requirement itself. */
 function parseRequirement(text: string, line: number, scope: string): Declared | undefined {
-  const trimmed = text.trim();
-  if (trimmed === '' || trimmed.startsWith('#') || trimmed.startsWith('-')) return undefined;
-  const match = PIP_REQUIREMENT.exec(trimmed);
+  // Blank lines, comments and `-r`/`--option` lines fail the grammar on their first character.
+  const match = PIP_REQUIREMENT.exec(text.trim());
   if (match === null || match[1] === undefined) return undefined;
   return {
     name: match[1],

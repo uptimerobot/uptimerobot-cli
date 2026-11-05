@@ -97,6 +97,8 @@ describe('matchPackage', () => {
 
   it('does not match a prefix pattern against a longer unrelated name', () => {
     expect(matchPackage('npm', 'stripe-fake')).toBeUndefined();
+    expect(matchPackage('npm', 'my-launchdarkly-wrapper')).toBeUndefined();
+    expect(matchPackage('go', 'example.com/cloud.google.com/go/storage')).toBeUndefined();
     expect(matchPackage('npm', '@shopify/polaris')).toBeUndefined();
     expect(matchPackage('npm', '@mapbox/tilebelt')).toBeUndefined();
     expect(name(matchPackage('npm', '@mapbox/mapbox-sdk'))).toBe('Mapbox');

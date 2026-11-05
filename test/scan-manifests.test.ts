@@ -47,6 +47,7 @@ const GO_MOD = [
   '\tcloud.google.com/go/storage v1.47.0',
   '\tgithub.com/stripe/stripe-go/v81 v81.1.0',
   '\tgithub.com/twilio/twilio-go v1.23.8 // indirect',
+  '\t// github.com/sendgrid/sendgrid-go v3.16.0',
   ')',
   '',
 ].join('\n');
@@ -152,6 +153,7 @@ describe('matchManifest on pyproject.toml', () => {
     expect(byProvider(findings, 'OpenAI')?.detail.signal).toBe('openai@1.57.0');
     expect(byProvider(findings, 'Anthropic')?.evidence.line).toBe(10);
     expect(byProvider(findings, 'Sentry')?.detail.signal).toBe('sentry-sdk@2.19.2');
+    expect(findings.map((finding) => finding.value)).not.toContain('python');
   });
 });
 
@@ -162,7 +164,7 @@ describe('matchManifest on go.mod', () => {
     expect(byProvider(findings, 'Google Cloud')).toMatchObject({
       kind: 'go',
       evidence: { line: 6 },
-      detail: { signal: 'cloud.google.com/go/storage@v1.47.0' },
+      detail: { signal: 'cloud.google.com/go/storage@v1.47.0', scope: 'require', class: 'runtime' },
     });
     expect(byProvider(findings, 'Stripe')?.detail.signal).toBe(
       'github.com/stripe/stripe-go/v81@v81.1.0',
@@ -170,8 +172,12 @@ describe('matchManifest on go.mod', () => {
     expect(byProvider(findings, 'Twilio')?.evidence.line).toBe(8);
   });
 
-  it('does not report the module itself', () => {
-    expect(findings.map((finding) => finding.value)).not.toContain('github.com/acme/billing');
+  it('does not report the module itself, a commented-out line, or a build-time class', () => {
+    const values = findings.map((finding) => finding.value);
+    expect(values).not.toContain('github.com/acme/billing');
+    expect(values.some((value) => value.startsWith('//'))).toBe(false);
+    expect(byProvider(findings, 'SendGrid')).toBeUndefined();
+    expect(findings.every((finding) => finding.detail.class === 'runtime')).toBe(true);
   });
 });
 
@@ -227,6 +233,10 @@ describe('matchManifest on Gemfile, composer.json and Cargo.toml', () => {
         '[dev-dependencies]',
         'async-stripe = { version = "0.39", features = ["runtime-tokio-hyper"] }',
         '',
+        "[target.'cfg(unix)'.dependencies]",
+        'openssl = "0.10"',
+        'aws-sdk-sqs = "1.50.0"',
+        '',
       ].join('\n'),
     });
     expect(byProvider(findings, 'AWS')).toMatchObject({
@@ -238,6 +248,9 @@ describe('matchManifest on Gemfile, composer.json and Cargo.toml', () => {
       class: 'build-time',
       scope: 'dev-dependencies',
     });
+    expect(
+      findings.filter((finding) => finding.value === 'AWS').map((finding) => finding.evidence.line),
+    ).toEqual([5, 13]);
   });
 
   it('returns nothing for a file it does not understand', () => {

@@ -388,7 +388,6 @@ export function isProtocolClient(ecosystem: PackageEcosystem, name: string): boo
 /** The vendor a dependency name points at, if the map knows it. */
 export function matchPackage(ecosystem: PackageEcosystem, name: string): PackageMatch | undefined {
   const normalized = normalizePackageName(ecosystem, name);
-  if (isSkippedPackage(ecosystem, name) || isProtocolClient(ecosystem, name)) return undefined;
   for (const entry of VENDORS) {
     for (const signal of entry.signals) {
       if (signal.kind !== 'package') continue;
