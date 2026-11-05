@@ -241,6 +241,29 @@ describe('scanThirdParty', () => {
     ]);
   });
 
+  it('never lets a planted directory or file name with control characters into a finding', async () => {
+    const root = await writeRepository({
+      'a\nb\u001b[31m/package.json': '{ "dependencies": { "stripe": "1" } }',
+      'ok/package.json': '{ "dependencies": { "resend": "1" } }',
+      'ok/vercel\u0007.json': '{}',
+    });
+    const findings = await scanThirdParty(root);
+    expect(summarize(findings)).toEqual(['vendor Resend npm ok/package.json:1 app=ok resend@1']);
+  });
+
+  it('does not follow a symlinked .git or .git/config', async () => {
+    const outside = await writeRepository({
+      config: '[remote "origin"]\n\turl = git@github.com:acme/app.git\n',
+    });
+    const linkedGit = await writeRepository({ 'vercel.json': '{}' });
+    await symlink(outside, join(linkedGit, '.git'));
+    expect(vendorsOf(await scanThirdParty(linkedGit))).toEqual(['Vercel']);
+
+    const linkedConfig = await writeRepository({ 'vercel.json': '{}', '.git/HEAD': 'ref: x\n' });
+    await symlink(join(outside, 'config'), join(linkedConfig, '.git', 'config'));
+    expect(vendorsOf(await scanThirdParty(linkedConfig))).toEqual(['Vercel']);
+  });
+
   it('reads the root git remote host and nothing from a nested checkout', async () => {
     const root = await writeRepository({
       '.git/config':

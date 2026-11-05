@@ -22,7 +22,7 @@
  * without a word, so a result is partial whenever the repository is: a
  * permission error never fails the scan.
  */
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { lstat, readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type ConfigFinding, isConfigFile, matchConfig } from './config.js';
 import type { ScanFinding } from './finding.js';
@@ -32,6 +32,7 @@ import {
   DEFAULT_MAX_FILE_BYTES,
   ENTRIES_PER_CANDIDATE,
   compareStrings,
+  hasUnsafeCharacters,
   repoRelativePath,
 } from './support.js';
 
@@ -156,7 +157,9 @@ async function collectRootGitConfig(
 ): Promise<void> {
   const absolute = join(repoRoot, '.git', 'config');
   try {
-    if (!(await stat(absolute)).isFile()) return;
+    // lstat on both: a symlinked .git or config would read an out-of-tree file.
+    if (!(await lstat(join(repoRoot, '.git'))).isDirectory()) return;
+    if (!(await lstat(absolute)).isFile()) return;
     if (budget.files <= 0) {
       budget.truncated = true;
       return;
@@ -198,6 +201,7 @@ async function collectFiles(
       return;
     }
     budget.entries -= 1;
+    if (hasUnsafeCharacters(entry.name)) continue;
 
     const absolute = join(directory, entry.name);
     if (entry.isDirectory()) {
