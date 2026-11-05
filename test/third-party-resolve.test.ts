@@ -4,6 +4,7 @@ import type { ThirdPartyCandidate } from '../src/lib/scan/index.js';
 import {
   type ApiAccess,
   type ResolvedCandidate,
+  ABORTED_CODE,
   applyAllowance,
   readAllowance,
   readTrackedProviders,
@@ -187,10 +188,14 @@ describe('readTrackedProviders', () => {
 
   it('throws the API failure so the command can map it', async () => {
     const { access } = stubApi({ monitors: [{ status: 401, body: { code: 'UNAUTHORIZED' } }] });
-    await expect(readTrackedProviders(access)).rejects.toMatchObject({ status: 401 });
+    await expect(readTrackedProviders(access)).rejects.toMatchObject({
+      cliError: { code: 'HTTP_401', apiCode: 'UNAUTHORIZED', status: 401 },
+      exitCode: 4,
+    });
     const offline = stubApi({ monitors: ['network-error'] });
     await expect(readTrackedProviders(offline.access)).rejects.toMatchObject({
-      code: 'NETWORK_ERROR',
+      cliError: { code: 'NETWORK_ERROR' },
+      exitCode: 1,
     });
   });
 });
@@ -223,29 +228,33 @@ describe('resolveCandidates', () => {
       ['Braintree', 'not-in-catalog'],
       ['Vercel', 'ambiguous'],
     ]);
-    expect(resolved[0]?.catalog).toEqual({
-      id: 801,
-      name: 'Stripe',
-      state: 'operational',
-      statusPageUrl: 'https://status.stripe.example/',
+    expect(resolved[0]).toMatchObject({
+      catalog: {
+        id: 801,
+        name: 'Stripe',
+        state: 'operational',
+        statusPageUrl: 'https://status.stripe.example/',
+      },
     });
-    expect(resolved[4]?.choices).toEqual([
-      {
-        id: 861,
-        name: 'Vercel',
-        state: 'operational',
-        statusPageUrl: 'https://status.vercel.example/',
-        tracked: false,
-      },
-      {
-        id: 862,
-        name: 'vercel ',
-        state: 'operational',
-        statusPageUrl: 'https://status.vercel.example/',
-        tracked: false,
-      },
-    ]);
-    expect(resolved[2]?.catalog).toMatchObject({ id: 1124, name: 'Supabase' });
+    expect(resolved[4]).toMatchObject({
+      choices: [
+        {
+          id: 861,
+          name: 'Vercel',
+          state: 'operational',
+          statusPageUrl: 'https://status.vercel.example/',
+          isTracked: false,
+        },
+        {
+          id: 862,
+          name: 'vercel ',
+          state: 'operational',
+          statusPageUrl: 'https://status.vercel.example/',
+          isTracked: false,
+        },
+      ],
+    });
+    expect(resolved[2]).toMatchObject({ catalog: { id: 1124, name: 'Supabase' } });
     expect(requests).toEqual([
       '/v3/third-party-providers?search=stripe',
       '/v3/third-party-providers?search=clerk',
@@ -277,7 +286,7 @@ describe('resolveCandidates', () => {
       tracked: NONE,
     });
     expect(resolved[0]).toMatchObject({ status: 'create', regionDefaulted: true });
-    expect(resolved[0]?.catalog?.id).toBe(50);
+    expect(resolved[0]).toMatchObject({ catalog: { id: 50 } });
   });
 
   it('does not take a longer unrelated name for a region row', async () => {
@@ -292,9 +301,9 @@ describe('resolveCandidates', () => {
       includeBuildTime: false,
       tracked: NONE,
     });
-    expect(resolved.map((item) => [item.provider, item.status, item.regionDefaulted])).toEqual([
-      ['Render', 'create', false],
-      ['Stripe', 'create', true],
+    expect(resolved).toMatchObject([
+      { provider: 'Render', status: 'create', regionDefaulted: false },
+      { provider: 'Stripe', status: 'create', regionDefaulted: true },
     ]);
   });
 
@@ -311,7 +320,9 @@ describe('resolveCandidates', () => {
       tracked: { providerIds: [803], partial: false },
     });
     expect(resolved[0]).toMatchObject({ status: 'ambiguous' });
-    expect(resolved[0]?.choices?.map((choice) => [choice.id, choice.tracked])).toEqual([
+    const ambiguous = resolved[0];
+    if (ambiguous?.status !== 'ambiguous') throw new Error('expected ambiguous');
+    expect(ambiguous.choices.map((choice) => [choice.id, choice.isTracked])).toEqual([
       [861, false],
       [862, true],
     ]);
@@ -362,31 +373,116 @@ describe('resolveCandidates', () => {
     ]);
   });
 
-  it('recovers from a transient rate limit through the client retries, and marks a persistent one unresolved', async () => {
-    const limited: Reply = { status: 429, body: { code: 'RATE_LIMITED' } };
+  const limited: Reply = {
+    status: 429,
+    body: { code: 'RATE_LIMITED', message: 'Too many requests' },
+  };
+
+  it('recovers from a transient rate limit through the client retries', async () => {
     const { access } = stubApi({
+      searches: { stripe: [limited, limited, rows(row(801, 'Stripe'))] },
+    });
+    const resolved = await resolveCandidates([candidate('Stripe')], {
+      access,
+      includeBuildTime: false,
+      tracked: NONE,
+    });
+    expect(statuses(resolved)).toEqual([['Stripe', 'create']]);
+  }, 15_000);
+
+  it('marks a persistent rate limit unresolved with the upstream message, and goes on', async () => {
+    const { access } = stubApi({
+      searches: { vercel: [limited], sentry: [rows(row(3, 'Sentry'))] },
+    });
+    const resolved = await resolveCandidates([candidate('Vercel'), candidate('Sentry')], {
+      access,
+      includeBuildTime: false,
+      tracked: NONE,
+    });
+    expect(resolved[0]).toMatchObject({
+      status: 'unresolved',
+      failure: { code: 'HTTP_429', message: 'Too many requests' },
+    });
+    expect(statuses(resolved)[1]).toEqual(['Sentry', 'create']);
+  }, 15_000);
+
+  it('marks a transport failure unresolved', async () => {
+    const { access } = stubApi({ searches: { resend: ['network-error'] } });
+    const [resolved] = await resolveCandidates([candidate('Resend')], {
+      access,
+      includeBuildTime: false,
+      tracked: NONE,
+    });
+    expect(resolved).toMatchObject({
+      status: 'unresolved',
+      failure: { code: 'NETWORK_ERROR', message: expect.stringMatching(/network error/i) },
+    });
+  }, 15_000);
+
+  it('stops asking after three failures in a row and says so on the rest', async () => {
+    const { access, requests } = stubApi({
       searches: {
-        stripe: [limited, limited, rows(row(801, 'Stripe'))],
-        vercel: [limited],
-        resend: ['network-error'],
-        sentry: [rows(row(3, 'Sentry'))],
+        a: ['network-error'],
+        b: ['network-error'],
+        c: ['network-error'],
+        d: [rows(row(1, 'D'))],
       },
     });
     const resolved = await resolveCandidates(
-      [candidate('Stripe'), candidate('Vercel'), candidate('Resend'), candidate('Sentry')],
+      [candidate('A'), candidate('B'), candidate('C'), candidate('D')],
       { access, includeBuildTime: false, tracked: NONE },
     );
-    expect(statuses(resolved)).toEqual([
-      ['Stripe', 'create'],
-      ['Vercel', 'unresolved'],
-      ['Resend', 'unresolved'],
-      ['Sentry', 'create'],
+    expect(resolved.map((item) => item.status)).toEqual([
+      'unresolved',
+      'unresolved',
+      'unresolved',
+      'unresolved',
     ]);
-    expect(resolved[1]).toMatchObject({ errorCode: 'HTTP_429' });
-    expect(resolved[1]?.error).toContain('429');
-    expect(resolved[2]).toMatchObject({ errorCode: 'NETWORK_ERROR' });
-    expect(resolved[2]?.error).toMatch(/fetch failed|network/i);
-  }, 15_000);
+    expect(resolved[3]).toMatchObject({ failure: { code: ABORTED_CODE } });
+    expect(requests.some((path) => path.endsWith('search=d'))).toBe(false);
+  }, 20_000);
+
+  it('resets the failure count after a success', async () => {
+    const { access } = stubApi({
+      searches: {
+        a: ['network-error'],
+        b: ['network-error'],
+        c: [rows(row(1, 'C'))],
+        d: ['network-error'],
+        e: ['network-error'],
+        f: [rows(row(2, 'F'))],
+      },
+    });
+    const resolved = await resolveCandidates(
+      ['A', 'B', 'C', 'D', 'E', 'F'].map((name) => candidate(name)),
+      { access, includeBuildTime: false, tracked: NONE },
+    );
+    expect(statuses(resolved).map(([, status]) => status)).toEqual([
+      'unresolved',
+      'unresolved',
+      'create',
+      'unresolved',
+      'unresolved',
+      'create',
+    ]);
+  }, 30_000);
+
+  it('names the rows a search returned when none matched', async () => {
+    const seen = Array.from({ length: 12 }, (_, index) =>
+      row(100 + index, `Clerk Variant ${index}`),
+    );
+    const { access } = stubApi({ searches: { clerk: [rows(...seen)], braintree: [rows()] } });
+    const resolved = await resolveCandidates([candidate('Clerk'), candidate('Braintree')], {
+      access,
+      includeBuildTime: false,
+      tracked: NONE,
+    });
+    expect(resolved[0]).toMatchObject({ status: 'not-in-catalog' });
+    if (resolved[0]?.status !== 'not-in-catalog') throw new Error('expected not-in-catalog');
+    expect(resolved[0].seen).toHaveLength(10);
+    expect(resolved[0].seen[0]).toBe('Clerk Variant 0');
+    expect(resolved[1]).toMatchObject({ status: 'not-in-catalog', seen: [] });
+  });
 
   it('keeps every candidate field on the resolved row', async () => {
     const { access } = stubApi({ searches: { stripe: [rows(row(801, 'Stripe'))] } });
@@ -432,10 +528,10 @@ describe('readAllowance', () => {
   it('throws when the credential is refused', async () => {
     await expect(
       readAllowance(stubApi({ me: { status: 401, body: {} } }).access),
-    ).rejects.toMatchObject({ status: 401 });
+    ).rejects.toMatchObject({ cliError: { status: 401 } });
     await expect(
       readAllowance(stubApi({ me: { status: 403, body: {} } }).access),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toMatchObject({ cliError: { status: 403 } });
   });
 });
 
@@ -443,10 +539,11 @@ describe('applyAllowance', () => {
   const resolved = (
     provider: string,
     cls: 'runtime' | 'build-time',
-    status: ResolvedCandidate['status'] = 'create',
+    status: 'create' | 'already-tracked' = 'create',
   ): ResolvedCandidate => ({
     ...candidate(provider, { class: cls }),
     status,
+    catalog: { id: 1, name: provider, state: 'operational', statusPageUrl: '' },
     regionDefaulted: false,
   });
 
@@ -501,6 +598,12 @@ describe('applyAllowance', () => {
       ['Supabase', 'already-tracked'],
       ['Stripe', 'create'],
     ]);
+  });
+
+  it('treats a limit below the used count as no room', () => {
+    expect(
+      statuses(applyAllowance([resolved('Stripe', 'runtime')], { used: 12, limit: 10 })),
+    ).toEqual([['Stripe', 'over-allowance']]);
   });
 
   it('marks every create row when the limit is reached', () => {

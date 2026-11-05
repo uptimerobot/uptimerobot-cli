@@ -6,19 +6,26 @@
  *
  * Every call goes through the generated operation definitions and the shared
  * API client, so a renamed path or parameter cannot leave this module talking
- * to a contract that no longer exists. Searches run one at a time, runtime
- * candidates first; a failed search marks its own row `unresolved` and never
- * stops the others. The tracked set comes from the account's monitor list, not
- * from the search rows' `isTracked`, because the catalog is cached for a
- * minute and a row can say "not tracked" right after a create.
+ * to a contract that no longer exists. `readTrackedProviders` and a refused
+ * credential in `readAllowance` throw an `ApiFailure`; any other allowance
+ * failure reads as "unknown" (null); a failed search marks its own row
+ * `unresolved` and never stops the others, except that three failures in a
+ * row abort the rest, since a rate limit or an outage will not clear by
+ * asking again. Searches run one at a time: the catalog endpoint is rate
+ * limited and sequential order keeps the proposal deterministic. The tracked
+ * set comes from the account's monitor list, not from the search rows'
+ * `isTracked`, because the catalog is cached (the `/third-party-providers`
+ * description in `openapi/openapi.yaml` says one minute) and a row can say
+ * "not tracked" right after a create.
  */
-import type { ApiClient } from '../../api/client.js';
+import { type ApiClient, requestJson } from '../../api/client.js';
+import { ApiFailure } from '../../api/errors.js';
 import { operations } from '../../generated/operations.js';
 import { isPlainRecord } from '../objects.js';
+import { PAGE_SIZE, pageThrough } from '../paginate.js';
 import { buildUrl } from '../request.js';
 import type { ThirdPartyCandidate } from '../scan/third-party-context.js';
 import { normalizeCatalogName } from '../scan/vendors.js';
-import { normalizeResult } from '../../output/normalize-result.js';
 
 export interface ApiAccess {
   client: ApiClient;
@@ -38,93 +45,49 @@ export interface CatalogRow {
   statusPageUrl: string;
 }
 
-/** A catalog row the account may already track, by the search row or the account's own list. */
+/** A catalog row and whether the account tracks it, by the search row or its own monitor list. */
 export interface CatalogChoice extends CatalogRow {
-  tracked: boolean;
+  isTracked: boolean;
 }
 
-export type ResolutionStatus =
-  | 'create'
-  | 'already-tracked'
-  | 'not-in-catalog'
-  | 'ambiguous'
-  | 'unresolved'
-  | 'over-allowance';
+export type ResolutionStatus = ResolvedCandidate['status'];
 
-export interface ResolvedCandidate extends ThirdPartyCandidate {
-  status: ResolutionStatus;
-  /** The accepted catalog row, for `create` and `already-tracked`. */
-  catalog?: CatalogRow;
-  /** The exact-name rows of an `ambiguous` candidate, for the user to pick from. */
-  choices?: readonly CatalogChoice[];
-  /** True when other rows start with the provider's name and a space (`Datadog EU` beside `Datadog`). */
-  regionDefaulted: boolean;
-  /** Why an `unresolved` row could not be resolved, and the failure code (`HTTP_429`, `NETWORK_ERROR`). */
-  error?: string;
-  errorCode?: string;
+/** The failure that left a row unresolved: the normalized error's code and message. */
+export interface ResolutionFailure {
+  code: string;
+  message: string;
 }
+
+/**
+ * One candidate after resolution. The status says which fields are present:
+ * a catalog row for the statuses that found exactly one, the choices for an
+ * ambiguous one, the names the search returned for one not in the catalog,
+ * and the failure for one that could not be asked.
+ */
+export type ResolvedCandidate =
+  | (ThirdPartyCandidate & {
+      status: 'create' | 'already-tracked' | 'over-allowance';
+      catalog: CatalogRow;
+      /** True when other rows start with the provider's name and a space (`Datadog EU` beside `Datadog`). */
+      regionDefaulted: boolean;
+    })
+  | (ThirdPartyCandidate & { status: 'ambiguous'; choices: readonly CatalogChoice[] })
+  | (ThirdPartyCandidate & { status: 'not-in-catalog'; seen: readonly string[] })
+  | (ThirdPartyCandidate & { status: 'unresolved'; failure: ResolutionFailure });
 
 export interface Allowance {
   used: number;
   limit: number;
 }
 
-/** A failed API call, with what the command needs to map it to an exit code. */
-export class ApiFailure extends Error {
-  readonly code: string;
-  readonly status?: number;
-  readonly payload?: unknown;
-
-  constructor(options: { code: string; message: string; status?: number; payload?: unknown }) {
-    super(options.message);
-    this.name = 'ApiFailure';
-    this.code = options.code;
-    if (options.status !== undefined) this.status = options.status;
-    if (options.payload !== undefined) this.payload = options.payload;
-  }
-}
-
 const MONITORS_LIST = operations['monitors:list'];
 const PROVIDERS_SEARCH = operations['third-party-providers:list'];
 const USER_ME = operations['user:me'];
-const PAGE_SIZE = 200;
-/** Same stop as `verify`: a cursor that never terminates ends after this many pages. */
-const MAX_PAGES = 50;
-const JSON_HEADERS = new Headers({ accept: 'application/json' });
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-async function get(access: ApiAccess, url: URL, method: string): Promise<unknown> {
-  let result;
-  try {
-    result = await access.client.request(url, { headers: JSON_HEADERS, method });
-  } catch (error) {
-    throw new ApiFailure({ code: 'NETWORK_ERROR', message: describeError(error) });
-  }
-  if (!result.response.ok) {
-    throw new ApiFailure({
-      code: `HTTP_${result.response.status}`,
-      message: `UptimeRobot API request failed with HTTP ${result.response.status}.`,
-      status: result.response.status,
-      payload: result.payload,
-    });
-  }
-  return result.payload;
-}
-
-function items(payload: unknown): unknown[] {
-  const normalized = normalizeResult(payload);
-  return isPlainRecord(normalized) && Array.isArray(normalized.items) ? normalized.items : [];
-}
-
-function nextCursor(payload: unknown): string | undefined {
-  const normalized = normalizeResult(payload);
-  return isPlainRecord(normalized) && typeof normalized.nextCursor === 'string'
-    ? normalized.nextCursor
-    : undefined;
-}
+/** Names kept on a `not-in-catalog` row, enough to explain the miss without a repro. */
+const MAX_SEEN_NAMES = 10;
+/** Consecutive search failures after which the remaining candidates are left unresolved. */
+const MAX_CONSECUTIVE_FAILURES = 3;
+export const ABORTED_CODE = 'ABORTED_AFTER_FAILURES';
 
 function trackedProviderId(item: unknown): number | undefined {
   if (!isPlainRecord(item) || item.type !== 'THIRD_PARTY_SERVICE') return undefined;
@@ -136,84 +99,79 @@ function trackedProviderId(item: unknown): number | undefined {
 /** Pages the account's monitors and keeps the provider id of every third-party service. */
 export async function readTrackedProviders(access: ApiAccess): Promise<TrackedProviders> {
   const providerIds = new Set<number>();
-  const seenCursors = new Set<string>();
-  let cursor: string | undefined;
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const url = buildUrl(
-      MONITORS_LIST,
-      { path: {}, query: { cursor, limit: PAGE_SIZE } },
-      access.apiUrl,
-    );
-    const payload = await get(access, url, MONITORS_LIST.method);
-    for (const item of items(payload)) {
-      const id = trackedProviderId(item);
-      if (id !== undefined) providerIds.add(id);
-    }
-    const next = nextCursor(payload);
-    if (next === undefined || next.length === 0 || seenCursors.has(next)) {
-      return { providerIds: [...providerIds], partial: false };
-    }
-    seenCursors.add(next);
-    cursor = next;
-  }
-  return { providerIds: [...providerIds], partial: true };
+  const { truncated } = await pageThrough({
+    fetchPage: (cursor) =>
+      requestJson(
+        access.client,
+        buildUrl(MONITORS_LIST, { path: {}, query: { cursor, limit: PAGE_SIZE } }, access.apiUrl),
+        MONITORS_LIST.method,
+      ),
+    onItems: (items) => {
+      for (const item of items) {
+        const id = trackedProviderId(item);
+        if (id !== undefined) providerIds.add(id);
+      }
+    },
+  });
+  return { providerIds: [...providerIds], partial: truncated };
 }
 
-function catalogRow(item: unknown): CatalogRow | undefined {
+function searchRow(item: unknown): CatalogChoice | undefined {
   if (!isPlainRecord(item)) return undefined;
-  const { id, name, state, statusPageUrl } = item;
+  const { id, name, state, statusPageUrl, isTracked } = item;
   if (typeof id !== 'number' || typeof name !== 'string') return undefined;
   return {
     id,
     name,
     state: typeof state === 'string' ? state : '',
     statusPageUrl: typeof statusPageUrl === 'string' ? statusPageUrl : '',
+    isTracked: isTracked === true,
   };
 }
 
-interface SearchRow extends CatalogRow {
-  isTracked: boolean;
+async function search(access: ApiAccess, term: string): Promise<CatalogChoice[]> {
+  const url = buildUrl(PROVIDERS_SEARCH, { path: {}, query: { search: term } }, access.apiUrl);
+  const payload = await requestJson(access.client, url, PROVIDERS_SEARCH.method);
+  const items = isPlainRecord(payload) && Array.isArray(payload.data) ? payload.data : [];
+  return items.flatMap((item) => {
+    const row = searchRow(item);
+    return row === undefined ? [] : [row];
+  });
 }
 
-async function search(access: ApiAccess, term: string): Promise<SearchRow[]> {
-  const url = buildUrl(PROVIDERS_SEARCH, { path: {}, query: { search: term } }, access.apiUrl);
-  const payload = await get(access, url, PROVIDERS_SEARCH.method);
-  return items(payload).flatMap((item) => {
-    const row = catalogRow(item);
-    if (row === undefined) return [];
-    const isTracked = isPlainRecord(item) && item.isTracked === true;
-    return [{ ...row, isTracked }];
-  });
+function withoutTracking({ isTracked: _, ...row }: CatalogChoice): CatalogRow {
+  return row;
 }
 
 function resolveOne(
   candidate: ThirdPartyCandidate,
-  rows: readonly SearchRow[],
+  rows: readonly CatalogChoice[],
   tracked: TrackedProviders,
 ): ResolvedCandidate {
   const wanted = normalizeCatalogName(candidate.provider);
   const regionPrefix = `${candidate.provider.trim().toLowerCase()} `;
-  const exact = rows.filter((row) => normalizeCatalogName(row.name) === wanted);
-  const regionDefaulted =
-    exact.length === 1 &&
-    rows.some((row) => row.name.trim().toLowerCase().startsWith(regionPrefix));
-  const base = { ...candidate, regionDefaulted };
-  const isTracked = (row: SearchRow): boolean =>
+  const isTracked = (row: CatalogChoice): boolean =>
     row.isTracked || tracked.providerIds.includes(row.id);
+  const exact = rows
+    .filter((row) => normalizeCatalogName(row.name) === wanted)
+    .map((row) => ({ ...row, isTracked: isTracked(row) }));
   const [row] = exact;
-  if (row === undefined) return { ...base, status: 'not-in-catalog' };
-  if (exact.length > 1 && !exact.every(isTracked)) {
+  if (row === undefined) {
     return {
-      ...base,
-      status: 'ambiguous',
-      choices: exact.map((item) => {
-        const { isTracked: _, ...rest } = item;
-        return { ...rest, tracked: isTracked(item) };
-      }),
+      ...candidate,
+      status: 'not-in-catalog',
+      seen: rows.slice(0, MAX_SEEN_NAMES).map((item) => item.name),
     };
   }
-  const { isTracked: _, ...catalog } = row;
-  return { ...base, status: isTracked(row) ? 'already-tracked' : 'create', catalog };
+  if (exact.length > 1 && !exact.every((item) => item.isTracked)) {
+    return { ...candidate, status: 'ambiguous', choices: exact };
+  }
+  return {
+    ...candidate,
+    status: row.isTracked ? 'already-tracked' : 'create',
+    catalog: withoutTracking(row),
+    regionDefaulted: rows.some((item) => item.name.trim().toLowerCase().startsWith(regionPrefix)),
+  };
 }
 
 export interface ResolveOptions {
@@ -239,18 +197,33 @@ export async function resolveCandidates(
       : []),
   ];
   const resolved: ResolvedCandidate[] = [];
+  let consecutiveFailures = 0;
   for (const candidate of ordered) {
-    try {
-      const rows = await search(options.access, candidate.searchTerm);
-      resolved.push(resolveOne(candidate, rows, options.tracked));
-    } catch (error) {
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
       resolved.push({
         ...candidate,
         status: 'unresolved',
-        regionDefaulted: false,
-        error: describeError(error),
-        errorCode: error instanceof ApiFailure ? error.code : 'NETWORK_ERROR',
+        failure: {
+          code: ABORTED_CODE,
+          message: `Not asked: the previous ${MAX_CONSECUTIVE_FAILURES} searches failed.`,
+        },
       });
+      continue;
+    }
+    try {
+      const rows = await search(options.access, candidate.searchTerm);
+      resolved.push(resolveOne(candidate, rows, options.tracked));
+      consecutiveFailures = 0;
+    } catch (error) {
+      consecutiveFailures += 1;
+      const failure: ResolutionFailure =
+        error instanceof ApiFailure
+          ? { code: error.cliError.code, message: error.cliError.message }
+          : {
+              code: 'NETWORK_ERROR',
+              message: error instanceof Error ? error.message : String(error),
+            };
+      resolved.push({ ...candidate, status: 'unresolved', failure });
     }
   }
   return resolved;
@@ -258,16 +231,19 @@ export async function resolveCandidates(
 
 /**
  * The account's third-party allowance, or null when the account carries none
- * or the call failed for a reason a retry may clear. A refused credential
- * (401, 403) is thrown: no allowance is not the same as no access.
+ * or the call failed for a reason a retry may clear: the API still refuses a
+ * create past the limit, so an unknown allowance costs a refused create, not
+ * a duplicate. A refused credential (401, 403) is thrown: no allowance is not
+ * the same as no access.
  */
 export async function readAllowance(access: ApiAccess): Promise<Allowance | null> {
   const url = buildUrl(USER_ME, { path: {}, query: {} }, access.apiUrl);
   let payload: unknown;
   try {
-    payload = await get(access, url, USER_ME.method);
+    payload = await requestJson(access.client, url, USER_ME.method);
   } catch (error) {
-    if (error instanceof ApiFailure && (error.status === 401 || error.status === 403)) throw error;
+    const status = error instanceof ApiFailure ? error.cliError.status : undefined;
+    if (status === 401 || status === 403) throw error;
     return null;
   }
   const record = isPlainRecord(payload) && isPlainRecord(payload.data) ? payload.data : payload;
