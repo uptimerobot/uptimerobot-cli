@@ -400,6 +400,72 @@ describe('uptimerobot scan --apply', () => {
     ).toContainEqual(['GitHub', 'build-time']);
   });
 
+  it('needs no confirmation when there is nothing to create', async () => {
+    const stub = await startStub({
+      monitors: [
+        { id: 1, type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 77 } } },
+        { id: 2, type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 801 } } },
+        { id: 3, type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 861 } } },
+      ],
+    });
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ confirmation: 'not-needed', results: [] });
+    expect(posts(stub)).toEqual([]);
+  });
+
+  it('rejects a malformed --only id before any request', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(
+      ['scan', root, '--apply', '--json', '--only', 'Vercel=abc'],
+      env(stub),
+    );
+
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      error: { code: 'INVALID_INPUT', path: 'only' },
+    });
+    expect(stub.hits).toEqual([]);
+  });
+
+  it('stops on a server failure during a create and reports it', async () => {
+    const stub = await startStub({ createReplies: { 0: { status: 503, body: 'upstream gone' } } });
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(1);
+    const output = JSON.parse(result.stdout);
+    expect(output.results).toEqual([
+      {
+        provider: 'Resend',
+        status: 'failed',
+        error: { code: 'HTTP_503', message: 'upstream gone' },
+      },
+    ]);
+    expect(posts(stub)).toHaveLength(1);
+  }, 20_000);
+
+  it('fails with the API error when the account list cannot be read, creating nothing', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], {
+      ...env(stub),
+      UPTIMEROBOT_DEV_API_URL: `${stub.url.replace(/\/v3$/, '')}/nowhere`,
+    });
+
+    expect(result.exitCode).toBe(6);
+    expect(JSON.parse(result.stderr)).toMatchObject({ error: { code: 'HTTP_404' } });
+    expect(result.stdout).toBe('');
+    expect(posts(stub)).toEqual([]);
+  });
+
   it('fails before any request when no credential resolves', async () => {
     const stub = await startStub();
     const root = await writeRepository(REPOSITORY);
@@ -453,9 +519,7 @@ describe('uptimerobot scan --apply', () => {
     expect(result.stdout).toContain(
       'Created: Resend (monitor 5000), Stripe (monitor 5001), Vercel (monitor 5002).',
     );
-    expect(result.stdout).toContain(
-      'uptimerobot monitors create third-party-service --provider-id 801',
-    );
+    expect(result.stdout).not.toContain('To repeat a create by hand');
     expect(result.stdout).toContain('uptimerobot init');
   });
 
@@ -474,8 +538,9 @@ describe('uptimerobot scan --apply', () => {
       [{ waitFor: 'Create 3 third-party services? [y/N]', input: 'n\n' }],
       interactiveEnv,
     );
-    expect(declined.exitCode).toBe(0);
+    expect(declined.exitCode).toBe(2);
     expect(declined.output).toContain('Nothing was created.');
+    expect(declined.output).toContain('the confirmation was declined');
     expect(posts(stub)).toEqual([]);
 
     const accepted = await runInteractiveCli(

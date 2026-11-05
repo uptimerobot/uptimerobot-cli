@@ -155,7 +155,6 @@ describe('rendering', () => {
       'Unresolved, retry later: Resend.',
       '',
       'To repeat a create by hand:',
-      '  uptimerobot monitors create third-party-service --provider-id 801',
       '  uptimerobot monitors create third-party-service --provider-id 861',
       '',
       'Endpoints and heartbeats need a base URL and go through `uptimerobot init`.',
@@ -179,5 +178,9 @@ describe('rendering', () => {
     ]);
     expect(formatSummary([create], [], 'declined')[0]).toBe('Nothing was created.');
     expect(formatSummary([create], [], 'required')[0]).toBe('Nothing was created.');
+    expect(formatSummary([create], [], 'required')).toContain(
+      '  uptimerobot monitors create third-party-service --provider-id 801',
+    );
+    expect(formatSummary([], [], 'not-needed')[0]).toBe('Nothing to create.');
   });
 });

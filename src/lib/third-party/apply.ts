@@ -46,7 +46,8 @@ export type CreateResult =
   | { provider: string; status: 'already-tracked' }
   | { provider: string; status: 'failed'; error: { code: string; message: string } };
 
-export type Confirmation = 'required' | 'declined' | 'confirmed';
+/** `not-needed` when the proposal held nothing to create, so no one was asked. */
+export type Confirmation = 'required' | 'declined' | 'confirmed' | 'not-needed';
 
 const CREATE = operations['monitors:create:third-party-service'];
 /** The status the API answers a create for a provider the account already tracks with. */
@@ -56,14 +57,13 @@ function normalizeName(name: string): string {
   return name.trim().toLowerCase();
 }
 
-/** Splits `Name=<id>` into its parts; a bare name has no id. */
-function parseOnly(entry: string): { name: string; id?: number } {
+/** Splits `Name=<id>` into its parts; a bare name has no id, a malformed id is reported as none. */
+export function parseOnly(entry: string): { name: string; id?: number } {
   const equals = entry.lastIndexOf('=');
   if (equals === -1) return { name: normalizeName(entry) };
   const id = Number(entry.slice(equals + 1));
-  return Number.isSafeInteger(id) && id > 0
-    ? { name: normalizeName(entry.slice(0, equals)), id }
-    : { name: normalizeName(entry) };
+  const name = normalizeName(entry.slice(0, equals));
+  return Number.isSafeInteger(id) && id > 0 ? { name, id } : { name };
 }
 
 /** The candidates `--only` and `--skip` leave in, before any search is made. */
@@ -254,7 +254,9 @@ export function formatSummary(
             : item.provider,
       )
       .join(', ');
-  if (confirmation !== 'confirmed') lines.push('Nothing was created.');
+  if (confirmation === 'required' || confirmation === 'declined')
+    lines.push('Nothing was created.');
+  if (confirmation === 'not-needed') lines.push('Nothing to create.');
   if (created.length > 0) lines.push(`Created: ${describe(created)}.`);
   if (refused.length > 0) lines.push(`Already tracked: ${describe(refused)}.`);
   if (failed.length > 0) lines.push(`Not created: ${describe(failed)}.`);
@@ -280,8 +282,12 @@ export function formatSummary(
   const unresolved = byStatus('unresolved');
   if (unresolved.length > 0) lines.push(`Unresolved, retry later: ${unresolved.join(', ')}.`);
 
+  // After a confirmed run the created rows need no repeating; what is left is
+  // what stopped, what was never reached, and what the allowance refused.
+  const createdProviders = new Set(created.map((item) => item.provider));
   const commands = proposal.flatMap((row) =>
-    row.status === 'create' || row.status === 'over-allowance'
+    (row.status === 'create' && !createdProviders.has(row.provider)) ||
+    row.status === 'over-allowance'
       ? [`${CLI_COMMAND} ${row.catalog.id}`]
       : [],
   );
@@ -291,10 +297,13 @@ export function formatSummary(
   return lines;
 }
 
-export function confirmationRequiredError(): CliError {
+export function confirmationRequiredError(confirmation: 'required' | 'declined'): CliError {
   return {
     code: 'CONFIRMATION_REQUIRED',
     command: 'scan --apply',
-    message: 'Explicit confirmation is required. Re-run with --confirm.',
+    message:
+      confirmation === 'declined'
+        ? 'Nothing was created: the confirmation was declined.'
+        : 'Explicit confirmation is required. Re-run with --confirm.',
   };
 }

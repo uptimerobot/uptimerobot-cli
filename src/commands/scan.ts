@@ -21,6 +21,7 @@ import {
   createProposed,
   formatProposal,
   formatSummary,
+  parseOnly,
   prepareProposal,
 } from '../lib/third-party/apply.js';
 import type { ApiAccess } from '../lib/third-party/resolve.js';
@@ -114,11 +115,7 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
     }
 
     const context = await scanRepository(repoRoot);
-    const unusedFormat = resolveFormat(
-      { format: flags.format, json: flags.json },
-      detectInvocationMode(flags.agent === true),
-    );
-    if (unusedFormat === 'json' || unusedFormat === 'jsonl') this.log(JSON.stringify(context));
+    if (machineOutput) this.log(JSON.stringify(context));
     // The Markdown rendering already ends in a newline, and `log` adds one.
     else this.log(formatSeedContext(context).trimEnd());
     return context;
@@ -156,8 +153,24 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
     machineOutput: boolean,
     flags: { confirm: boolean; includeBuildTime: boolean; only: string[]; skip: string[] },
   ): Promise<void> {
+    const malformed = flags.only.find(
+      (entry) => entry.includes('=') && parseOnly(entry).id === undefined,
+    );
+    if (malformed !== undefined) {
+      return this.fail(
+        {
+          code: 'INVALID_INPUT',
+          expected: '<provider> or <provider>=<catalog id>',
+          message: `--only ${malformed} names no catalog id.`,
+          path: 'only',
+        },
+        2,
+      );
+    }
     let proposal: Proposal;
     try {
+      // A refused credential anywhere, the allowance read included, ends the
+      // run: a key that cannot read the account is not trusted to write to it.
       proposal = await prepareProposal(context.thirdParty.candidates, flags, access);
     } catch (error) {
       if (error instanceof ApiFailure) return this.fail(error.cliError, error.exitCode);
@@ -167,7 +180,7 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
 
     if (!machineOutput) for (const line of formatProposal(proposal)) this.log(line);
 
-    let confirmation: Confirmation = 'confirmed';
+    let confirmation: Confirmation = toCreate === 0 ? 'not-needed' : 'confirmed';
     if (toCreate > 0 && !flags.confirm) {
       const summary = `Create ${toCreate} third-party ${toCreate === 1 ? 'service' : 'services'}?`;
       // The prompt is the one every destructive generated command uses; an agent
@@ -201,7 +214,11 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
       this.log('');
       for (const line of formatSummary(proposal.proposal, results, confirmation)) this.log(line);
     }
-    if (confirmation === 'required') return this.fail(confirmationRequiredError(), 2);
+    // A declined prompt exits like a missing confirmation: the generated
+    // destructive commands do the same, and a script must tell "no" from "done".
+    if (confirmation === 'required' || confirmation === 'declined') {
+      return this.fail(confirmationRequiredError(confirmation), 2);
+    }
     if (failure !== undefined) return this.fail(failure.cliError, failure.exitCode);
   }
 
