@@ -391,6 +391,127 @@ describe('matchManifest on Gemfile, composer.json and Cargo.toml', () => {
     expect(findings.map((finding) => finding.value)).not.toContain('name');
   });
 
+  it('keeps credentials, keys and control characters out of the report', () => {
+    const npm = matchManifest({
+      path: 'package.json',
+      contents:
+        '{\n  "dependencies": {\n    "stripe": "git+https://user:token@github.com/x/y.git",\n    "twilio": "5.0.0\\u001b[31m"\n  }\n}',
+    });
+    expect(byProvider(npm, 'Stripe')?.detail).toMatchObject({ signal: 'stripe', version: '' });
+    expect(byProvider(npm, 'Twilio')?.detail.signal).toBe('twilio');
+    const pip = matchManifest({
+      path: 'requirements.txt',
+      contents: 'stripe==https://u:p@h/x\nsendgrid==sk_live_abcdefghij\n',
+    });
+    expect(byProvider(pip, 'Stripe')?.detail.signal).toBe('stripe');
+    expect(byProvider(pip, 'SendGrid')?.detail.signal).toBe('sendgrid');
+    const long = matchManifest({
+      path: 'package.json',
+      contents: `{ "dependencies": { "${'a'.repeat(5000)}": "1", "stripe": "${'9'.repeat(5000)}" } }`,
+    });
+    expect(long.map((finding) => finding.value)).toEqual(['Stripe']);
+    expect(byProvider(long, 'Stripe')?.detail.signal).toBe('stripe');
+  });
+
+  it('ignores a fake dependency table inside a multi-line string', () => {
+    const pyproject = matchManifest({
+      path: 'pyproject.toml',
+      contents: [
+        '[project]',
+        'description = """',
+        '[tool.poetry.dependencies]',
+        'stripe = "1"',
+        '"""',
+        '',
+        '[tool.poetry.dependencies]',
+        'twilio = "1"',
+        '',
+      ].join('\n'),
+    });
+    expect(pyproject.map((finding) => finding.value)).toEqual(['Twilio']);
+    const cargo = matchManifest({
+      path: 'Cargo.toml',
+      contents: [
+        '[package]',
+        "description = '''",
+        '[dependencies]',
+        'async-stripe = "1"',
+        "'''",
+        '',
+      ].join('\n'),
+    });
+    expect(cargo).toEqual([]);
+  });
+
+  it('abandons an unterminated array at the next header instead of swallowing the file', () => {
+    const findings = matchManifest({
+      path: 'pyproject.toml',
+      contents: [
+        '[project]',
+        'keywords = [',
+        '  "a",',
+        '',
+        '[tool.poetry.dependencies]',
+        'stripe = "1"',
+        '',
+      ].join('\n'),
+    });
+    expect(byProvider(findings, 'Stripe')?.evidence.line).toBe(6);
+  });
+
+  it('does not read a go.mod require block opener with content on its line as a dependency', () => {
+    const findings = matchManifest({
+      path: 'go.mod',
+      contents: 'require ( github.com/stripe/stripe-go v1\n',
+    });
+    expect(findings.map((finding) => finding.value)).not.toContain('(');
+  });
+
+  describe('stays linear on hostile input', () => {
+    const under = (ms: number, run: () => unknown) => {
+      const started = performance.now();
+      run();
+      expect(performance.now() - started).toBeLessThan(ms);
+    };
+
+    it('an unclosed header with thousands of spaces', () => {
+      under(200, () =>
+        matchManifest({ path: 'Cargo.toml', contents: `[${' '.repeat(4000)}aaaa\n` }),
+      );
+    });
+
+    it('a line of eighty thousand spaces', () => {
+      under(200, () =>
+        matchManifest({ path: 'pyproject.toml', contents: `${' '.repeat(80_000)}\n[project]\n` }),
+      );
+    });
+
+    it('a forty thousand item array and an unterminated one', () => {
+      const items = Array.from({ length: 40_000 }, (_, i) => `  "pkg${i}",`).join('\n');
+      under(1000, () =>
+        matchManifest({
+          path: 'pyproject.toml',
+          contents: `[project]\ndependencies = [\n${items}\n]\n`,
+        }),
+      );
+      under(1000, () =>
+        matchManifest({ path: 'pyproject.toml', contents: `[project]\nx = [\n${items}\n` }),
+      );
+    });
+
+    it('twenty thousand pretty-printed dependencies', () => {
+      const entries = Array.from({ length: 20_000 }, (_, i) => `    "pkg\\\\${i}": "1"`).join(
+        ',\n',
+      );
+      under(1000, () =>
+        matchManifest({
+          path: 'package.json',
+          contents: `{\n  "dependencies": {\n${entries}\n  }\n}\n`,
+        }),
+      );
+    });
+  });
+
   it('never throws on malformed or empty manifests', () => {
     for (const [path, contents] of [
       ['package.json', '[1, 2]'],

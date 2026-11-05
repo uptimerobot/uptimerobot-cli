@@ -72,6 +72,20 @@ interface Declared {
 /** An evidence line of 1 also means "location unknown", as in {@link ScanEvidence}. */
 const UNKNOWN_LINE = 1;
 
+/**
+ * What may reach a finding. A dependency name outside this grammar is not a
+ * dependency in any ecosystem here and is dropped; a version outside it
+ * (`git+https://user:token@host/x.git`, a key, control characters) is kept
+ * out of the report and the signal names the package alone. Both are capped
+ * so a 100 KB string cannot become a 100 KB report line.
+ */
+const DEPENDENCY_NAME = /^[A-Za-z0-9@._/!~[\]-]{1,200}$/;
+const DEPENDENCY_VERSION = /^[A-Za-z0-9.^~<>=!*|,+ -]{0,64}$/;
+
+function sanitized(dependency: Declared): Declared {
+  return DEPENDENCY_VERSION.test(dependency.version) ? dependency : { ...dependency, version: '' };
+}
+
 const DEV_SCOPES = new Set([
   'devDependencies',
   'require-dev',
@@ -101,7 +115,9 @@ export function matchManifest(input: ManifestInput): ManifestFinding[] {
   const ecosystem = ecosystemFor(input.path);
   if (ecosystem === undefined) return [];
   const declared = PARSERS[ecosystem](input.contents, basename(input.path));
-  return declared.map((dependency) => classify(ecosystem, input.path, dependency));
+  return declared
+    .filter((dependency) => DEPENDENCY_NAME.test(dependency.name))
+    .map((dependency) => classify(ecosystem, input.path, sanitized(dependency)));
 }
 
 function classify(
@@ -176,9 +192,9 @@ function parseJsonSections(contents: string, sections: readonly string[]): Decla
   for (const scope of sections) {
     const section = parsed[scope];
     if (!isPlainRecord(section)) continue;
-    const start = lines.findIndex((line) => line.includes(`"${scope}"`));
+    const lineOf = keyLines(lines, scope);
     for (const [name, version] of Object.entries(section)) {
-      const line = findLine(lines, (text) => text.includes(`"${name}"`), start);
+      const line = lineOf.get(name) ?? UNKNOWN_LINE;
       declared.push({
         name,
         version: typeof version === 'string' ? version : '',
@@ -191,15 +207,24 @@ function parseJsonSections(contents: string, sections: readonly string[]): Decla
   return declared;
 }
 
+const JSON_KEY = /"((?:[^"\\]|\\.)*)"\s*:/g;
+
 /**
- * The first line at or after `from` that passes the test; {@link UNKNOWN_LINE}
- * when the section key itself was not found (`from` is -1) or nothing matches,
- * as happens in a minified manifest where every finding sits on line 1 anyway.
+ * The line of every quoted key from the section's own line on, first
+ * occurrence wins, in one pass over the file. A minified manifest puts every
+ * key on line 1, which is also {@link UNKNOWN_LINE}.
  */
-function findLine(lines: readonly string[], test: (line: string) => boolean, from: number): number {
-  if (from < 0) return UNKNOWN_LINE;
-  const index = lines.findIndex((text, position) => position >= from && test(text));
-  return index < 0 ? UNKNOWN_LINE : index + 1;
+function keyLines(lines: readonly string[], scope: string): Map<string, number> {
+  const found = new Map<string, number>();
+  const start = lines.findIndex((line) => line.includes(`"${scope}"`));
+  if (start < 0) return found;
+  for (let index = start; index < lines.length; index += 1) {
+    for (const match of (lines[index] ?? '').matchAll(JSON_KEY)) {
+      const key = match[1];
+      if (key !== undefined && key !== scope && !found.has(key)) found.set(key, index + 1);
+    }
+  }
+  return found;
 }
 
 const PIP_REQUIREMENT =
@@ -262,7 +287,20 @@ function tomlCode(text: string, options: { keepStrings?: boolean } = {}): string
   return out;
 }
 
-const TOML_HEADER = /^\[\[?\s*([^\]]+?)\s*\]\]?\s*$/;
+/** Lines an unterminated array or inline table may span before it is abandoned. */
+const MAX_OPEN_VALUE_LINES = 2000;
+
+/** `[name]` or `[[name]]`, hand-parsed: a regex here backtracks on a long unclosed line. */
+function tomlHeader(line: string): string | undefined {
+  if (!line.startsWith('[') || !line.endsWith(']')) return undefined;
+  const inner = line.slice(line.startsWith('[[') ? 2 : 1, line.endsWith(']]') ? -2 : -1).trim();
+  return inner === '' || inner.includes(']') ? undefined : inner;
+}
+
+/** True on a line that opens or closes a triple-quoted string without closing it again. */
+function togglesMultilineString(line: string): boolean {
+  return (line.split('"""').length + line.split("'''").length) % 2 === 1;
+}
 /** A bare or quoted key; a dotted key (`serde.version = "1"`) is `key` plus `subkey`. */
 const TOML_KEY = /^("[^"]*"|'[^']*'|[A-Za-z0-9_-]+)(?:\.([A-Za-z0-9_.-]+))?\s*=\s*(.*)$/;
 
@@ -275,40 +313,51 @@ const TOML_KEY = /^("[^"]*"|'[^']*'|[A-Za-z0-9_-]+)(?:\.([A-Za-z0-9_.-]+))?\s*=\
 function readToml(contents: string): TomlAssignment[] {
   const assignments: TomlAssignment[] = [];
   let table = '';
-  let open: { assignment: TomlAssignment; depth: number } | undefined;
+  let open: { value: { text: string; line: number }[]; depth: number } | undefined;
+  let inString = false;
   contents.split('\n').forEach((raw, index) => {
     const line = index + 1;
-    const code = tomlCode(raw);
-    if (open !== undefined) {
-      // Comments inside an array never reach the value: `# "stripe",` is not a dependency.
-      open.assignment.value = [
-        ...open.assignment.value,
-        { text: tomlCode(raw, { keepStrings: true }), line },
-      ];
-      open.depth += depthDelta(code);
-      if (open.depth <= 0) open = undefined;
+    // A triple-quoted string can hold a fake `[dependencies]` header; none of its lines count.
+    if (inString) {
+      if (togglesMultilineString(raw)) inString = false;
       return;
     }
-    // Headers keep their quoted segments (`[target.'cfg(unix)'.dependencies]`).
-    const header = TOML_HEADER.exec(raw.trim().replace(/\s+#.*$/, ''));
-    if (header !== null) {
-      table = header[1] ?? '';
+    const code = tomlCode(raw);
+    const header = tomlHeader(tomlCode(raw, { keepStrings: true }).trim());
+    if (open !== undefined) {
+      if (header === undefined && open.value.length < MAX_OPEN_VALUE_LINES) {
+        // Comments inside an array never reach the value: `# "stripe",` is not a dependency.
+        open.value.push({ text: tomlCode(raw, { keepStrings: true }), line });
+        open.depth += depthDelta(code);
+        if (open.depth > 0) return;
+      }
+      // Balanced, or abandoned: a header or the line cap ends an unterminated value.
+      open = undefined;
+      if (header === undefined) return;
+    }
+    if (header !== undefined) {
+      table = header;
+      return;
+    }
+    if (togglesMultilineString(raw)) {
+      inString = true;
       return;
     }
     const match = TOML_KEY.exec(raw.trim());
     if (match === null || match[1] === undefined) return;
     const key = match[1].replaceAll(/^["']|["']$/g, '');
     const value = tomlCode(match[3] ?? '', { keepStrings: true });
+    const parts = [{ text: value, line }];
     const assignment: TomlAssignment = {
       // `serde.version = "1"` is the subtable `[dependencies.serde]` on one line.
       table: match[2] === undefined ? table : `${table}.${key}`,
       key: match[2] === undefined ? key : match[2].slice(match[2].lastIndexOf('.') + 1),
-      value: [{ text: value, line }],
+      value: parts,
       line,
     };
     assignments.push(assignment);
     const depth = depthDelta(tomlCode(value));
-    if (depth > 0) open = { assignment, depth };
+    if (depth > 0) open = { value: parts, depth };
   });
   return assignments;
 }
@@ -428,7 +477,7 @@ function parseGoMod(contents: string): Declared[] {
       inBlock = false;
       return;
     }
-    const single = /^require\s+(\S+)\s+(\S+)/.exec(text);
+    const single = /^require\s+([^\s(]+)\s+(\S+)/.exec(text);
     const inner = inBlock ? /^(\S+)\s+(\S+)/.exec(text) : null;
     const match = single ?? inner;
     if (match === null || match[1] === undefined) return;
