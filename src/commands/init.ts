@@ -20,6 +20,7 @@ import type { InvocationMode } from '../lib/invocation.js';
 import { detectInvocationMode, promptSelection, requestConfirmation } from '../lib/invocation.js';
 import type { SeedContext } from '../lib/scan/index.js';
 import { formatSeedContext, scanRepository } from '../lib/scan/index.js';
+import type { ResolvedCandidate } from '../lib/third-party/resolve.js';
 import {
   type ApplyRun,
   type Confirmation,
@@ -137,15 +138,23 @@ interface InitOutput {
   verifyCommand: string;
 }
 
-interface InitThirdPartyOutput {
-  offered: true;
-  confirmation?: Confirmation;
-  /** The providers the proposal would have created, whatever was answered. */
-  proposed?: readonly string[];
-  results?: readonly CreateResult[];
-  /** The failure that stopped the offer; init goes on to the agent setup regardless. */
-  error?: { code: string; message: string };
+/** One row of the proposal as the seed file records it: enough to say what not to create again. */
+interface InitThirdPartyRow {
+  provider: string;
+  status: ResolvedCandidate['status'];
 }
+
+type InitThirdPartyOutput =
+  /** The failure that stopped the offer; init goes on to the agent setup regardless. */
+  | { offered: true; error: { code: string; message: string } }
+  | {
+      offered: true;
+      confirmation: Confirmation;
+      proposal: readonly InitThirdPartyRow[];
+      results: readonly CreateResult[];
+      /** Why nothing was created although confirmed (a partial tracked set). */
+      blocked?: { code: string; message: string };
+    };
 
 interface InitCleanOutput {
   repoRoot: string;
@@ -288,13 +297,26 @@ Precedence:
     // than to answer the question itself, which is why the file it writes
     // keeps the rejections too.
     const context = await scanRepository(root);
+    const seedPath = join(root, SEED_CONTEXT_FILE_NAME);
+    const previousSeed = await readMarkedFile(seedPath);
+    const runtimeCandidates = context.thirdParty.candidates.some((c) => c.class === 'runtime');
     // Offered only where someone can answer: a human at a terminal who did not
-    // say --yes, --json or --no-third-party. Everyone else gets the hint.
-    const thirdParty =
-      interactive && flags['no-third-party'] !== true
-        ? await this.offerThirdParty(context, access, mode)
-        : null;
-    const seedContext = await this.writeSeedContext(root, context, invocation, thirdParty);
+    // say --yes, --json or --no-third-party, with something to offer, and never
+    // when the seed file belongs to someone else, since the write after the
+    // creates would fail and leave them unrecorded.
+    const offer =
+      interactive &&
+      flags['no-third-party'] !== true &&
+      runtimeCandidates &&
+      (previousSeed === undefined || previousSeed.startsWith(SEED_BEGIN_PREFIX));
+    const thirdParty = offer ? await this.offerThirdParty(context, access, mode, invocation) : null;
+    // A run that made no offer keeps what an earlier one recorded, so a later
+    // --json rerun never erases "Created: Stripe" from the agent's seed file.
+    const outcomeLines =
+      thirdParty === null
+        ? previousOutcomeLines(previousSeed)
+        : thirdPartyOutcomeLines(thirdParty, invocation);
+    const seedContext = await this.writeSeedContext(root, context, invocation, outcomeLines);
     // Written next to the scan and on the same terms, so the two halves of the
     // handoff always arrive together. Unconditional, like the scan: a --no-agent
     // run still leaves the guide for whichever agent the user opens later.
@@ -329,7 +351,11 @@ Precedence:
       invocation: invocation.command,
       launchCommand: plan === null ? null : describeLaunch(plan),
       launched: willLaunch,
-      nextSteps: nextSteps(target, invocation, thirdParty === null),
+      nextSteps: nextSteps(
+        target,
+        invocation,
+        thirdParty === null && runtimeCandidates && flags['no-third-party'] !== true,
+      ),
       prompt: agentPrompt(),
       repoRoot: root,
       seedContext,
@@ -417,7 +443,7 @@ Precedence:
   private renderSeedContext(
     context: SeedContext,
     invocation: CliInvocation,
-    thirdParty: InitThirdPartyOutput | null,
+    outcomeLines: readonly string[],
   ): string {
     return [
       `${SEED_BEGIN_PREFIX} version=${this.config.pjson.version} schema=${context.schemaVersion} -->`,
@@ -426,7 +452,7 @@ Precedence:
       `this file with \`${formatInvocation(invocation, 'init --clean')}\`. Edits are overwritten.`,
       '',
       formatSeedContext(context).trimEnd(),
-      ...(thirdParty === null ? [] : ['', ...thirdPartyOutcomeLines(thirdParty, invocation)]),
+      ...(outcomeLines.length === 0 ? [] : ['', ...outcomeLines]),
       '',
       SEED_END_MARKER,
       '',
@@ -442,6 +468,7 @@ Precedence:
     context: SeedContext,
     access: ApiAccess,
     mode: InvocationMode,
+    invocation: CliInvocation,
   ): Promise<InitThirdPartyOutput> {
     const confirm = async (proposal: Proposal, toCreate: number): Promise<Confirmation> => {
       for (const line of formatProposal(proposal)) this.log(line);
@@ -472,11 +499,22 @@ Precedence:
     }
     if (run.blocked !== undefined) this.log(run.blocked.message);
     if (run.failure !== undefined) this.log(run.failure.cliError.message);
+    if (run.proposal.proposal.some((row) => row.status === 'ambiguous')) {
+      this.log(
+        `Settle an ambiguous row with \`${formatInvocation(invocation, 'scan --apply --only <provider>=<id>')}\`.`,
+      );
+    }
     this.log('');
-    const proposed = run.proposal.proposal
-      .filter((row) => row.status === 'create')
-      .map((row) => row.provider);
-    return { offered: true, confirmation: run.confirmation, proposed, results: run.results };
+    const proposal = run.proposal.proposal.map(({ provider, status }) => ({ provider, status }));
+    return {
+      offered: true,
+      confirmation: run.confirmation,
+      proposal,
+      results: run.results,
+      ...(run.blocked === undefined
+        ? {}
+        : { blocked: { code: run.blocked.code, message: run.blocked.message } }),
+    };
   }
 
   /**
@@ -554,13 +592,13 @@ Precedence:
     root: string,
     context: SeedContext,
     invocation: CliInvocation,
-    thirdParty: InitThirdPartyOutput | null,
+    outcomeLines: readonly string[],
   ): Promise<InitSeedOutput> {
     const written = await this.writeMarkedFile({
       beginPrefix: SEED_BEGIN_PREFIX,
       existsCode: 'SEED_CONTEXT_EXISTS',
       path: join(root, SEED_CONTEXT_FILE_NAME),
-      rendered: this.renderSeedContext(context, invocation, thirdParty),
+      rendered: this.renderSeedContext(context, invocation, outcomeLines),
       writeCode: 'SEED_CONTEXT_WRITE_FAILED',
     });
     return { ...written, schemaVersion: context.schemaVersion, summary: context.summary };
@@ -816,27 +854,63 @@ function thirdPartyOutcomeLines(
   thirdParty: InitThirdPartyOutput,
   invocation: CliInvocation,
 ): readonly string[] {
-  const lines = [`### Outcome of \`${formatInvocation(invocation, 'init')}\``, ''];
-  if (thirdParty.error !== undefined) {
+  const lines = [`${OUTCOME_HEADING} \`${formatInvocation(invocation, 'init')}\``, ''];
+  if ('error' in thirdParty) {
     return [
       ...lines,
       `Not resolved (${thirdParty.error.code}): ${thirdParty.error.message}. Run \`${formatInvocation(invocation, 'scan --apply')}\` to retry.`,
     ];
   }
-  const results = thirdParty.results ?? [];
-  const named = (status: CreateResult['status']): string[] =>
+  const { confirmation, proposal, results, blocked } = thirdParty;
+  const byResult = (status: CreateResult['status']): string[] =>
     results.filter((item) => item.status === status).map((item) => item.provider);
+  const byRow = (status: ResolvedCandidate['status']): string[] =>
+    proposal.filter((row) => row.status === status).map((row) => row.provider);
   const created = results.flatMap((item) =>
     item.status === 'created' ? [`${item.provider} (monitor ${item.monitorId ?? 'unknown'})`] : [],
   );
-  if (thirdParty.confirmation !== 'confirmed') lines.push('Nothing was created.');
+  const attempted = new Set(results.map((item) => item.provider));
+  const notAttempted = byRow('create').filter((provider) => !attempted.has(provider));
+  if (confirmation !== 'confirmed' || blocked !== undefined) lines.push('Nothing was created.');
   if (created.length > 0) lines.push(`Created: ${created.join(', ')}.`);
-  const refused = named('already-tracked');
-  if (refused.length > 0) lines.push(`Already tracked: ${refused.join(', ')}.`);
-  const failed = named('failed');
+  const tracked = [...byRow('already-tracked'), ...byResult('already-tracked')];
+  if (tracked.length > 0) lines.push(`Already tracked: ${tracked.join(', ')}.`);
+  const failed = results.flatMap((item) =>
+    item.status === 'failed' ? [`${item.provider} (${item.error.message})`] : [],
+  );
   if (failed.length > 0) lines.push(`Not created: ${failed.join(', ')}.`);
-  if (thirdParty.confirmation === 'declined' && (thirdParty.proposed ?? []).length > 0) {
-    lines.push(`Not created: ${(thirdParty.proposed ?? []).join(', ')} (declined at the prompt).`);
+  if (notAttempted.length > 0) {
+    const reason =
+      blocked !== undefined
+        ? blocked.code
+        : confirmation === 'declined'
+          ? 'declined at the prompt'
+          : failed.length > 0
+            ? 'not attempted after the failure above'
+            : confirmation;
+    lines.push(`Not created: ${notAttempted.join(', ')} (${reason}).`);
+  }
+  const missing = byRow('not-in-catalog');
+  if (missing.length > 0) lines.push(`Not in catalog: ${missing.join(', ')}.`);
+  const over = byRow('over-allowance');
+  if (over.length > 0) lines.push(`Over allowance: ${over.join(', ')}.`);
+  const ambiguous = byRow('ambiguous');
+  if (ambiguous.length > 0) {
+    lines.push(
+      `Ambiguous, settle with \`${formatInvocation(invocation, 'scan --apply --only <provider>=<id>')}\`: ${ambiguous.join(', ')}.`,
+    );
   }
   return lines;
+}
+
+const OUTCOME_HEADING = '### Outcome of';
+
+/** The outcome block an earlier run left in our own seed file, so a run that makes no offer keeps it. */
+function previousOutcomeLines(previousSeed: string | undefined): readonly string[] {
+  if (previousSeed === undefined || !previousSeed.startsWith(SEED_BEGIN_PREFIX)) return [];
+  const start = previousSeed.indexOf(OUTCOME_HEADING);
+  if (start === -1) return [];
+  const end = previousSeed.indexOf(SEED_END_MARKER, start);
+  const block = previousSeed.slice(start, end === -1 ? undefined : end).trimEnd();
+  return block.split('\n');
 }
