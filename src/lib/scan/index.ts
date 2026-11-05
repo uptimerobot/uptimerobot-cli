@@ -51,7 +51,6 @@ export { scanScheduled } from './scheduled.js';
 export type { ScanScheduledOptions, ScheduledFinding } from './scheduled.js';
 export { scanThirdParty } from './third-party.js';
 export type { ScanThirdPartyOptions, ThirdPartyFinding } from './third-party.js';
-export { buildThirdPartyContext, formatThirdPartySection } from './third-party-context.js';
 export type {
   ThirdPartyCandidate,
   ThirdPartyContext,
@@ -199,8 +198,7 @@ export interface ScanFindings {
   containers: readonly ScanFinding[];
   routes: readonly ScanFinding[];
   scheduled: readonly ScanFinding[];
-  /** Absent means the third-party scanner did not run; the section is then empty. */
-  thirdParty?: readonly ThirdPartyFinding[];
+  thirdParty: readonly ThirdPartyFinding[];
 }
 
 export interface ScanRepositoryOptions {
@@ -299,7 +297,7 @@ export function buildSeedContext(
     candidate.reason,
   ]);
   heartbeats.sort(compareHeartbeats);
-  const thirdParty = buildThirdPartyContext(findings.thirdParty ?? []);
+  const thirdParty = buildThirdPartyContext(findings.thirdParty);
 
   return {
     schemaVersion: SEED_CONTEXT_SCHEMA_VERSION,

@@ -52,7 +52,13 @@ async function makeRepo(files: Readonly<Record<string, string>>): Promise<string
 }
 
 function seed(findings: Partial<ScanFindings>): SeedContext {
-  return buildSeedContext('/repo', { containers: [], routes: [], scheduled: [], ...findings });
+  return buildSeedContext('/repo', {
+    containers: [],
+    routes: [],
+    scheduled: [],
+    thirdParty: [],
+    ...findings,
+  });
 }
 
 function healthcheck(url: string): ScanFinding {

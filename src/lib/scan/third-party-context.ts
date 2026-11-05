@@ -15,7 +15,7 @@ import { VENDORS, type VendorClass } from './vendors.js';
 
 export interface ThirdPartyEvidence extends ScanEvidence {
   /** The signal kind: an ecosystem (`npm`), `file`, `terraform-resource`, `registry`, ... */
-  kind: string;
+  kind: ThirdPartyFinding['kind'];
   /** `package@version`, a file name, `provider "aws"`, `FROM ghcr.io`, ... */
   signal: string;
   /** The app directory relative to the root, `.` for the root. */
@@ -46,7 +46,11 @@ export interface ThirdPartyContext {
   candidates: readonly ThirdPartyCandidate[];
   /** Frameworks and libraries on the skip list: no outage of theirs reaches the product. */
   skipped: readonly ThirdPartyMention[];
-  /** Protocol clients, unmapped dependencies and hint-only providers. */
+  /**
+   * Protocol clients, unmapped dependencies and hint-only providers. One
+   * entry per distinct unmapped name, so this is the JSON-only audit trail
+   * and can be long; the Markdown counts the unmapped names instead.
+   */
   unknown: readonly ThirdPartyMention[];
 }
 
@@ -69,12 +73,10 @@ export function buildThirdPartyContext(findings: readonly ThirdPartyFinding[]): 
   const candidates: ThirdPartyCandidate[] = [];
   for (const [provider, group] of [...groups].sort(([a], [b]) => a.localeCompare(b, 'en'))) {
     const vendorSignals = group.filter((finding) => finding.outcome === 'vendor');
+    const [hint] = group;
     if (vendorSignals.length === 0) {
-      const hint = group[0];
-      if (hint !== undefined) {
-        if (!mentions.has(provider)) {
-          mentions.set(provider, { name: provider, reason: 'hint', evidence: hint.evidence });
-        }
+      if (hint !== undefined && !mentions.has(provider)) {
+        mentions.set(provider, { name: provider, reason: 'hint', evidence: hint.evidence });
       }
       continue;
     }
@@ -129,8 +131,18 @@ function hintsOf(findings: readonly ThirdPartyFinding[]): string[] {
 
 // --- Rendering ---------------------------------------------------------------
 
-const PACKAGE_KINDS = new Set(['npm', 'pip', 'go', 'gem', 'composer', 'cargo']);
-/** Markdown shows this many evidence items per provider; the JSON output keeps them all. */
+const PACKAGE_KINDS: ReadonlySet<ThirdPartyFinding['kind']> = new Set([
+  'npm',
+  'pip',
+  'go',
+  'gem',
+  'composer',
+  'cargo',
+]);
+/**
+ * Markdown shows this many evidence items per provider, in walk order, and
+ * ends the line with `+N more`; `scan --json` keeps every item.
+ */
 const MAX_EVIDENCE_PER_LINE = 5;
 
 /** `stripe@17.4.0 (package.json:12)`, `vercel.json`, `infra/main.tf:10 (provider "aws")`. */
@@ -145,19 +157,19 @@ function evidenceText(evidence: ThirdPartyEvidence): string {
   return `${prefix}${evidence.file}:${evidence.line} (${evidence.signal})`;
 }
 
-function candidateLine(candidate: ThirdPartyCandidate): string {
+function providerLine(candidate: ThirdPartyCandidate): string {
   const shown = candidate.evidence.slice(0, MAX_EVIDENCE_PER_LINE).map(evidenceText);
   const hidden = candidate.evidence.length - shown.length;
   const items = hidden > 0 ? [...shown, `+${hidden} more`] : shown;
   const hints = candidate.hints.length === 0 ? '' : `; signals: ${candidate.hints.join(', ')}`;
-  return `- ${candidate.provider}: ${items.join(', ')}${hints}`;
+  return `${candidate.provider}: ${items.join(', ')}${hints}`;
 }
 
 const REASON_LABELS: Readonly<Record<ThirdPartyMentionReason, string>> = {
   framework: 'framework or UI library',
   'protocol-client': 'protocol client, self-hosted or unknown',
   unmapped: 'not in the vendor map',
-  hint: 'hint only, no other signal',
+  hint: 'config hint only, no code or dependency signal',
 };
 
 /** The Markdown section, as lines without a trailing blank. */
@@ -168,11 +180,11 @@ export function formatThirdPartySection(context: ThirdPartyContext): string[] {
 
   lines.push('', '### Runtime (proposed by default)', '');
   if (runtime.length === 0) lines.push('None.');
-  for (const candidate of runtime) lines.push(candidateLine(candidate));
+  for (const candidate of runtime) lines.push(`- ${providerLine(candidate)}`);
 
   lines.push('', '### Build-time (optional, affects deploys, not users)', '');
   if (buildTime.length === 0) lines.push('None.');
-  for (const candidate of buildTime) lines.push(candidateLine(candidate));
+  for (const candidate of buildTime) lines.push(`- ${providerLine(candidate)}`);
 
   lines.push('', '### Skipped', '');
   const byReason = new Map<ThirdPartyMentionReason, string[]>();

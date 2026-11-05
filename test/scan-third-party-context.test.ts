@@ -331,7 +331,7 @@ describe('formatThirdPartySection', () => {
       finding('left-pad', { outcome: 'unmapped' }),
     ]);
     expect(formatThirdPartySection(context).slice(-2)).toEqual([
-      '- Heroku (hint only, no other signal)',
+      '- Heroku (config hint only, no code or dependency signal)',
       '- 1 other dependency not in the vendor map, listed in the JSON output',
     ]);
   });
