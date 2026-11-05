@@ -38,6 +38,11 @@ export interface CatalogRow {
   statusPageUrl: string;
 }
 
+/** A catalog row the account may already track, by the search row or the account's own list. */
+export interface CatalogChoice extends CatalogRow {
+  tracked: boolean;
+}
+
 export type ResolutionStatus =
   | 'create'
   | 'already-tracked'
@@ -51,11 +56,12 @@ export interface ResolvedCandidate extends ThirdPartyCandidate {
   /** The accepted catalog row, for `create` and `already-tracked`. */
   catalog?: CatalogRow;
   /** The exact-name rows of an `ambiguous` candidate, for the user to pick from. */
-  choices?: readonly CatalogRow[];
-  /** True when other rows share the provider's name prefix (a region-split catalog entry). */
+  choices?: readonly CatalogChoice[];
+  /** True when other rows start with the provider's name and a space (`Datadog EU` beside `Datadog`). */
   regionDefaulted: boolean;
-  /** Why an `unresolved` row could not be resolved. */
+  /** Why an `unresolved` row could not be resolved, and the failure code (`HTTP_429`, `NETWORK_ERROR`). */
   error?: string;
+  errorCode?: string;
 }
 
 export interface Allowance {
@@ -186,23 +192,28 @@ function resolveOne(
   tracked: TrackedProviders,
 ): ResolvedCandidate {
   const wanted = normalizeCatalogName(candidate.provider);
+  const regionPrefix = `${candidate.provider.trim().toLowerCase()} `;
   const exact = rows.filter((row) => normalizeCatalogName(row.name) === wanted);
   const regionDefaulted =
     exact.length === 1 &&
-    rows.some((row) => row !== exact[0] && normalizeCatalogName(row.name).startsWith(wanted));
+    rows.some((row) => row.name.trim().toLowerCase().startsWith(regionPrefix));
   const base = { ...candidate, regionDefaulted };
+  const isTracked = (row: SearchRow): boolean =>
+    row.isTracked || tracked.providerIds.includes(row.id);
   const [row] = exact;
   if (row === undefined) return { ...base, status: 'not-in-catalog' };
-  if (exact.length > 1) {
+  if (exact.length > 1 && !exact.every(isTracked)) {
     return {
       ...base,
       status: 'ambiguous',
-      choices: exact.map(({ isTracked: _, ...rest }) => rest),
+      choices: exact.map((item) => {
+        const { isTracked: _, ...rest } = item;
+        return { ...rest, tracked: isTracked(item) };
+      }),
     };
   }
-  const { isTracked, ...catalog } = row;
-  const status = isTracked || tracked.providerIds.includes(row.id) ? 'already-tracked' : 'create';
-  return { ...base, status, catalog };
+  const { isTracked: _, ...catalog } = row;
+  return { ...base, status: isTracked(row) ? 'already-tracked' : 'create', catalog };
 }
 
 export interface ResolveOptions {
@@ -238,19 +249,25 @@ export async function resolveCandidates(
         status: 'unresolved',
         regionDefaulted: false,
         error: describeError(error),
+        errorCode: error instanceof ApiFailure ? error.code : 'NETWORK_ERROR',
       });
     }
   }
   return resolved;
 }
 
-/** The account's third-party allowance, or null when the call fails or the account carries none. */
+/**
+ * The account's third-party allowance, or null when the account carries none
+ * or the call failed for a reason a retry may clear. A refused credential
+ * (401, 403) is thrown: no allowance is not the same as no access.
+ */
 export async function readAllowance(access: ApiAccess): Promise<Allowance | null> {
   const url = buildUrl(USER_ME, { path: {}, query: {} }, access.apiUrl);
   let payload: unknown;
   try {
     payload = await get(access, url, USER_ME.method);
-  } catch {
+  } catch (error) {
+    if (error instanceof ApiFailure && (error.status === 401 || error.status === 403)) throw error;
     return null;
   }
   const record = isPlainRecord(payload) && isPlainRecord(payload.data) ? payload.data : payload;

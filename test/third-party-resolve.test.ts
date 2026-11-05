@@ -137,6 +137,19 @@ describe('readTrackedProviders', () => {
     expect(requests).toHaveLength(2);
   });
 
+  it('reads exactly fifty pages without calling the set partial', async () => {
+    const pages = Array.from({ length: 50 }, (_, index) =>
+      ok({
+        data: [thirdPartyMonitor(index, 100 + index)],
+        ...(index < 49 ? { nextCursor: `c${index}` } : {}),
+      }),
+    );
+    const { access } = stubApi({ monitors: pages });
+    const tracked = await readTrackedProviders(access);
+    expect(tracked).toMatchObject({ partial: false });
+    expect(tracked.providerIds).toHaveLength(50);
+  });
+
   it('reports a partial set at the page cap', async () => {
     const pages = Array.from({ length: 60 }, (_, index) =>
       ok({ data: [thirdPartyMonitor(index, 100 + index)], nextCursor: `c${index}` }),
@@ -216,7 +229,23 @@ describe('resolveCandidates', () => {
       state: 'operational',
       statusPageUrl: 'https://status.stripe.example/',
     });
-    expect(resolved[4]?.choices?.map((choice) => choice.id)).toEqual([861, 862]);
+    expect(resolved[4]?.choices).toEqual([
+      {
+        id: 861,
+        name: 'Vercel',
+        state: 'operational',
+        statusPageUrl: 'https://status.vercel.example/',
+        tracked: false,
+      },
+      {
+        id: 862,
+        name: 'vercel ',
+        state: 'operational',
+        statusPageUrl: 'https://status.vercel.example/',
+        tracked: false,
+      },
+    ]);
+    expect(resolved[2]?.catalog).toMatchObject({ id: 1124, name: 'Supabase' });
     expect(requests).toEqual([
       '/v3/third-party-providers?search=stripe',
       '/v3/third-party-providers?search=clerk',
@@ -249,6 +278,59 @@ describe('resolveCandidates', () => {
     });
     expect(resolved[0]).toMatchObject({ status: 'create', regionDefaulted: true });
     expect(resolved[0]?.catalog?.id).toBe(50);
+  });
+
+  it('does not take a longer unrelated name for a region row', async () => {
+    const { access } = stubApi({
+      searches: {
+        render: [rows(row(70, 'Render'), row(71, 'Rendertron'))],
+        stripe: [rows(row(801, 'Stripe'), row(802, 'Stripe Terminal'))],
+      },
+    });
+    const resolved = await resolveCandidates([candidate('Render'), candidate('Stripe')], {
+      access,
+      includeBuildTime: false,
+      tracked: NONE,
+    });
+    expect(resolved.map((item) => [item.provider, item.status, item.regionDefaulted])).toEqual([
+      ['Render', 'create', false],
+      ['Stripe', 'create', true],
+    ]);
+  });
+
+  it('shows which ambiguous choice the account already tracks, and resolves when every choice is tracked', async () => {
+    const { access } = stubApi({
+      searches: {
+        vercel: [rows(row(861, 'Vercel'), row(862, 'vercel ', true))],
+        stripe: [rows(row(801, 'Stripe', true), row(803, 'STRIPE'))],
+      },
+    });
+    const resolved = await resolveCandidates([candidate('Vercel'), candidate('Stripe')], {
+      access,
+      includeBuildTime: false,
+      tracked: { providerIds: [803], partial: false },
+    });
+    expect(resolved[0]).toMatchObject({ status: 'ambiguous' });
+    expect(resolved[0]?.choices?.map((choice) => [choice.id, choice.tracked])).toEqual([
+      [861, false],
+      [862, true],
+    ]);
+    expect(resolved[1]).toMatchObject({ status: 'already-tracked', catalog: { id: 801 } });
+  });
+
+  it('resolves nothing for no candidates and searches by the search term, not the name', async () => {
+    const { access, requests } = stubApi({
+      searches: { azure: [rows(row(9, 'Microsoft Azure'))] },
+    });
+    expect(await resolveCandidates([], { access, includeBuildTime: true, tracked: NONE })).toEqual(
+      [],
+    );
+    const resolved = await resolveCandidates(
+      [candidate('Microsoft Azure', { searchTerm: 'azure' })],
+      { access, includeBuildTime: false, tracked: NONE },
+    );
+    expect(statuses(resolved)).toEqual([['Microsoft Azure', 'create']]);
+    expect(requests).toEqual(['/v3/third-party-providers?search=azure']);
   });
 
   it('asks runtime candidates first and build-time only when included', async () => {
@@ -300,7 +382,9 @@ describe('resolveCandidates', () => {
       ['Resend', 'unresolved'],
       ['Sentry', 'create'],
     ]);
+    expect(resolved[1]).toMatchObject({ errorCode: 'HTTP_429' });
     expect(resolved[1]?.error).toContain('429');
+    expect(resolved[2]).toMatchObject({ errorCode: 'NETWORK_ERROR' });
     expect(resolved[2]?.error).toMatch(/fetch failed|network/i);
   }, 15_000);
 
@@ -344,6 +428,15 @@ describe('readAllowance', () => {
     expect(await readAllowance(stubApi({ me: { status: 500, body: {} } }).access)).toBeNull();
     expect(await readAllowance(stubApi({ me: 'network-error' }).access)).toBeNull();
   });
+
+  it('throws when the credential is refused', async () => {
+    await expect(
+      readAllowance(stubApi({ me: { status: 401, body: {} } }).access),
+    ).rejects.toMatchObject({ status: 401 });
+    await expect(
+      readAllowance(stubApi({ me: { status: 403, body: {} } }).access),
+    ).rejects.toMatchObject({ status: 403 });
+  });
 });
 
 describe('applyAllowance', () => {
@@ -384,6 +477,18 @@ describe('applyAllowance', () => {
     expect(statuses(applyAllowance(input, { used: 0, limit: 10 }))).toEqual([
       ['Stripe', 'create'],
       ['GitHub', 'create'],
+    ]);
+  });
+
+  it('keeps the first runtime rows when runtime rows alone exceed the allowance', () => {
+    const rows = applyAllowance(
+      [resolved('Stripe', 'runtime'), resolved('Vercel', 'runtime'), resolved('Resend', 'runtime')],
+      { used: 8, limit: 10 },
+    );
+    expect(statuses(rows)).toEqual([
+      ['Stripe', 'create'],
+      ['Vercel', 'create'],
+      ['Resend', 'over-allowance'],
     ]);
   });
 
