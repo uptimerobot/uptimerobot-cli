@@ -2,7 +2,11 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { type ThirdPartyFinding, scanThirdParty } from '../src/lib/scan/third-party.js';
+import {
+  type ThirdPartyFinding,
+  isSecretFile,
+  scanThirdParty,
+} from '../src/lib/scan/third-party.js';
 
 /**
  * Records every path the scanner opens. The secret-file guarantee is a promise
@@ -177,12 +181,20 @@ describe('scanThirdParty', () => {
       'apps/web/vercel.json': '{}',
       'apps/api/requirements.txt': 'boto3==1.35.80\n',
       'apps/api/infra/main.tf': 'provider "aws" {}\n',
+      'apps/web-admin/netlify.toml': '',
       '.github/workflows/ci.yml': 'on: push\n',
     });
     const findings = await scanThirdParty(root);
     expect(
       findings.filter((f) => f.outcome === 'vendor').map((f) => `${f.value} ${f.detail.app}`),
-    ).toEqual(['GitHub .', 'AWS apps/api', 'AWS apps/api', 'Stripe apps/web', 'Vercel apps/web']);
+    ).toEqual([
+      'GitHub .',
+      'AWS apps/api',
+      'AWS apps/api',
+      'Stripe apps/web',
+      'Vercel apps/web',
+      'Netlify .',
+    ]);
   });
 
   it('reads the root git remote host and nothing from a nested checkout', async () => {
@@ -219,7 +231,10 @@ describe('scanThirdParty', () => {
     });
     await symlink(join(root, 'elsewhere'), join(root, 'linked'));
     const findings = await scanThirdParty(root);
-    expect(vendorsOf(findings)).toEqual(['Railway', 'Resend']);
+    expect(findings.map((finding) => `${finding.value} ${finding.evidence.file}`)).toEqual([
+      'Railway elsewhere/railway.json',
+      'Resend package.json',
+    ]);
   });
 
   it('honours the file budget and reports truncation once', async () => {
@@ -236,6 +251,56 @@ describe('scanThirdParty', () => {
     const untruncated = vi.fn();
     await scanThirdParty(root, { maxFiles: 3, onTruncated: untruncated });
     expect(untruncated).not.toHaveBeenCalled();
+  });
+
+  it('stops when the entry budget runs out, even with no candidate in sight', async () => {
+    const junk = Object.fromEntries(
+      Array.from({ length: 40 }, (_, index) => [`assets/img-${index}.png`, '']),
+    );
+    const root = await writeRepository({
+      ...junk,
+      'zz/package.json': '{ "dependencies": { "stripe": "1" } }',
+    });
+    const onTruncated = vi.fn();
+    const findings = await scanThirdParty(root, { maxFiles: 1, onTruncated });
+    expect(findings).toEqual([]);
+    expect(onTruncated).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    '.env',
+    '.env.local',
+    '.envrc',
+    'prod.env',
+    '.env.tf',
+    'terraform.tfstate',
+    'prod.tfvars',
+    'server.pem',
+    'id.key',
+    'Dockerfile.key',
+    '.npmrc',
+    '.pypirc',
+    'credentials',
+  ])('%s is a secret file and is never opened', (name) => {
+    expect(isSecretFile(name)).toBe(true);
+  });
+
+  it.each(['package.json', 'main.tf', 'Dockerfile', 'environment.ts', 'keychain.ts'])(
+    '%s is not a secret file',
+    (name) => {
+      expect(isSecretFile(name)).toBe(false);
+    },
+  );
+
+  it('never reads a secret file whose name also looks like a candidate', async () => {
+    const root = await writeRepository({
+      'Dockerfile.key': 'FROM ghcr.io/x/y\n',
+      '.env.tf': 'provider "aws" {}\n',
+      'vercel.json': '{}',
+    });
+    const findings = await scanThirdParty(root);
+    expect(vendorsOf(findings)).toEqual(['Vercel']);
+    expect(openedFiles.map((path) => path.slice(root.length + 1))).toEqual(['vercel.json']);
   });
 
   it('never reads a file over the byte budget', async () => {

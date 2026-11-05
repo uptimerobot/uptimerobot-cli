@@ -84,8 +84,11 @@ const WALKED_DOT_DIRECTORIES = new Set(['.github', '.circleci']);
 const SECRET_NAMES = new Set(['.npmrc', '.pypirc', 'credentials']);
 const SECRET_SUFFIXES = ['.tfstate', '.tfvars', '.pem', '.key'];
 
-/** Files that may hold a secret, excluded before anything can open them. */
-function isSecretFile(name: string): boolean {
+/**
+ * Files that may hold a secret, excluded before anything can open them even
+ * when their name also looks like a candidate (`Dockerfile.key`, `.env.tf`).
+ */
+export function isSecretFile(name: string): boolean {
   if (name === '.env' || name === '.envrc' || name.startsWith('.env.') || name.endsWith('.env')) {
     return true;
   }
@@ -142,7 +145,8 @@ async function collectRootGitConfig(repoRoot: string, candidates: Candidate[]): 
 /**
  * Depth-first walk in byte order, so the budget always cuts the same tail off
  * the same tree. A directory below the root holding its own `.git` is a
- * nested checkout and is skipped whole.
+ * nested checkout and is skipped whole. A symlink is neither a file nor a
+ * directory to `readdir`, so it is never followed.
  */
 async function collectFiles(
   repoRoot: string,
@@ -168,7 +172,6 @@ async function collectFiles(
       return;
     }
     budget.entries -= 1;
-    if (entry.isSymbolicLink()) continue;
 
     const absolute = join(directory, entry.name);
     if (entry.isDirectory()) {
