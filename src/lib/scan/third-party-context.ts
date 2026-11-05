@@ -44,6 +44,8 @@ export interface ThirdPartyMention {
 
 export interface ThirdPartyContext {
   candidates: readonly ThirdPartyCandidate[];
+  /** Distinct names seen per bucket; the lists below hold at most {@link MAX_MENTIONS} each. */
+  totals: { skipped: number; unknown: number };
   /** Frameworks and libraries on the skip list: no outage of theirs reaches the product. */
   skipped: readonly ThirdPartyMention[];
   /**
@@ -56,18 +58,24 @@ export interface ThirdPartyContext {
 
 const SEARCH_TERMS = new Map(VENDORS.map((entry) => [entry.catalogName, entry.searchTerm]));
 
+/** Mentions kept per bucket; a manifest can declare thousands of names and the report is not the place for them. */
+export const MAX_MENTIONS = 500;
+
 export function buildThirdPartyContext(findings: readonly ThirdPartyFinding[]): ThirdPartyContext {
   const groups = new Map<string, ThirdPartyFinding[]>();
   const mentions = new Map<string, ThirdPartyMention>();
+  const seen = { skipped: new Set<string>(), unknown: new Set<string>() };
   for (const finding of findings) {
     if (finding.outcome === 'vendor' || finding.outcome === 'hint') {
       groups.set(finding.value, [...(groups.get(finding.value) ?? []), finding]);
       continue;
     }
     const reason = finding.outcome === 'skip' ? 'framework' : finding.outcome;
-    if (!mentions.has(finding.value)) {
-      mentions.set(finding.value, { name: finding.value, reason, evidence: finding.evidence });
-    }
+    const bucket = reason === 'framework' ? seen.skipped : seen.unknown;
+    if (bucket.has(finding.value)) continue;
+    bucket.add(finding.value);
+    if (bucket.size > MAX_MENTIONS) continue;
+    mentions.set(finding.value, { name: finding.value, reason, evidence: finding.evidence });
   }
 
   const candidates: ThirdPartyCandidate[] = [];
@@ -75,7 +83,8 @@ export function buildThirdPartyContext(findings: readonly ThirdPartyFinding[]): 
     const vendorSignals = group.filter((finding) => finding.outcome === 'vendor');
     const [hint] = group;
     if (vendorSignals.length === 0) {
-      if (hint !== undefined && !mentions.has(provider)) {
+      if (hint !== undefined && !seen.unknown.has(provider)) {
+        seen.unknown.add(provider);
         mentions.set(provider, { name: provider, reason: 'hint', evidence: hint.evidence });
       }
       continue;
@@ -94,6 +103,7 @@ export function buildThirdPartyContext(findings: readonly ThirdPartyFinding[]): 
   const listed = [...mentions.values()];
   return {
     candidates,
+    totals: { skipped: seen.skipped.size, unknown: seen.unknown.size },
     skipped: listed.filter((mention) => mention.reason === 'framework'),
     unknown: listed.filter((mention) => mention.reason !== 'framework'),
   };
@@ -141,9 +151,24 @@ const PACKAGE_KINDS: ReadonlySet<ThirdPartyFinding['kind']> = new Set([
 ]);
 /**
  * Markdown shows this many evidence items per provider, in walk order, and
- * ends the line with `+N more`; `scan --json` keeps every item.
+ * ends the line with `+N more`; `scan --json` keeps every item. Names on a
+ * Skipped line are capped the same way, and every rendered item is clipped.
  */
 const MAX_EVIDENCE_PER_LINE = 5;
+const MAX_NAMES_PER_LINE = 20;
+const MAX_ITEM_LENGTH = 120;
+
+/** Backticks could open a code span in the agent's prompt; a clipped item ends in `...`. */
+function rendered(text: string): string {
+  const plain = text.replaceAll('`', "'");
+  return plain.length > MAX_ITEM_LENGTH ? `${plain.slice(0, MAX_ITEM_LENGTH - 3)}...` : plain;
+}
+
+function capped(items: readonly string[], max: number): string[] {
+  const shown = items.slice(0, max).map(rendered);
+  const hidden = items.length - shown.length;
+  return hidden > 0 ? [...shown, `+${hidden} more`] : shown;
+}
 
 /** `stripe@17.4.0 (package.json:12)`, `vercel.json`, `infra/main.tf:10 (provider "aws")`. */
 function evidenceText(evidence: ThirdPartyEvidence): string {
@@ -158,9 +183,7 @@ function evidenceText(evidence: ThirdPartyEvidence): string {
 }
 
 function providerLine(candidate: ThirdPartyCandidate): string {
-  const shown = candidate.evidence.slice(0, MAX_EVIDENCE_PER_LINE).map(evidenceText);
-  const hidden = candidate.evidence.length - shown.length;
-  const items = hidden > 0 ? [...shown, `+${hidden} more`] : shown;
+  const items = capped(candidate.evidence.map(evidenceText), MAX_EVIDENCE_PER_LINE);
   const hints = candidate.hints.length === 0 ? '' : `; signals: ${candidate.hints.join(', ')}`;
   return `${candidate.provider}: ${items.join(', ')}${hints}`;
 }
@@ -192,10 +215,11 @@ export function formatThirdPartySection(context: ThirdPartyContext): string[] {
     if (mention.reason === 'unmapped') continue;
     byReason.set(mention.reason, [...(byReason.get(mention.reason) ?? []), mention.name]);
   }
-  const unmapped = context.unknown.filter((mention) => mention.reason === 'unmapped').length;
+  const listedOther = context.unknown.filter((mention) => mention.reason !== 'unmapped').length;
+  const unmapped = context.totals.unknown - listedOther;
   if (byReason.size === 0 && unmapped === 0) lines.push('Nothing was skipped.');
   for (const [reason, names] of byReason) {
-    lines.push(`- ${names.join(', ')} (${REASON_LABELS[reason]})`);
+    lines.push(`- ${capped(names, MAX_NAMES_PER_LINE).join(', ')} (${REASON_LABELS[reason]})`);
   }
   if (unmapped > 0) {
     lines.push(

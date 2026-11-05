@@ -143,6 +143,7 @@ describe('uptimerobot scan', () => {
           hints: [],
         },
       ],
+      totals: { skipped: 1, unknown: 1 },
       skipped: [{ name: 'next', reason: 'framework', evidence: { file: 'package.json', line: 3 } }],
       unknown: [
         { name: 'pg', reason: 'protocol-client', evidence: { file: 'package.json', line: 3 } },

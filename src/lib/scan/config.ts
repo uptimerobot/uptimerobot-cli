@@ -14,9 +14,9 @@
  * - `serverless.yml`: `provider.name`, or the inline `provider:` value.
  * - `Procfile`: a Heroku hint, never a candidate.
  * - `*.tf`: `provider "<name>"`, `resource` and `data` types by prefix, and the
- *   first region-shaped `region = "..."` line, stamped on every AWS, Google
- *   Cloud and Azure finding of the file as a hint; line and block comments
- *   skipped, heredocs not.
+ *   region-shaped `region = "..."` line of each provider block, stamped on
+ *   that provider's AWS, Google Cloud or Azure findings as a hint; line and
+ *   block comments skipped, heredocs not.
  * - CI files by path: `.yml` and `.yaml` files under a CI directory pattern,
  *   or a basename pattern at the root or any depth; build-time on their own.
  * - `Dockerfile*`, `*.Dockerfile`, compose files: the registry host of each
@@ -237,9 +237,16 @@ function blockCommentStart(line: string): number {
   return -1;
 }
 
+/**
+ * A `region` line belongs to the provider block it sits in: the most recent
+ * `provider` line names it. A region seen before any provider block is the
+ * file's default and reaches every cloud provider of the file.
+ */
 function terraform(contents: string): Match[] {
   const matches: Match[] = [];
-  let region = '';
+  const regions = new Map<string, string>();
+  let fileRegion = '';
+  let currentProvider: string | undefined;
   let inBlockComment = false;
   for (const [index, raw] of lines(contents).entries()) {
     if (inBlockComment) {
@@ -253,6 +260,7 @@ function terraform(contents: string): Match[] {
     const provider = TF_PROVIDER.exec(line)?.[1];
     if (provider !== undefined) {
       const entry = entryFor('terraform-provider', provider);
+      currentProvider = entry?.catalogName;
       if (entry !== undefined) {
         matches.push({
           kind: 'terraform-provider',
@@ -282,11 +290,18 @@ function terraform(contents: string): Match[] {
       continue;
     }
     const value = TF_REGION.exec(line)?.[1];
-    if (region === '' && value !== undefined && REGION.test(value)) region = value;
+    if (value === undefined || !REGION.test(value)) continue;
+    if (currentProvider === undefined) {
+      if (fileRegion === '') fileRegion = value;
+    } else if (!regions.has(currentProvider)) {
+      regions.set(currentProvider, value);
+    }
   }
-  return matches.map((match) =>
-    REGION_VENDORS.has(match.entry.catalogName) ? { ...match, region } : match,
-  );
+  return matches.map((match) => {
+    const name = match.entry.catalogName;
+    if (!REGION_VENDORS.has(name)) return match;
+    return { ...match, region: regions.get(name) ?? fileRegion };
+  });
 }
 
 function ciFile(path: string): Match[] {

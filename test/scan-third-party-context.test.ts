@@ -302,6 +302,43 @@ describe('formatThirdPartySection', () => {
     expect(context.candidates[0]?.evidence).toHaveLength(7);
   });
 
+  it('caps the names on a Skipped line and the mentions it keeps, counting the rest', () => {
+    const findings = [
+      ...Array.from({ length: 25 }, (_, index) =>
+        finding(`@types/t${index}`, { outcome: 'skip', line: index + 1 }),
+      ),
+      ...Array.from({ length: 600 }, (_, index) =>
+        finding(`dep-${index}`, { outcome: 'unmapped', line: index + 1 }),
+      ),
+      finding('pg', { outcome: 'protocol-client', line: 999 }),
+    ];
+    const context = buildThirdPartyContext(findings);
+    expect(context.totals).toEqual({ skipped: 25, unknown: 601 });
+    expect(context.skipped).toHaveLength(25);
+    expect(context.unknown).toHaveLength(500);
+    expect(context.unknown.some((mention) => mention.name === 'pg')).toBe(false);
+    const lines = formatThirdPartySection(context);
+    const skippedLine = lines.find((line) => line.includes('framework or UI library'));
+    expect(skippedLine?.split(', ')).toHaveLength(21);
+    expect(skippedLine).toContain('+5 more (framework or UI library)');
+    expect(lines.at(-1)).toBe(
+      '- 601 other dependencies not in the vendor map, listed in the JSON output',
+    );
+  });
+
+  it('clips a long rendered item and never prints a backtick', () => {
+    const context = buildThirdPartyContext([
+      finding('Stripe', {
+        file: `${'a'.repeat(150)}/package.json`,
+        detail: { app: `\`${'a'.repeat(150)}`, signal: 'stripe@1.0.0' },
+      }),
+    ]);
+    const line = formatThirdPartySection(context).find((text) => text.startsWith('- Stripe'));
+    expect(line).not.toContain('`');
+    expect(line?.length).toBeLessThan(140);
+    expect(line?.endsWith('...')).toBe(true);
+  });
+
   it('says so when there is nothing in a group', () => {
     expect(formatThirdPartySection(buildThirdPartyContext([]))).toEqual([
       '## Third-party providers (candidates for third-party services)',

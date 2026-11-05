@@ -184,8 +184,8 @@ describe('terraform', () => {
     expect(findings.map((finding) => finding.detail.region)).toEqual([
       'europe-west1',
       'europe-west1',
-      'europe-west1',
-      'europe-west1',
+      '',
+      '',
     ]);
   });
 
@@ -230,7 +230,7 @@ describe('terraform', () => {
     expect(vendors(matchConfig({ path: 'main.tf', contents }))).toEqual(['AWS']);
   });
 
-  it('takes the first uncommented region and ignores later ones', () => {
+  it('binds each region to its provider block and ignores commented ones', () => {
     const contents = [
       '# region = "us-east-1"',
       'provider "aws" {',
@@ -241,15 +241,27 @@ describe('terraform', () => {
       '}',
     ].join('\n');
     const findings = matchConfig({ path: 'main.tf', contents });
-    expect(findings.map((finding) => finding.detail.region)).toEqual([
-      'eu-central-1',
-      'eu-central-1',
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['AWS', 'eu-central-1'],
+      ['Google Cloud', 'us-west-2'],
     ]);
   });
 
-  it('shares the file region across cloud providers as a hint, never with others', () => {
+  it('keeps a region inside its own provider block', () => {
     const contents =
-      'provider "google" {}\nprovider "cloudflare" {}\nprovider "aws" {\n  region = "eu-west-1"\n}\n';
+      'provider "google" {}\nprovider "cloudflare" {}\nprovider "aws" {\n  region = "eu-west-1"\n}\nresource "google_storage_bucket" "b" {}\n';
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['Google Cloud', ''],
+      ['Cloudflare', ''],
+      ['AWS', 'eu-west-1'],
+      ['Google Cloud', ''],
+    ]);
+  });
+
+  it('shares a region declared before any provider block with every cloud provider', () => {
+    const contents =
+      'locals { x = 1 }\nregion = "eu-west-1"\nprovider "google" {}\nprovider "cloudflare" {}\nresource "aws_s3_bucket" "b" {}\n';
     const findings = matchConfig({ path: 'main.tf', contents });
     expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
       ['Google Cloud', 'eu-west-1'],
