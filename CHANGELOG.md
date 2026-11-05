@@ -14,9 +14,8 @@ may change in minor releases.
 
 - `incidents list --limit` sets the page size (1 to 200, default 50), from the
   updated public API contract. The API now pages incidents with an opaque
-  cursor, which the CLI reports as `nextCursor` and `--cursor` accepts
-  unchanged. `--cursor` still accepts an incident id, the cursor of the earlier
-  version of the endpoint.
+  cursor, which `--cursor` accepts unchanged. `--cursor` still accepts an
+  incident id, the cursor of the earlier version of the endpoint.
 
 ### Changed
 
