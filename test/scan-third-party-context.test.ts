@@ -127,6 +127,11 @@ describe('buildThirdPartyContext', () => {
       finding('GitHub', {
         detail: { signal: '@octokit/rest@21.0.0', scope: 'devDependencies', class: 'build-time' },
       }),
+      finding('Microsoft Azure', {
+        kind: 'terraform-provider',
+        file: 'main.tf',
+        detail: { signal: 'provider "azurerm"' },
+      }),
     ]);
     expect(
       context.candidates.map((candidate) => [
@@ -137,6 +142,7 @@ describe('buildThirdPartyContext', () => {
     ).toEqual([
       ['GitHub', 'build-time', 'github'],
       ['Google Cloud', 'runtime', 'google cloud'],
+      ['Microsoft Azure', 'runtime', 'azure'],
     ]);
   });
 
