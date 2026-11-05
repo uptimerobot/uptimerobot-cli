@@ -14,15 +14,19 @@
  * - `serverless.yml`: `provider.name`, or the inline `provider:` value.
  * - `Procfile`: a Heroku hint, never a candidate.
  * - `*.tf`: `provider "<name>"`, `resource` and `data` types by prefix, and the
- *   first plain-word `region = "..."` line, stamped on every finding of the
- *   file as a hint (a multi-provider file shares it); block comments skipped,
- *   and every pattern is anchored to the line start so a line comment never
- *   matches.
+ *   first region-shaped `region = "..."` line, stamped on every finding of
+ *   the file as a hint (a multi-provider file shares it); line and block
+ *   comments skipped, heredocs not.
  * - CI files by path: `.yml` and `.yaml` files under a CI directory pattern,
  *   or a basename pattern at the root or any depth; build-time on their own.
  * - `Dockerfile*`, `*.Dockerfile`, compose files: the registry host of each
- *   `FROM` or `image:` reference; build-time on their own.
+ *   `FROM` or `image:` reference; build-time on their own. A `FROM` inside a
+ *   heredoc counts; this is a known ceiling.
  * - The root `.git/config`: the host of each `url =` line; build-time.
+ *
+ * Lines over {@link MAX_LINE_LENGTH} are skipped, a path with a `..` segment,
+ * a backslash or a control character yields nothing, and one file reports a
+ * given provider, signal and service once, at its first line.
  */
 import type { ScanFinding } from './finding.js';
 import { VENDORS, type VendorClass, type VendorEntry, type VendorSignal } from './vendors.js';
@@ -96,36 +100,45 @@ const SIGNALS: readonly { entry: VendorEntry; signal: ConfigSignal }[] = VENDORS
  * `serverless.yml` provider names, keyed to the `terraform-provider` pattern
  * in `vendors.ts` that names the same cloud. Every value must exist there.
  */
-const SERVERLESS_PROVIDERS: Readonly<Record<string, string>> = {
-  aws: 'aws',
-  google: 'google',
-  azure: 'azurerm',
-  cloudflare: 'cloudflare',
-};
+const SERVERLESS_PROVIDERS: ReadonlyMap<string, string> = new Map([
+  ['aws', 'aws'],
+  ['google', 'google'],
+  ['azure', 'azurerm'],
+  ['cloudflare', 'cloudflare'],
+]);
 
 const HEROKU = VENDORS.find((entry) => entry.catalogName === 'Heroku');
 
-/** The only shape a region may have before it reaches the report. */
-const PLAIN_WORD = /^[a-z0-9-]{2,32}$/;
+/** The only shapes that may reach the report: an AWS or Google style region and a short service word. */
+const REGION = /^[a-z]{2,}(?:-[a-z]+)+-?\d{1,2}$/;
+const SERVICE_WORD = /^[a-z][a-z0-9]{0,15}$/;
+/** A hostname before lowercasing: ASCII only, DNS length, so a Kelvin sign never folds to `k`. */
+const HOST = /^[A-Za-z0-9.-]{1,253}$/;
+const UNSAFE_PATH = /(?:^|\/)\.\.(?:\/|$)|[\\\u0000-\u001f\u007f]/;
+const MAX_LINE_LENGTH = 4096;
 
 const TF_PROVIDER = /^\s*provider\s+"([a-z0-9_-]{1,64})"/;
 const TF_RESOURCE = /^\s*(?:resource|data)\s+"([a-z0-9_]{1,128})"/;
 const TF_REGION = /^\s*region\s*=\s*"([^"\n]{0,64})"/;
 const DOCKER_FROM = /^\s*from\s+(?:--platform=\S+\s+)?(\S+)/i;
-const COMPOSE_IMAGE = /^\s*-?\s*image:\s*["']?([^\s"'#]+)/;
+const COMPOSE_IMAGE = /^\s*(?:-\s+)?image:\s*["']?([^\s"'#]+)/;
 const GIT_URL = /^\s*url\s*=\s*(\S+)/;
 const SERVERLESS_INLINE = /^provider:\s*([a-z]+)\s*(?:#.*)?$/;
 const SERVERLESS_NAME = /^(\s+)name:\s*["']?([a-z]+)["']?\s*(?:#.*)?$/;
 /** The authority of `scheme://[user@]host[:port]/path` and of scp-style `[user@]host:path`. */
-const URL_AUTHORITY = /^[a-z+]+:\/\/([^/]*)/i;
-const SCP_AUTHORITY = /^([^:/]*):/;
+const URL_AUTHORITY = /^[a-z+]+:\/\/([^/?#\\\s]*)(?:$|[/?#])/i;
+const SCP_AUTHORITY = /^([^:/?#\\\s]*):/;
 
 function basename(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
 }
 
+/** Lines with a leading BOM dropped; an over-long line becomes empty so numbering holds. */
 function lines(contents: string): string[] {
-  return contents.split('\n');
+  return contents
+    .replace(/^\uFEFF/, '')
+    .split('\n')
+    .map((line) => (line.length > MAX_LINE_LENGTH ? '' : line));
 }
 
 function entryFor(kind: ConfigSignal['kind'], pattern: string): VendorEntry | undefined {
@@ -147,7 +160,9 @@ function escapeRegExp(text: string): string {
 function registryFor(reference: string): { entry: VendorEntry; pattern: string } | undefined {
   const slash = reference.indexOf('/');
   if (slash === -1) return undefined;
-  const host = reference.slice(0, slash).toLowerCase().replace(/:\d+$/, '');
+  const raw = reference.slice(0, slash).replace(/:\d+$/, '');
+  if (!HOST.test(raw)) return undefined;
+  const host = raw.toLowerCase();
   const item = SIGNALS.find(
     ({ signal }) => signal.kind === 'registry' && hostMatches(signal.pattern, host),
   );
@@ -161,10 +176,8 @@ function registryFor(reference: string): { entry: VendorEntry; pattern: string }
  */
 function remoteHost(url: string): string | undefined {
   const authority = (URL_AUTHORITY.exec(url) ?? SCP_AUTHORITY.exec(url))?.[1];
-  return authority
-    ?.slice(authority.lastIndexOf('@') + 1)
-    .replace(/:\d*$/, '')
-    .toLowerCase();
+  const host = authority?.slice(authority.lastIndexOf('@') + 1).replace(/:\d*$/, '');
+  return host !== undefined && HOST.test(host) ? host.toLowerCase() : undefined;
 }
 
 function deployFile(path: string): Match[] {
@@ -192,7 +205,7 @@ function serverless(name: string, contents: string): Match[] {
     const nested = inProvider ? SERVERLESS_NAME.exec(line) : null;
     const providerName = inline?.[1] ?? (nested?.[1] === childIndent ? nested?.[2] : undefined);
     if (providerName !== undefined) {
-      const tfName = SERVERLESS_PROVIDERS[providerName];
+      const tfName = SERVERLESS_PROVIDERS.get(providerName);
       const entry = tfName === undefined ? undefined : entryFor('terraform-provider', tfName);
       return entry === undefined
         ? []
@@ -213,11 +226,10 @@ function terraform(contents: string): Match[] {
       if (raw.includes('*/')) inBlockComment = false;
       continue;
     }
-    const line = raw.trimStart();
-    if (line.startsWith('/*')) {
-      inBlockComment = !line.includes('*/');
-      continue;
-    }
+    if (/^\s*(?:#|\/\/)/.test(raw)) continue;
+    const opener = raw.indexOf('/*');
+    const line = (opener === -1 ? raw : raw.slice(0, opener)).trimStart();
+    if (opener !== -1) inBlockComment = !raw.includes('*/', opener);
     const provider = TF_PROVIDER.exec(line)?.[1];
     if (provider !== undefined) {
       const entry = entryFor('terraform-provider', provider);
@@ -236,20 +248,21 @@ function terraform(contents: string): Match[] {
       const item = SIGNALS.find(
         ({ signal }) => signal.kind === 'terraform-resource' && type.startsWith(signal.pattern),
       );
-      if (item !== undefined) {
-        const service = type.slice(item.signal.pattern.length).split('_')[0] ?? '';
+      const word =
+        item === undefined ? '' : (type.slice(item.signal.pattern.length).split('_')[0] ?? '');
+      if (item !== undefined && SERVICE_WORD.test(word)) {
         matches.push({
           kind: 'terraform-resource',
           entry: item.entry,
-          signal: type,
+          signal: `${item.signal.pattern}${word}`,
           line: index + 1,
-          service,
+          service: word,
         });
       }
       continue;
     }
     const value = TF_REGION.exec(line)?.[1];
-    if (region === '' && value !== undefined && PLAIN_WORD.test(value)) region = value;
+    if (region === '' && value !== undefined && REGION.test(value)) region = value;
   }
   return matches.map((match) => ({ ...match, region }));
 }
@@ -258,11 +271,15 @@ function ciFile(path: string): Match[] {
   const item = SIGNALS.find(({ signal }) => {
     if (signal.kind !== 'ci-file') return false;
     if (signal.pattern.endsWith('/')) {
-      return path.startsWith(signal.pattern) && /\.ya?ml$/.test(path);
+      return (
+        path.startsWith(signal.pattern) && /^[^/]+\.ya?ml$/.test(path.slice(signal.pattern.length))
+      );
     }
     return path === signal.pattern || path.endsWith(`/${signal.pattern}`);
   });
-  return item === undefined ? [] : [{ kind: 'ci-file', entry: item.entry, signal: path, line: 1 }];
+  return item === undefined
+    ? []
+    : [{ kind: 'ci-file', entry: item.entry, signal: `ci: ${item.signal.pattern}`, line: 1 }];
 }
 
 function registryLines(contents: string, pattern: RegExp, label: string): Match[] {
@@ -320,7 +337,15 @@ function contentMatches(input: ConfigInput): Match[] {
  * so a compose file inside a workflow directory yields both.
  */
 export function matchConfig(input: ConfigInput): ConfigFinding[] {
-  return [...ciFile(input.path), ...contentMatches(input)].map((match) => ({
+  if (UNSAFE_PATH.test(input.path)) return [];
+  const seen = new Set<string>();
+  const matches = [...ciFile(input.path), ...contentMatches(input)].filter((match) => {
+    const key = `${match.kind}\u0000${match.entry.catalogName}\u0000${match.signal}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return matches.map((match) => ({
     kind: match.kind,
     outcome: match.outcome ?? 'vendor',
     value: match.entry.catalogName,

@@ -134,7 +134,7 @@ describe('terraform', () => {
         value: 'AWS',
         evidence: { file: 'infra/main.tf', line: 16 },
         detail: {
-          signal: 'aws_s3_bucket',
+          signal: 'aws_s3',
           class: 'runtime',
           service: 's3',
           region: 'eu-central-1',
@@ -144,7 +144,7 @@ describe('terraform', () => {
         kind: 'terraform-resource',
         value: 'AWS',
         evidence: { file: 'infra/main.tf', line: 20 },
-        detail: expect.objectContaining({ signal: 'aws_caller_identity', service: 'caller' }),
+        detail: expect.objectContaining({ signal: 'aws_caller', service: 'caller' }),
       }),
       expect.objectContaining({
         kind: 'terraform-resource',
@@ -158,6 +158,8 @@ describe('terraform', () => {
   it('never leaks resource names, bucket names or hostnames', () => {
     const report = JSON.stringify(matchConfig({ path: 'main.tf', contents: MAIN_TF }));
     expect(report).not.toContain('logs');
+    expect(report).not.toContain('bucket');
+    expect(report).not.toContain('identity');
     expect(report).not.toContain('acme');
     expect(report).not.toContain('www');
   });
@@ -187,6 +189,17 @@ describe('terraform', () => {
     ]);
   });
 
+  it('keeps a region only when it reads as a region', () => {
+    for (const value of ['ignore-previous-instructions', 'hunter2', 'EU-CENTRAL-1', 'eu']) {
+      const contents = `provider "aws" {\n  region = "${value}"\n}\n`;
+      expect(only(matchConfig({ path: 'main.tf', contents })).detail.region).toBe('');
+    }
+    for (const value of ['eu-central-1', 'europe-west1', 'us-gov-west-1']) {
+      const contents = `provider "aws" {\n  region = "${value}"\n}\n`;
+      expect(only(matchConfig({ path: 'main.tf', contents })).detail.region).toBe(value);
+    }
+  });
+
   it('keeps a region only when it reads as a plain region word', () => {
     const findings = matchConfig({
       path: 'main.tf',
@@ -210,8 +223,7 @@ describe('terraform', () => {
       'provider "aws" {',
       '  region = "eu-central-1"',
       '}',
-      'provider "aws" {',
-      '  alias  = "us"',
+      'provider "google" {',
       '  region = "us-west-2"',
       '}',
     ].join('\n');
@@ -229,6 +241,29 @@ describe('terraform', () => {
       ['Google Cloud', 'eu-west-1'],
       ['AWS', 'eu-west-1'],
     ]);
+  });
+
+  it('reports a resource only through a short service word, never the full type', () => {
+    const contents = [
+      'resource "aws_deadbeefcafe0123456789secrettoken" "x" {}',
+      'resource "aws__x" "y" {}',
+      'resource "aws_" "z" {}',
+      'resource "aws_lambda_function" "fn" {}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => finding.detail.signal)).toEqual(['aws_lambda']);
+  });
+
+  it('skips a block comment that opens mid-line', () => {
+    const contents = 'locals { x = "a" } /*\nprovider "aws" {}\n*/ provider "google" {}\n';
+    expect(vendors(matchConfig({ path: 'main.tf', contents }))).toEqual([]);
+  });
+
+  it('reports a repeated signal once, at its first line', () => {
+    const contents = 'resource "aws_s3_bucket" "a" {}\n'.repeat(1000);
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings).toHaveLength(1);
+    expect(only(findings).evidence.line).toBe(1);
   });
 
   it('reads only .tf files', () => {
@@ -253,13 +288,23 @@ describe('CI files', () => {
       outcome: 'vendor',
       value: vendor,
       evidence: { file: path, line: 1 },
-      detail: { signal: path, class: 'build-time' },
+      detail: { signal: expect.stringMatching(/^ci: /), class: 'build-time' },
     });
+  });
+
+  it('names the matched location, not the file', () => {
+    expect(
+      only(matchConfig({ path: '.github/workflows/ci.yml', contents: '' })).detail.signal,
+    ).toBe('ci: .github/workflows/');
   });
 
   it('ignores other files under .github', () => {
     expect(matchConfig({ path: '.github/dependabot.yml', contents: '' })).toEqual([]);
     expect(matchConfig({ path: '.github/workflows/README.md', contents: '' })).toEqual([]);
+    expect(matchConfig({ path: '.github/workflows/sub/x.yml', contents: '' })).toEqual([]);
+    expect(matchConfig({ path: '.github/workflows/../../x.yml', contents: '' })).toEqual([]);
+    expect(matchConfig({ path: '.github/workflows/a\nb\u001b[31m.yml', contents: '' })).toEqual([]);
+    expect(matchConfig({ path: '.github\\workflows\\ci.yml', contents: '' })).toEqual([]);
     expect(vendors(matchConfig({ path: '.github/workflows/vercel.json', contents: '' }))).toEqual([
       'Vercel',
     ]);
@@ -392,8 +437,6 @@ describe('git remotes', () => {
       '\turl = git@gitlab.com:acme/app.git',
       '[remote "legacy"]',
       '\turl = ssh://git@bitbucket.org:22/acme/app.git',
-      '[remote "odd"]',
-      '\turl = https://u:p@w@github.com/acme/app.git',
       '[remote "internal"]',
       '\turl = https://git.acme.internal/app.git',
       '',
@@ -417,13 +460,25 @@ describe('git remotes', () => {
         evidence: expect.objectContaining({ line: 9 }),
         detail: expect.objectContaining({ signal: 'git remote: bitbucket.org' }),
       }),
-      expect.objectContaining({ value: 'GitHub', evidence: expect.objectContaining({ line: 11 }) }),
     ]);
     const report = JSON.stringify(findings);
     expect(report).not.toContain('ghp_');
     expect(report).not.toContain('deploy');
     expect(report).not.toContain('acme');
-    expect(report).not.toContain('p@w');
+  });
+
+  it('drops userinfo up to its last at sign and reports one host once', () => {
+    const config = [
+      '[remote "odd"]',
+      '\turl = https://u:p@w@github.com/acme/app.git',
+      '[remote "again"]',
+      '\turl = git@github.com:acme/other.git',
+    ].join('\n');
+    const findings = matchConfig({ path: '.git/config', contents: config });
+    expect(findings.map((finding) => [finding.value, finding.evidence.line])).toEqual([
+      ['GitHub', 2],
+    ]);
+    expect(JSON.stringify(findings)).not.toContain('p@w');
   });
 
   it('drops host-confusion URLs', () => {
@@ -434,6 +489,14 @@ describe('git remotes', () => {
       '\turl = https://evil.example/x@github.com',
       '[remote "c"]',
       '\turl = evil.example:x@github.com/y.git',
+      '[remote "d"]',
+      '\turl = https://evil.example?@github.com/x',
+      '[remote "e"]',
+      '\turl = https://evil.example#@github.com/x',
+      '[remote "f"]',
+      '\turl = https://evil.example\\@github.com/x',
+      '[remote "g"]',
+      '\turl = https://bitbuc\u212aet.org/x',
     ].join('\n');
     expect(matchConfig({ path: '.git/config', contents: config })).toEqual([]);
   });
@@ -504,6 +567,31 @@ describe('hostile inputs', () => {
       matchConfig({ path: 'serverless.yml', contents: 'provider:\n'.repeat(100_000) }),
     ).not.toThrow();
     expect(performance.now() - start).toBeLessThan(1000);
+  });
+
+  it('stays linear on long whitespace runs and long hosts', () => {
+    const start = performance.now();
+    matchConfig({ path: 'docker-compose.yml', contents: ' '.repeat(100_000) + 'x' });
+    matchConfig({ path: 'Dockerfile', contents: `FROM ${'a.dkr.ecr.b.'.repeat(20_000)}/y` });
+    expect(performance.now() - start).toBeLessThan(200);
+  });
+
+  it('skips an over-long line and keeps the numbering of the lines after it', () => {
+    const contents = `FROM ghcr.io/x/${'a'.repeat(5000)}\nFROM gcr.io/p/x\n`;
+    const findings = matchConfig({ path: 'Dockerfile', contents });
+    expect(findings.map((finding) => [finding.value, finding.evidence.line])).toEqual([
+      ['Google Cloud', 2],
+    ]);
+  });
+
+  it('reads a file with a byte order mark', () => {
+    expect(
+      vendors(matchConfig({ path: 'serverless.yml', contents: '\uFEFFprovider: aws\n' })),
+    ).toEqual(['AWS']);
+  });
+
+  it('never folds a non-ASCII host onto a vendor host', () => {
+    expect(matchConfig({ path: 'Dockerfile', contents: 'FROM evil.p\u212ag.dev/x' })).toEqual([]);
   });
 
   it('keeps hosts with control characters or no dot out of the report', () => {
