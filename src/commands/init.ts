@@ -12,12 +12,23 @@ import { renderSetupGuide } from '../lib/agent-setup/setup-guide.js';
 import { AGENT_SETUP_TAG } from '../lib/agent-setup/tag.js';
 import type { AgentTarget } from '../lib/agent-targets.js';
 import { AGENT_TARGETS, DEFAULT_AGENT_TARGET, detectAgentTargets } from '../lib/agent-targets.js';
-import { AuthenticationError, PRODUCTION_API_URL, resolveApiKey } from '../lib/auth.js';
+import { type ApiAccess, AuthenticationError, resolveApiAccess } from '../lib/auth.js';
+import { ApiFailure } from '../api/errors.js';
 import { BaseCommand } from '../lib/base-command.js';
 import type { SelectionChoice } from '../lib/invocation.js';
-import { detectInvocationMode, promptSelection } from '../lib/invocation.js';
+import type { InvocationMode } from '../lib/invocation.js';
+import { detectInvocationMode, promptSelection, requestConfirmation } from '../lib/invocation.js';
 import type { SeedContext } from '../lib/scan/index.js';
 import { formatSeedContext, scanRepository } from '../lib/scan/index.js';
+import {
+  type ApplyRun,
+  type Confirmation,
+  type CreateResult,
+  type Proposal,
+  formatProposal,
+  formatSummary,
+  runApply,
+} from '../lib/third-party/apply.js';
 import { resolveFormat } from '../output/resolve-format.js';
 
 /** No signup address is published in this repository, so the public one is used. */
@@ -117,8 +128,23 @@ interface InitOutput {
   /** Null when --no-agent skipped setup. */
   skills: InitSkillsOutput | null;
   target: AgentTarget | null;
+  /**
+   * The third-party offer: null when it was not made (--no-third-party, --json,
+   * --yes, an agent or a pipe), else what was asked and what came of it.
+   */
+  thirdParty: InitThirdPartyOutput | null;
   /** Proves afterwards what the agent actually created. */
   verifyCommand: string;
+}
+
+interface InitThirdPartyOutput {
+  offered: true;
+  confirmation?: Confirmation;
+  /** The providers the proposal would have created, whatever was answered. */
+  proposed?: readonly string[];
+  results?: readonly CreateResult[];
+  /** The failure that stopped the offer; init goes on to the agent setup regardless. */
+  error?: { code: string; message: string };
 }
 
 interface InitCleanOutput {
@@ -167,6 +193,9 @@ Precedence:
     'no-launch': Flags.boolean({
       description: 'Do not open the coding agent; only write the scan and print the handoff hint',
     }),
+    'no-third-party': Flags.boolean({
+      description: 'Do not offer to create third-party services for the providers the scan found',
+    }),
     target: Flags.option({ options: AGENT_TARGETS })({
       description: 'Coding agent to set up for',
     }),
@@ -199,11 +228,13 @@ Precedence:
     // caller without an account is routed to signup immediately. The shared
     // resolver owns the precedence between --api-key, UPTIMEROBOT_API_KEY and
     // a stored login, which keeps init consistent with every API command.
+    let access: ApiAccess;
     try {
-      await resolveApiKey(
-        flags['api-key'],
-        new URL(process.env.UPTIMEROBOT_DEV_API_URL ?? PRODUCTION_API_URL).toString(),
-      );
+      access = await resolveApiAccess({
+        explicitApiKey: flags['api-key'],
+        mode,
+        version: this.config.pjson.version,
+      });
     } catch (error) {
       if (error instanceof AuthenticationError) return this.failAuthentication(error);
       throw error;
@@ -257,7 +288,13 @@ Precedence:
     // than to answer the question itself, which is why the file it writes
     // keeps the rejections too.
     const context = await scanRepository(root);
-    const seedContext = await this.writeSeedContext(root, context, invocation);
+    // Offered only where someone can answer: a human at a terminal who did not
+    // say --yes, --json or --no-third-party. Everyone else gets the hint.
+    const thirdParty =
+      interactive && flags['no-third-party'] !== true
+        ? await this.offerThirdParty(context, access, mode)
+        : null;
+    const seedContext = await this.writeSeedContext(root, context, invocation, thirdParty);
     // Written next to the scan and on the same terms, so the two halves of the
     // handoff always arrive together. Unconditional, like the scan: a --no-agent
     // run still leaves the guide for whichever agent the user opens later.
@@ -292,7 +329,7 @@ Precedence:
       invocation: invocation.command,
       launchCommand: plan === null ? null : describeLaunch(plan),
       launched: willLaunch,
-      nextSteps: nextSteps(target, invocation),
+      nextSteps: nextSteps(target, invocation, thirdParty === null),
       prompt: agentPrompt(),
       repoRoot: root,
       seedContext,
@@ -307,6 +344,7 @@ Precedence:
               outcome: report.outcome,
             },
       target: target ?? null,
+      thirdParty,
       verifyCommand: verifyCommand(invocation),
     };
 
@@ -376,7 +414,11 @@ Precedence:
    * every byte of it, and the marker is there so a rerun can tell its own
    * output from a file someone else put at that name.
    */
-  private renderSeedContext(context: SeedContext, invocation: CliInvocation): string {
+  private renderSeedContext(
+    context: SeedContext,
+    invocation: CliInvocation,
+    thirdParty: InitThirdPartyOutput | null,
+  ): string {
     return [
       `${SEED_BEGIN_PREFIX} version=${this.config.pjson.version} schema=${context.schemaVersion} -->`,
       '',
@@ -384,10 +426,57 @@ Precedence:
       `this file with \`${formatInvocation(invocation, 'init --clean')}\`. Edits are overwritten.`,
       '',
       formatSeedContext(context).trimEnd(),
+      ...(thirdParty === null ? [] : ['', ...thirdPartyOutcomeLines(thirdParty, invocation)]),
       '',
       SEED_END_MARKER,
       '',
     ].join('\n');
+  }
+
+  /**
+   * The same proposal, question and creates `scan --apply` makes, inline. A
+   * failure here is reported and never stops init: the agent setup is the
+   * point of the command, and the agent can run `scan --apply` itself.
+   */
+  private async offerThirdParty(
+    context: SeedContext,
+    access: ApiAccess,
+    mode: InvocationMode,
+  ): Promise<InitThirdPartyOutput> {
+    const confirm = async (proposal: Proposal, toCreate: number): Promise<Confirmation> => {
+      for (const line of formatProposal(proposal)) this.log(line);
+      const noun = toCreate === 1 ? 'service' : 'services';
+      const yes = await requestConfirmation(`Create ${toCreate} third-party ${noun} now`, mode);
+      return yes ? 'confirmed' : 'declined';
+    };
+    let run: ApplyRun;
+    try {
+      run = await runApply({
+        candidates: context.thirdParty.candidates,
+        selection: { only: [], skip: [], includeBuildTime: false },
+        access,
+        confirmFlag: false,
+        confirm,
+      });
+    } catch (error) {
+      if (!(error instanceof ApiFailure)) throw error;
+      const failure = { code: error.cliError.code, message: error.cliError.message };
+      this.log(`Third-party services were not resolved (${failure.code}): ${failure.message}`);
+      this.log('');
+      return { offered: true, error: failure };
+    }
+    if (run.confirmation === 'not-needed')
+      for (const line of formatProposal(run.proposal)) this.log(line);
+    for (const line of formatSummary(run.proposal.proposal, run.results, run.confirmation)) {
+      this.log(line);
+    }
+    if (run.blocked !== undefined) this.log(run.blocked.message);
+    if (run.failure !== undefined) this.log(run.failure.cliError.message);
+    this.log('');
+    const proposed = run.proposal.proposal
+      .filter((row) => row.status === 'create')
+      .map((row) => row.provider);
+    return { offered: true, confirmation: run.confirmation, proposed, results: run.results };
   }
 
   /**
@@ -465,12 +554,13 @@ Precedence:
     root: string,
     context: SeedContext,
     invocation: CliInvocation,
+    thirdParty: InitThirdPartyOutput | null,
   ): Promise<InitSeedOutput> {
     const written = await this.writeMarkedFile({
       beginPrefix: SEED_BEGIN_PREFIX,
       existsCode: 'SEED_CONTEXT_EXISTS',
       path: join(root, SEED_CONTEXT_FILE_NAME),
-      rendered: this.renderSeedContext(context, invocation),
+      rendered: this.renderSeedContext(context, invocation, thirdParty),
       writeCode: 'SEED_CONTEXT_WRITE_FAILED',
     });
     return { ...written, schemaVersion: context.schemaVersion, summary: context.summary };
@@ -606,7 +696,11 @@ function count(value: number, noun: string): string {
  * The handoff itself. Every command it names is templated, so a caller who
  * arrived through npx is never told to run a binary they do not have.
  */
-function nextSteps(target: AgentTarget | undefined, invocation: CliInvocation): readonly string[] {
+function nextSteps(
+  target: AgentTarget | undefined,
+  invocation: CliInvocation,
+  thirdPartyHint: boolean,
+): readonly string[] {
   const opening =
     target === undefined
       ? `Agent setup was skipped. ${SETUP_GUIDE_FILE_NAME} and ${SEED_CONTEXT_FILE_NAME} are ready for whichever coding agent you use — open them in this repository and ask:`
@@ -617,6 +711,11 @@ function nextSteps(target: AgentTarget | undefined, invocation: CliInvocation): 
     `  ${agentPrompt()}`,
     '',
     `Following ${SETUP_GUIDE_FILE_NAME}, it proposes monitors and heartbeat pings, asks before creating anything, tags what it creates \`${AGENT_SETUP_TAG}\`, and writes ${RUN_REPORT_FILE_NAME}.`,
+    ...(thirdPartyHint
+      ? [
+          `Create the third-party services the scan found with \`${formatInvocation(invocation, 'scan --apply')}\`; the agent does the same from the guide.`,
+        ]
+      : []),
     ...(target === undefined
       ? [`Set an agent up later with \`${formatInvocation(invocation, 'init --target <name>')}\`.`]
       : []),
@@ -710,4 +809,34 @@ async function readMarkedFile(path: string): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+/** What the offer did, for the seed file: the agent must not create these again. */
+function thirdPartyOutcomeLines(
+  thirdParty: InitThirdPartyOutput,
+  invocation: CliInvocation,
+): readonly string[] {
+  const lines = [`### Outcome of \`${formatInvocation(invocation, 'init')}\``, ''];
+  if (thirdParty.error !== undefined) {
+    return [
+      ...lines,
+      `Not resolved (${thirdParty.error.code}): ${thirdParty.error.message}. Run \`${formatInvocation(invocation, 'scan --apply')}\` to retry.`,
+    ];
+  }
+  const results = thirdParty.results ?? [];
+  const named = (status: CreateResult['status']): string[] =>
+    results.filter((item) => item.status === status).map((item) => item.provider);
+  const created = results.flatMap((item) =>
+    item.status === 'created' ? [`${item.provider} (monitor ${item.monitorId ?? 'unknown'})`] : [],
+  );
+  if (thirdParty.confirmation !== 'confirmed') lines.push('Nothing was created.');
+  if (created.length > 0) lines.push(`Created: ${created.join(', ')}.`);
+  const refused = named('already-tracked');
+  if (refused.length > 0) lines.push(`Already tracked: ${refused.join(', ')}.`);
+  const failed = named('failed');
+  if (failed.length > 0) lines.push(`Not created: ${failed.join(', ')}.`);
+  if (thirdParty.confirmation === 'declined' && (thirdParty.proposed ?? []).length > 0) {
+    lines.push(`Not created: ${(thirdParty.proposed ?? []).join(', ')} (declined at the prompt).`);
+  }
+  return lines;
 }
