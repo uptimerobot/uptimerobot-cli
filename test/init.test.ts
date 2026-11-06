@@ -1049,7 +1049,9 @@ describe('init', () => {
         const api = stubApi({ monitorsStatus: 500 });
         const rerun = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
 
-        expect(rerun).toMatchObject({ thirdParty: { kind: 'failed', error: { code: 'HTTP_500' } } });
+        expect(rerun).toMatchObject({
+          thirdParty: { kind: 'failed', error: { code: 'HTTP_500' } },
+        });
         expect(api.posts).toEqual([]);
         const seed = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
         expect(seed).toContain('Not resolved (HTTP_500)');
