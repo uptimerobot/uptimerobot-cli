@@ -22,8 +22,8 @@ may change in minor releases.
   the account, prints a proposal, asks, and creates a third-party service per
   confirmed row. An agent or a pipe must pass `--confirm`; a missing or
   declined confirmation exits 2 with `CONFIRMATION_REQUIRED`. New error code
-  `TRACKED_SET_PARTIAL` (exit 1) when the account list could not be read in
-  full.
+  `CATALOG_UNRESOLVED` (exit 1) when a selected provider could not be looked
+  up. A create the API never answered is reported as `unknown`, not as failed.
 - `uptimerobot init` offers to create the third-party services at an
   interactive terminal, records the outcome in `uptimerobot-scan.md`, and its
   `--json` output gains a `thirdParty` field; `--no-third-party` skips the
