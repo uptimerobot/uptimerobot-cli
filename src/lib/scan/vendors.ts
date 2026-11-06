@@ -84,7 +84,7 @@ export const VENDORS: readonly VendorEntry[] = [
     tfProvider('aws'),
     tfResource('aws_'),
     host('*.amazonaws.com'),
-    registry('*.dkr.ecr.amazonaws.com'),
+    registry('*.dkr.ecr.*.amazonaws.com'),
   ]),
   runtime(
     'Google Cloud',
@@ -98,6 +98,7 @@ export const VENDORS: readonly VendorEntry[] = [
       host('*.googleapis.com'),
       ci('cloudbuild.yaml'),
       registry('gcr.io'),
+      registry('*.gcr.io'),
       registry('*.pkg.dev'),
     ],
     'google cloud',
