@@ -29,6 +29,7 @@
  * given provider, signal and service once, at its first line.
  */
 import type { ScanFinding } from './finding.js';
+import { hasUnsafeCharacters } from './support.js';
 import { VENDORS, type VendorClass, type VendorEntry, type VendorSignal } from './vendors.js';
 
 type ConfigSignal = Exclude<VendorSignal, { kind: 'package' | 'hostname' }>;
@@ -116,7 +117,8 @@ const REGION =
 const SERVICE_WORD = /^[a-z][a-z0-9]{0,15}$/;
 /** A hostname before lowercasing: ASCII only, DNS length, so a Kelvin sign never folds to `k`. */
 const HOST = /^[A-Za-z0-9.-]{1,253}$/;
-const UNSAFE_PATH = /(?:^|\/)\.\.(?:\/|$)|[\\\u0000-\u001f\u007f]/;
+/** A `..` segment anywhere in the path. */
+const DOT_DOT_SEGMENT = /(?:^|\/)\.\.(?:\/|$)/;
 const MAX_LINE_LENGTH = 4096;
 
 const TF_PROVIDER = /^\s*provider\s+"([a-z0-9_-]{1,64})"/;
@@ -334,6 +336,22 @@ function isCompose(name: string): boolean {
   return /^(docker-)?compose([.-][\w.-]*)?\.ya?ml$/.test(name);
 }
 
+/** Whether {@link matchConfig} can read anything from this path, judged from its name. */
+export function isConfigFile(path: string): boolean {
+  const name = basename(path);
+  return (
+    path === '.git/config' ||
+    name.endsWith('.tf') ||
+    name === 'serverless.yml' ||
+    name === 'serverless.yaml' ||
+    name === 'Procfile' ||
+    isDockerfile(name) ||
+    isCompose(name) ||
+    entryFor('file', name) !== undefined ||
+    ciFile(path).length > 0
+  );
+}
+
 /** The content reader for a file, picked by name; first match wins, one per file. */
 function contentMatches(input: ConfigInput): Match[] {
   const name = basename(input.path);
@@ -353,7 +371,7 @@ function contentMatches(input: ConfigInput): Match[] {
  * so a compose file inside a workflow directory yields both.
  */
 export function matchConfig(input: ConfigInput): ConfigFinding[] {
-  if (UNSAFE_PATH.test(input.path)) return [];
+  if (DOT_DOT_SEGMENT.test(input.path) || hasUnsafeCharacters(input.path)) return [];
   const seen = new Set<string>();
   const matches = [...ciFile(input.path), ...contentMatches(input)].filter((match) => {
     const key = `${match.kind}\u0000${match.entry.catalogName}\u0000${match.signal}`;

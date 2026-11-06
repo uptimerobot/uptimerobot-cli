@@ -41,3 +41,15 @@ export function compareStrings(left: string, right: string): number {
 export function repoRelativePath(repoRoot: string, absolute: string): string {
   return relative(repoRoot, absolute).split(sep).join('/');
 }
+
+/**
+ * Whether a path or name holds a control character, DEL or a backslash: such
+ * a name never reaches a finding, an app or a report line.
+ */
+export function hasUnsafeCharacters(text: string): boolean {
+  for (const character of text) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code < 0x20 || code === 0x7f || character === '\\') return true;
+  }
+  return false;
+}

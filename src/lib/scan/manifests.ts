@@ -110,6 +110,11 @@ function ecosystemFor(path: string): PackageEcosystem | undefined {
   return undefined;
 }
 
+/** Whether {@link matchManifest} has a parser for this path, judged from its name. */
+export function isManifestFile(path: string): boolean {
+  return ecosystemFor(path) !== undefined;
+}
+
 /** Runs the right parser for the file and classifies every declared dependency. */
 export function matchManifest(input: ManifestInput): ManifestFinding[] {
   const ecosystem = ecosystemFor(input.path);
