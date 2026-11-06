@@ -182,6 +182,8 @@ describe('scanThirdParty', () => {
       'apps/api/requirements.txt': 'boto3==1.35.80\n',
       'apps/api/infra/main.tf': 'provider "aws" {}\n',
       'apps/web-admin/netlify.toml': '',
+      'apps/web/.github/package.json': '{ "dependencies": { "resend": "4.0.0" } }',
+      'apps/web/.github/workflows/ci.yml': 'on: push\n',
       '.github/workflows/ci.yml': 'on: push\n',
     });
     const findings = await scanThirdParty(root);
@@ -191,6 +193,7 @@ describe('scanThirdParty', () => {
       'GitHub .',
       'AWS apps/api',
       'AWS apps/api',
+      'Resend apps/web',
       'Stripe apps/web',
       'Vercel apps/web',
       'Netlify .',

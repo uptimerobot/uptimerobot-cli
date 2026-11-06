@@ -107,7 +107,10 @@ export function isSecretFile(fileName: string): boolean {
 }
 
 function isUnderCiDirectory(path: string): boolean {
-  return WALKED_DOT_DIRECTORIES.has(path.split('/')[0] ?? '');
+  return path
+    .split('/')
+    .slice(0, -1)
+    .some((segment) => WALKED_DOT_DIRECTORIES.has(segment));
 }
 
 export async function scanThirdParty(
