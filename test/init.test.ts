@@ -456,13 +456,13 @@ describe('init', () => {
       seedContext: {
         outcome: 'created',
         path: join(repository, SEED_CONTEXT_FILE),
-        schemaVersion: 1,
-        summary: { accepted: 0, heartbeats: 0, rejected: 0 },
+        schemaVersion: 2,
+        summary: { accepted: 0, heartbeats: 0, rejected: 0, thirdPartyProviders: 0 },
       },
     });
     const content = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
     expect(content.startsWith(SEED_BEGIN_PREFIX)).toBe(true);
-    expect(content).toContain('# Scan seed context (schema 1)');
+    expect(content).toContain('# Scan seed context (schema 2)');
     expect(content.trimEnd().endsWith(SEED_END_MARKER)).toBe(true);
   });
 
@@ -683,7 +683,7 @@ describe('init', () => {
     expect(logged).toHaveLength(1);
     expect(JSON.parse(logged[0] ?? '')).toMatchObject({
       nextSteps: expect.any(Array),
-      seedContext: { schemaVersion: 1 },
+      seedContext: { schemaVersion: 2 },
       skills: { instructions: expect.any(Array) },
       target: 'codex',
     });

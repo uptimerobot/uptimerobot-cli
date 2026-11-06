@@ -575,7 +575,7 @@ function handoffLines(output: InitOutput, context: SeedContext): readonly string
 function scanSummaryLines(output: InitOutput, context: SeedContext): readonly string[] {
   const { summary } = context;
   return [
-    `Scanned ${output.repoRoot}: ${count(summary.accepted, 'candidate')}, ${summary.rejected} skipped, ${count(summary.heartbeats, 'scheduled job')}.`,
+    `Scanned ${output.repoRoot}: ${count(summary.accepted, 'candidate')}, ${summary.rejected} skipped, ${count(summary.heartbeats, 'scheduled job')}, ${count(summary.thirdPartyProviders, 'third-party provider')}.`,
     writtenLine(output.setupGuide),
     writtenLine(output.seedContext),
   ];

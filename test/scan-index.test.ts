@@ -52,7 +52,13 @@ async function makeRepo(files: Readonly<Record<string, string>>): Promise<string
 }
 
 function seed(findings: Partial<ScanFindings>): SeedContext {
-  return buildSeedContext('/repo', { containers: [], routes: [], scheduled: [], ...findings });
+  return buildSeedContext('/repo', {
+    containers: [],
+    routes: [],
+    scheduled: [],
+    thirdParty: [],
+    ...findings,
+  });
 }
 
 function healthcheck(url: string): ScanFinding {
@@ -563,6 +569,7 @@ describe('the seed-context document', () => {
       rejected: 1,
       heartbeats: 1,
       rejectedByReason: { loopback: 1 },
+      thirdPartyProviders: 0,
       truncated: false,
     });
     // urls, then paths, then ports.
@@ -877,7 +884,7 @@ describe('health path recovered from an unreachable healthcheck', () => {
 });
 
 describe('scanRepository', () => {
-  it('aggregates all three scanners over a real tree', async () => {
+  it('aggregates every scanner over a real tree', async () => {
     const root = await makeRepo({
       'app/api/health/route.ts': 'export async function GET() { return Response.json({}); }\n',
       'app/blog/[slug]/page.tsx': 'export default function Post() { return null; }\n',
