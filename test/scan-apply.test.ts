@@ -21,12 +21,16 @@ interface Stub {
 interface StubOptions {
   catalog?: Record<string, Record<string, unknown>[]>;
   allowance?: { used: number; limit: number } | 'none';
-  /** Status and body for the nth create (0-based); default creates. `thenTrack` puts the
+  /** Status and body for the nth create (0-based); default creates; status 0 drops the socket. `thenTrack` puts the
    * monitor in the account list first, as a concurrent create would have. */
   createReplies?: Record<number, { status: number; body: unknown; thenTrack?: boolean }>;
   monitors?: Record<string, unknown>[];
   /** Every monitor page points at the same next cursor, so the list reads as partial. */
   monitorsLoop?: boolean;
+  /** Every catalog search answers this status instead of rows. */
+  catalogStatus?: number;
+  /** Search terms whose lookup answers 503 while the rest resolve. */
+  catalogDown?: string[];
 }
 
 const row = (id: number, name: string, isTracked = false): Record<string, unknown> => ({
@@ -100,6 +104,9 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
       );
     }
     if (request.method === 'GET' && url.pathname === '/v3/third-party-providers') {
+      if (options.catalogStatus !== undefined) return reply(options.catalogStatus, 'catalog down');
+      if (options.catalogDown?.includes(url.searchParams.get('search') ?? '') === true)
+        return reply(503, 'catalog down');
       return reply(200, { data: catalog[url.searchParams.get('search') ?? ''] ?? [] });
     }
     if (request.method === 'POST' && url.pathname === '/v3/monitors') {
@@ -114,6 +121,7 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
             config: { thirdPartyService: { providerId } },
           });
         }
+        if (scripted.status === 0) return response.destroy();
         return reply(scripted.status, scripted.body);
       }
       const monitor = {
@@ -319,15 +327,14 @@ describe('uptimerobot scan --apply', () => {
     expect(JSON.parse(result.stderr)).toMatchObject({ error: { code: 'HTTP_429' } });
   });
 
-  it('reports a create refused as already tracked and goes on', async () => {
+  it('reports a repeat create with the monitor the API answers, which is the existing one', async () => {
+    const existing = {
+      id: 4001,
+      type: 'THIRD_PARTY_SERVICE',
+      config: { thirdPartyService: { providerId: 77 } },
+    };
     const stub = await startStub({
-      createReplies: {
-        0: {
-          status: 409,
-          body: { code: 'ALREADY_TRACKED', message: 'Provider already tracked' },
-          thenTrack: true,
-        },
-      },
+      createReplies: { 0: { status: 201, body: { data: existing } } },
     });
     const root = await writeRepository(REPOSITORY);
 
@@ -336,49 +343,165 @@ describe('uptimerobot scan --apply', () => {
     expect(result.exitCode).toBe(0);
     const output = JSON.parse(result.stdout);
     expect(output.results).toEqual([
-      {
-        provider: 'Resend',
-        status: 'already-tracked',
-        detail: { code: 'HTTP_409', message: 'Provider already tracked' },
-      },
+      { provider: 'Resend', status: 'created', monitorId: 4001 },
       { provider: 'Stripe', status: 'created', monitorId: 5000 },
       { provider: 'Vercel', status: 'created', monitorId: 5001 },
     ]);
   });
 
-  it('treats a 409 the account list does not explain as a failure that stops the run', async () => {
+  it('reports a create the server may have made as outcome unknown, with no by-hand line for it', async () => {
     const stub = await startStub({
-      createReplies: { 0: { status: 409, body: { code: 'LIMIT', message: 'plan limit reached' } } },
+      createReplies: { 0: { status: 504, body: 'gateway timeout', thenTrack: true } },
     });
     const root = await writeRepository(REPOSITORY);
 
     const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
 
-    expect(result.exitCode).toBe(8);
+    expect(result.exitCode).toBe(1);
     const output = JSON.parse(result.stdout);
     expect(output.results).toEqual([
       {
         provider: 'Resend',
-        status: 'failed',
-        error: { code: 'HTTP_409', message: 'plan limit reached' },
+        status: 'unknown',
+        error: { code: 'HTTP_504', message: 'gateway timeout' },
       },
     ]);
     expect(posts(stub)).toHaveLength(1);
+
+    const readable = await startStub({
+      createReplies: { 0: { status: 504, body: 'gateway timeout', thenTrack: true } },
+    });
+    const human = await runCli(['scan', root, '--apply', '--confirm'], {
+      ...env(readable),
+      UPTIMEROBOT_OUTPUT: 'table',
+    });
+    expect(human.exitCode).toBe(1);
+    expect(human.stdout).toContain('Outcome unknown');
+    expect(human.stdout).toContain('Resend (gateway timeout)');
+    expect(human.stdout).toContain('Not attempted: Stripe, Vercel.');
+    expect(human.stdout).not.toContain('--provider-id 77');
+    expect(human.stdout).toContain('--provider-id 801');
   });
 
-  it('refuses to create when the tracked set is partial', async () => {
-    const stub = await startStub({ monitorsLoop: true });
+  it('fails a create that answers 2xx without a monitor and stops there', async () => {
+    const stub = await startStub({ createReplies: { 0: { status: 200, body: { data: [] } } } });
     const root = await writeRepository(REPOSITORY);
 
     const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
 
     expect(result.exitCode).toBe(1);
-    expect(JSON.parse(result.stderr)).toMatchObject({ error: { code: 'TRACKED_SET_PARTIAL' } });
+    const output = JSON.parse(result.stdout);
+    expect(output.results).toEqual([
+      {
+        provider: 'Resend',
+        status: 'failed',
+        error: { code: 'INVALID_RESPONSE', message: expect.stringContaining('monitor') },
+      },
+    ]);
+    expect(JSON.parse(result.stderr)).toMatchObject({ error: { code: 'INVALID_RESPONSE' } });
+    expect(posts(stub)).toHaveLength(1);
+  });
+
+  it('creates with a partial tracked set and says the list stopped at its cap', async () => {
+    const stub = await startStub({ monitorsLoop: true });
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(0);
     const output = JSON.parse(result.stdout);
     expect(output.tracked.partial).toBe(true);
-    expect(output.confirmation).toBe('confirmed');
-    expect(output.results).toEqual([]);
+    expect(output.results.map((item: { status: string }) => item.status)).toEqual([
+      'created',
+      'created',
+      'created',
+    ]);
+    expect(posts(stub)).toHaveLength(3);
+  }, 20_000);
+
+  it('exits non-zero when the catalog could not resolve a selected provider', async () => {
+    const stub = await startStub({ catalogStatus: 503 });
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      error: { code: 'CATALOG_UNRESOLVED', message: expect.stringContaining('Resend') },
+    });
+    const output = JSON.parse(result.stdout);
+    expect(output.confirmation).toBe('not-needed');
+    expect(output.proposal.every((row: { status: string }) => row.status === 'unresolved')).toBe(
+      true,
+    );
     expect(posts(stub)).toEqual([]);
+
+    const human = await runCli(['scan', root, '--apply', '--confirm'], {
+      ...env(stub),
+      UPTIMEROBOT_OUTPUT: 'table',
+    });
+    expect(human.exitCode).toBe(1);
+    expect(human.stdout).not.toContain('Nothing to create.');
+    expect(human.stdout).toContain('Unresolved, retry later: Resend, Sentry, Stripe, Vercel.');
+  });
+
+  it('creates what resolved and still exits non-zero when one selected row did not', async () => {
+    const stub = await startStub({ catalogDown: ['resend'] });
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      error: {
+        code: 'CATALOG_UNRESOLVED',
+        message: 'The catalog could not resolve Resend; retry later.',
+      },
+    });
+    expect(JSON.parse(result.stdout).results).toEqual([
+      { provider: 'Stripe', status: 'created', monitorId: 5000 },
+      { provider: 'Vercel', status: 'created', monitorId: 5001 },
+    ]);
+  });
+
+  it('rejects --only naming a build-time provider unless build-time rows are included', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(REPOSITORY);
+
+    const refused = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'GitHub'],
+      env(stub),
+    );
+    expect(refused.exitCode).toBe(2);
+    expect(JSON.parse(refused.stderr)).toMatchObject({
+      error: {
+        code: 'INVALID_INPUT',
+        path: 'only',
+        message: 'GitHub is a build-time provider; add --include-build-time to propose it.',
+      },
+    });
+    expect(stub.hits).toEqual([]);
+
+    const included = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'GitHub', '--include-build-time'],
+      env(stub),
+    );
+    expect(included.exitCode).toBe(0);
+    expect(posts(stub).map((hit) => hit.body)).toEqual([
+      { type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 6 } } },
+    ]);
+  });
+
+  it('refuses the apply-only flags without --apply', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(REPOSITORY);
+
+    for (const flag of ['--confirm', '--include-build-time', '--only=Stripe', '--skip=Stripe']) {
+      const result = await runCli(['scan', root, flag, '--json'], env(stub));
+      expect(result.exitCode, flag).not.toBe(0);
+      expect(result.stderr, flag).toContain('--apply');
+    }
+    expect(stub.hits).toEqual([]);
   });
 
   it('rejects an --only or --skip name the scan did not find, and keeps the path an argument', async () => {
@@ -412,7 +535,7 @@ describe('uptimerobot scan --apply', () => {
           },
         ],
       },
-      createReplies: { 0: { status: 500, body: { message: 'boom\u001b[31m' } } },
+      createReplies: { 0: { status: 422, body: { message: 'boom\u001b[31m' } } },
     });
     const root = await writeRepository(REPOSITORY);
 
@@ -539,6 +662,7 @@ describe('uptimerobot scan --apply', () => {
     expect(JSON.parse(result.stderr)).toMatchObject({
       error: { code: 'INVALID_INPUT', path: 'only', message: expect.stringContaining('801') },
     });
+    expect(JSON.parse(result.stdout).confirmation).toBe('blocked');
     expect(posts(stub)).toEqual([]);
   });
 
@@ -558,8 +682,8 @@ describe('uptimerobot scan --apply', () => {
     expect(stub.hits).toEqual([]);
   });
 
-  it('stops on a server failure during a create and reports it', async () => {
-    const stub = await startStub({ createReplies: { 0: { status: 503, body: 'upstream gone' } } });
+  it('stops on a server failure during a create and reports it as unknown', async () => {
+    const stub = await startStub({ createReplies: { 0: { status: 500, body: 'upstream gone' } } });
     const root = await writeRepository(REPOSITORY);
 
     const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
@@ -569,11 +693,23 @@ describe('uptimerobot scan --apply', () => {
     expect(output.results).toEqual([
       {
         provider: 'Resend',
-        status: 'failed',
-        error: { code: 'HTTP_503', message: 'upstream gone' },
+        status: 'unknown',
+        error: { code: 'HTTP_500', message: 'upstream gone' },
       },
     ]);
     expect(posts(stub)).toHaveLength(1);
+
+    const dropped = await startStub({ createReplies: { 0: { status: 0, body: undefined } } });
+    const noStatus = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(dropped));
+    expect(noStatus.exitCode).not.toBe(0);
+    expect(JSON.parse(noStatus.stdout).results).toEqual([
+      {
+        provider: 'Resend',
+        status: 'unknown',
+        error: expect.objectContaining({ code: 'NETWORK_ERROR' }),
+      },
+    ]);
+    expect(posts(dropped)).toHaveLength(1);
   }, 20_000);
 
   it('fails with the API error when the account list cannot be read, creating nothing', async () => {

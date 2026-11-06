@@ -244,20 +244,22 @@ describe('rendering', () => {
       'Not created: Stripe (Slow down).',
       'Not attempted: Resend.',
     ]);
-    const refused = formatSummary(
-      [create],
-      [
-        {
-          provider: 'Stripe',
-          status: 'already-tracked',
-          detail: { code: 'HTTP_409', message: 'Provider already tracked' },
-        },
-      ],
+    const unknown = formatSummary(
+      [create, second],
+      [{ provider: 'Stripe', status: 'unknown', error: { code: 'HTTP_504', message: 'gone' } }],
       'confirmed',
     );
-    expect(refused[0]).toBe(
-      'Already tracked (refused by the API): Stripe (Provider already tracked).',
+    expect(unknown.slice(0, 2)).toEqual([
+      'Outcome unknown, the API may have created it, re-run scan --apply to check: Stripe (gone).',
+      'Not attempted: Resend.',
+    ]);
+    expect(unknown).toContain('  uptimerobot monitors create third-party-service --provider-id 77');
+    expect(unknown).not.toContain(
+      '  uptimerobot monitors create third-party-service --provider-id 801',
     );
+    const blocked = formatSummary([create], [], 'blocked');
+    expect(blocked[0]).toBe('Nothing was created.');
+    expect(blocked).not.toContain('To repeat a create by hand:');
     expect(formatSummary([create], [], 'declined')[0]).toBe('Nothing was created.');
     expect(formatSummary([create], [], 'required')[0]).toBe('Nothing was created.');
     expect(formatSummary([create], [], 'required')).toContain(

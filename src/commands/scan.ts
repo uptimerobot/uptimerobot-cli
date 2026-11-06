@@ -16,12 +16,15 @@ import {
   type Confirmation,
   type Proposal,
   buildApplyOutput,
+  buildTimeOnlyError,
   confirmationRequiredError,
+  excludedBuildTime,
   formatProposal,
   formatSummary,
   malformedOnly,
   runApply,
   unknownSelections,
+  unresolvedError,
 } from '../lib/third-party/apply.js';
 import { resolveFormat } from '../output/resolve-format.js';
 
@@ -63,17 +66,25 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
       description:
         'Resolve the third-party providers the scan found against the catalog and create a third-party service for each, after confirmation',
     }),
-    confirm: Flags.boolean({ description: 'Skip the confirmation question before creating' }),
+    // The four below only mean something with --apply; accepted alone they
+    // would be a silent no-op an agent could mistake for a create.
+    confirm: Flags.boolean({
+      dependsOn: ['apply'],
+      description: 'Skip the confirmation question before creating',
+    }),
     'include-build-time': Flags.boolean({
+      dependsOn: ['apply'],
       description: 'Also propose build-time providers (CI, code host, registries)',
     }),
     // Non-greedy, so `--only Stripe ./repo` keeps the path an argument.
     only: Flags.string({
+      dependsOn: ['apply'],
       description: 'Provider to include, repeatable; <provider>=<id> settles an ambiguous row',
       multiple: true,
       multipleNonGreedy: true,
     }),
     skip: Flags.string({
+      dependsOn: ['apply'],
       description: 'Provider to leave out, repeatable',
       multiple: true,
       multipleNonGreedy: true,
@@ -132,6 +143,8 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
           2,
         );
       }
+      const buildTime = excludedBuildTime(context.thirdParty.candidates, selection);
+      if (buildTime !== undefined) return this.fail(buildTimeOnlyError(buildTime), 2);
       await this.apply(context, access, mode, machineOutput, selection, flags.confirm === true);
       return context;
     }
@@ -215,6 +228,7 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
       throw error;
     }
     // The prompt printed the proposal; a run that never asked still shows it.
+    // A blocked run shows nothing: its rows were never up for creation.
     if (!shown && (run.confirmation === 'confirmed' || run.confirmation === 'not-needed')) {
       printProposal(run.proposal);
     }
@@ -235,6 +249,9 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
       return this.fail(run.blocked, run.blocked.code === 'INVALID_INPUT' ? 2 : 1);
     }
     if (run.failure !== undefined) return this.fail(run.failure.cliError, run.failure.exitCode);
+    // Last, so a create that did happen is reported before the row that could not be.
+    const unresolved = unresolvedError(run.proposal.proposal);
+    if (unresolved !== undefined) return this.fail(unresolved, 1);
   }
 
   /**

@@ -6,10 +6,11 @@
  * catalog (one search per candidate) and printed before anything is written.
  * Nothing is created without a confirmation: `--confirm`, or a yes at the
  * prompt in an interactive human run. Creates run one at a time in proposal
- * order and stop at the first failure, which is never retried; a create the
- * API refuses because the provider is already tracked is reported as such and
- * does not stop the run. `runApply` is the whole flow without the printing,
- * so `init` can offer the same proposal.
+ * order and stop at the first failure, which is never retried. A repeat create
+ * is safe: the API answers it with the monitor the account already has, so a
+ * partial tracked set only makes the proposal longer, never a duplicate.
+ * `runApply` is the whole flow without the printing, so `init` can offer the
+ * same proposal.
  */
 import { requestJson } from '../../api/client.js';
 import { ApiFailure } from '../../api/errors.js';
@@ -50,13 +51,21 @@ export interface Proposal {
   tracked: TrackedProviders;
 }
 
+/**
+ * `unknown` when the API never said whether it wrote the monitor (no status,
+ * or a 5xx after a server that may have committed), so the row must not be
+ * reported as not created, nor handed out as a command to repeat.
+ */
 export type CreateResult =
-  | { provider: string; status: 'created'; monitorId: number | null }
-  | { provider: string; status: 'already-tracked'; detail: { code: string; message: string } }
+  | { provider: string; status: 'created'; monitorId: number }
+  | { provider: string; status: 'unknown'; error: { code: string; message: string } }
   | { provider: string; status: 'failed'; error: { code: string; message: string } };
 
-/** `not-needed` when the proposal held nothing to create, so no one was asked. */
-export type Confirmation = 'required' | 'declined' | 'confirmed' | 'not-needed';
+/**
+ * `not-needed` when the proposal held nothing to create, so no one was asked;
+ * `blocked` when the input was refused before anyone could be asked.
+ */
+export type Confirmation = 'required' | 'declined' | 'confirmed' | 'not-needed' | 'blocked';
 
 /** The `--apply` result, in the shape the Command contract documents. */
 export interface ApplyOutput {
@@ -70,13 +79,6 @@ export interface ApplyOutput {
 }
 
 const CREATE = operations['monitors:create:third-party-service'];
-/**
- * The status the API answers a create for a provider the account already
- * tracks with. An assumption: the API documents no code for it, so a 409 is
- * believed only when the account's own list, read again, names the provider,
- * and the refusal body is kept on the result for a reader to check.
- */
-const ALREADY_TRACKED_STATUS = 409;
 /** Characters a terminal would obey; nothing from the API or the catalog may carry them to the screen. */
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/g;
 
@@ -147,6 +149,35 @@ export function onlyMismatchError(mismatch: { entry: string; resolved: number[] 
   };
 }
 
+/**
+ * The first `--only` name that is a build-time provider while build-time rows
+ * are left out: the row would be dropped before the search, a silent no-op.
+ */
+export function excludedBuildTime(
+  candidates: readonly ThirdPartyCandidate[],
+  selection: ApplySelection,
+): string | undefined {
+  if (selection.includeBuildTime) return undefined;
+  const buildTime = new Set(
+    candidates
+      .filter((candidate) => candidate.class === 'build-time')
+      .map((candidate) => normalizeName(candidate.provider)),
+  );
+  const entry = selection.only.find((item) => buildTime.has(parseOnly(item).name));
+  if (entry === undefined) return undefined;
+  const name = parseOnly(entry).name;
+  return candidates.find((candidate) => normalizeName(candidate.provider) === name)?.provider;
+}
+
+export function buildTimeOnlyError(provider: string): CliError {
+  return {
+    code: 'INVALID_INPUT',
+    expected: 'a runtime provider, or --include-build-time',
+    message: `${provider} is a build-time provider; add --include-build-time to propose it.`,
+    path: 'only',
+  };
+}
+
 /** The candidates `--only` and `--skip` leave in, before any search is made. */
 export function selectCandidates(
   candidates: readonly ThirdPartyCandidate[],
@@ -213,6 +244,12 @@ function monitorIdOf(payload: unknown): number | null {
   return isPlainRecord(record) && typeof record.id === 'number' ? record.id : null;
 }
 
+/** Whether the API said nothing about the write: no status at all, or a server-side failure. */
+function outcomeUnknown(error: ApiFailure): boolean {
+  const status = error.cliError.status;
+  return status === undefined || status >= 500;
+}
+
 /**
  * Creates one third-party service per `create` row, in order, and stops at the
  * first failure. Sequential on purpose: the order is the proposal's, and a
@@ -230,34 +267,29 @@ export async function createProposed(
       type: 'THIRD_PARTY_SERVICE',
       config: { thirdPartyService: { providerId: row.catalog.id } },
     });
+    let payload: unknown;
     try {
-      const payload = await requestJson(access.client, url, CREATE.method, body);
-      results.push({ provider: row.provider, status: 'created', monitorId: monitorIdOf(payload) });
+      payload = await requestJson(access.client, url, CREATE.method, body);
     } catch (error) {
       if (!(error instanceof ApiFailure)) throw error;
       const detail = { code: error.cliError.code, message: error.cliError.message };
-      if (
-        error.cliError.status === ALREADY_TRACKED_STATUS &&
-        (await isTrackedNow(access, row.catalog.id))
-      ) {
-        results.push({ provider: row.provider, status: 'already-tracked', detail });
-        continue;
-      }
-      results.push({ provider: row.provider, status: 'failed', error: detail });
+      const status = outcomeUnknown(error) ? 'unknown' : 'failed';
+      results.push({ provider: row.provider, status, error: detail });
       return { results, failure: error };
     }
+    const monitorId = monitorIdOf(payload);
+    if (monitorId === null) {
+      // The API always answers a create with the monitor; anything else is not a create.
+      const failure = new ApiFailure(
+        { code: 'INVALID_RESPONSE', message: 'The create did not return a monitor.' },
+        1,
+      );
+      results.push({ provider: row.provider, status: 'failed', error: failure.cliError });
+      return { results, failure };
+    }
+    results.push({ provider: row.provider, status: 'created', monitorId });
   }
   return { results };
-}
-
-/** Whether the account's own list names the provider; a failed read reads as no. */
-async function isTrackedNow(access: ApiAccess, providerId: number): Promise<boolean> {
-  try {
-    const tracked = await readTrackedProviders(access);
-    return tracked.providerIds.includes(providerId);
-  } catch {
-    return false;
-  }
 }
 
 export interface ApplyRun {
@@ -265,17 +297,21 @@ export interface ApplyRun {
   confirmation: Confirmation;
   results: readonly CreateResult[];
   failure?: ApiFailure;
-  /** Why the creates were not attempted: bad input (`INVALID_INPUT`) or a partial tracked set. */
+  /** Why the creates were not attempted: bad input (`INVALID_INPUT`), decided before anyone is asked. */
   blocked?: CliError;
 }
 
-/** With a partial tracked set a create could duplicate a service the list never reached. */
-export function partialTrackedError(): CliError {
+/**
+ * A selected row the catalog could not answer for: the run must not end as if
+ * the account were in sync, so a script's `&&` does not carry on past it.
+ */
+export function unresolvedError(proposal: readonly ResolvedCandidate[]): CliError | undefined {
+  const names = proposal.filter((row) => row.status === 'unresolved').map((row) => row.provider);
+  if (names.length === 0) return undefined;
   return {
-    code: 'TRACKED_SET_PARTIAL',
+    code: 'CATALOG_UNRESOLVED',
     command: APPLY_COMMAND,
-    message:
-      'The account has more third-party services than the list could read, so a create could duplicate one. Nothing was created; create the proposed services by hand or retry later.',
+    message: `The catalog could not resolve ${names.join(', ')}; retry later.`,
   };
 }
 
@@ -295,12 +331,7 @@ export async function runApply(options: {
   const proposal = await prepareProposal(options.candidates, options.selection, options.access);
   const mismatch = mismatchedOnly(proposal.proposal, options.selection.only);
   if (mismatch !== undefined) {
-    return {
-      proposal,
-      confirmation: 'not-needed',
-      results: [],
-      blocked: onlyMismatchError(mismatch),
-    };
+    return { proposal, confirmation: 'blocked', results: [], blocked: onlyMismatchError(mismatch) };
   }
   const toCreate = proposal.allowance.proposed;
   const confirmation: Confirmation =
@@ -310,9 +341,6 @@ export async function runApply(options: {
         ? 'confirmed'
         : await options.confirm(proposal, toCreate);
   if (confirmation !== 'confirmed') return { proposal, confirmation, results: [] };
-  if (proposal.tracked.partial) {
-    return { proposal, confirmation, results: [], blocked: partialTrackedError() };
-  }
   const { results, failure } = await createProposed(proposal.proposal, options.access);
   return failure === undefined
     ? { proposal, confirmation, results }
@@ -411,31 +439,35 @@ const LEFTOVER_LABELS: readonly [ResolvedCandidate['status'], string][] = [
 ];
 
 function describeResult(item: CreateResult): string {
-  switch (item.status) {
-    case 'created':
-      return `${item.provider} (monitor ${item.monitorId ?? 'unknown'})`;
-    case 'failed':
-      return `${item.provider} (${plain(item.error.message)})`;
-    default:
-      return `${item.provider} (${plain(item.detail.message)})`;
-  }
+  return item.status === 'created'
+    ? `${item.provider} (monitor ${item.monitorId})`
+    : `${item.provider} (${plain(item.error.message)})`;
 }
 
-function outcomeLines(results: readonly CreateResult[], confirmation: Confirmation): string[] {
+function outcomeLines(
+  proposal: readonly ResolvedCandidate[],
+  results: readonly CreateResult[],
+  confirmation: Confirmation,
+): string[] {
   const lines: string[] = [];
-  if (confirmation === 'required' || confirmation === 'declined')
+  if (confirmation === 'required' || confirmation === 'declined' || confirmation === 'blocked')
     lines.push('Nothing was created.');
-  if (confirmation === 'not-needed') lines.push('Nothing to create.');
+  // An unresolved row is not "nothing": its own leftover line says what to do.
+  if (confirmation === 'not-needed' && !proposal.some((row) => row.status === 'unresolved'))
+    lines.push('Nothing to create.');
   const byStatus = (status: CreateResult['status']): string =>
     results
       .filter((item) => item.status === status)
       .map(describeResult)
       .join(', ');
   const created = byStatus('created');
-  const refused = byStatus('already-tracked');
+  const unknown = byStatus('unknown');
   const failed = byStatus('failed');
   if (created !== '') lines.push(`Created: ${created}.`);
-  if (refused !== '') lines.push(`Already tracked (refused by the API): ${refused}.`);
+  if (unknown !== '')
+    lines.push(
+      `Outcome unknown, the API may have created it, re-run scan --apply to check: ${unknown}.`,
+    );
   if (failed !== '') lines.push(`Not created: ${failed}.`);
   return lines;
 }
@@ -460,16 +492,16 @@ function leftoverLines(
   return lines;
 }
 
-/** The creates still worth repeating by hand: not the ones a confirmed run made. */
+/** The creates still worth repeating by hand: not the ones a confirmed run made or may have made. */
 function manualCommands(
   proposal: readonly ResolvedCandidate[],
   results: readonly CreateResult[],
 ): string[] {
-  const created = new Set(
-    results.filter((item) => item.status === 'created').map((item) => item.provider),
+  const settled = new Set(
+    results.filter((item) => item.status !== 'failed').map((item) => item.provider),
   );
   return proposal.flatMap((row) =>
-    (row.status === 'create' && !created.has(row.provider)) || row.status === 'over-allowance'
+    (row.status === 'create' && !settled.has(row.provider)) || row.status === 'over-allowance'
       ? [`  ${CREATE_COMMAND} ${row.catalog.id}`]
       : [],
   );
@@ -481,9 +513,9 @@ export function formatSummary(
   results: readonly CreateResult[],
   confirmation: Confirmation,
 ): string[] {
-  const commands = manualCommands(proposal, results);
+  const commands = confirmation === 'blocked' ? [] : manualCommands(proposal, results);
   return [
-    ...outcomeLines(results, confirmation),
+    ...outcomeLines(proposal, results, confirmation),
     ...leftoverLines(proposal, results, confirmation),
     ...(commands.length > 0 ? ['', 'To repeat a create by hand:', ...commands] : []),
     '',
