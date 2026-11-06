@@ -105,12 +105,20 @@ function trackedProviderId(item: unknown): number | undefined {
 export async function readTrackedProviders(access: ApiAccess): Promise<TrackedProviders> {
   const providerIds = new Set<number>();
   const { truncated } = await pageThrough({
-    fetchPage: (cursor) =>
-      requestJson(
+    fetchPage: async (cursor) => {
+      const payload = await requestJson(
         access.client,
         buildUrl(MONITORS_LIST, { path: {}, query: { cursor, limit: PAGE_SIZE } }, access.apiUrl),
         MONITORS_LIST.method,
-      ),
+      );
+      if (Array.isArray(payload) || (isPlainRecord(payload) && Array.isArray(payload.data))) {
+        return payload;
+      }
+      throw new ApiFailure(
+        { code: 'INVALID_RESPONSE', message: 'The monitor list did not return monitors.' },
+        1,
+      );
+    },
     onItems: (items) => {
       for (const item of items) {
         const id = trackedProviderId(item);

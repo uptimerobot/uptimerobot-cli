@@ -132,6 +132,15 @@ describe('readTrackedProviders', () => {
     expect(requests).toEqual(['/v3/monitors?limit=200', '/v3/monitors?limit=200&cursor=p2']);
   });
 
+  it('refuses a monitor list that is not one instead of reading it as empty', async () => {
+    for (const body of ['<html>captive portal</html>', { data: 'nope' }, { ok: true }]) {
+      const { access } = stubApi({ monitors: [{ status: 200, body }] });
+      await expect(readTrackedProviders(access)).rejects.toMatchObject({
+        cliError: { code: 'INVALID_RESPONSE' },
+      });
+    }
+  });
+
   it('stops on a cursor it has already followed and calls the set partial', async () => {
     const loop = ok({ data: [thirdPartyMonitor(1, 801)], nextCursor: 'again' });
     const { access, requests } = stubApi({ monitors: [loop, loop, loop] });
