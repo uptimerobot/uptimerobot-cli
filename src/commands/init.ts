@@ -289,10 +289,12 @@ Precedence:
       decision === 'offer'
         ? await offerThirdParty({ context, access, mode, invocation, io: this })
         : null;
-    // A run that made no offer keeps what an earlier one recorded, so a later
-    // --json rerun never erases "Created: Stripe" from the agent's seed file.
+    // A run that made no offer, or whose offer could not resolve, keeps what an
+    // earlier one recorded, so no rerun erases "Created: Stripe" from the seed file.
     const outcomeLines =
-      thirdParty === null ? carryOverOutcome(previousSeed) : renderOutcome(thirdParty, invocation);
+      thirdParty === null
+        ? carryOverOutcome(previousSeed)
+        : renderOutcome(thirdParty, invocation, previousSeed);
     const seedContext = await this.writeSeedContext(root, context, invocation, outcomeLines);
     // Written next to the scan and on the same terms, so the two halves of the
     // handoff always arrive together. Unconditional, like the scan: a --no-agent

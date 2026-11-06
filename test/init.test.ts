@@ -1032,6 +1032,33 @@ describe('init', () => {
       }
     });
 
+    it('keeps what an earlier run created when a later offer cannot resolve', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      stubApi();
+      const { requestConfirmation } = await import('../src/lib/invocation.js');
+      vi.mocked(requestConfirmation).mockResolvedValue(true);
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+        await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+        expect(await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8')).toContain(
+          'Created: Stripe (monitor 5001).',
+        );
+
+        const api = stubApi({ monitorsStatus: 500 });
+        const rerun = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+
+        expect(rerun).toMatchObject({ thirdParty: { kind: 'failed', error: { code: 'HTTP_500' } } });
+        expect(api.posts).toEqual([]);
+        const seed = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
+        expect(seed).toContain('Not resolved (HTTP_500)');
+        expect(seed).toContain('Created: Stripe (monitor 5001).');
+      } finally {
+        restoreTerminal();
+      }
+    });
+
     it('asks nothing when every candidate is already tracked, and records that', async () => {
       keyring.set(STORED_CREDENTIAL, 'u123-stored');
       await writeManifest();
@@ -1125,10 +1152,10 @@ describe('init', () => {
       }
     });
 
-    it('skips the offer in agent mode and keeps an earlier outcome on a later --json rerun', async () => {
+    it('skips the offer in agent mode and keeps an earlier outcome on a later rerun', async () => {
       keyring.set(STORED_CREDENTIAL, 'u123-stored');
       await writeManifest();
-      stubApi();
+      const api = stubApi();
       const { requestConfirmation } = await import('../src/lib/invocation.js');
       vi.mocked(requestConfirmation).mockResolvedValue(true);
       const restoreTerminal = stubTerminal();
@@ -1145,12 +1172,21 @@ describe('init', () => {
 
         expect(rerun).toMatchObject({ thirdParty: null, seedContext: { outcome: 'unchanged' } });
         expect(await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8')).toBe(first);
+
+        vi.stubEnv('UPTIMEROBOT_OUTPUT', 'table');
+        const tableRerun = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+
+        expect(tableRerun).toMatchObject({
+          thirdParty: null,
+          seedContext: { outcome: 'unchanged' },
+        });
+        expect(api.posts).toHaveLength(1);
       } finally {
         restoreTerminal();
       }
     });
 
-    it('does not offer when the seed file cannot be written, and hints instead', async () => {
+    it('does not offer when the seed file cannot be written', async () => {
       keyring.set(STORED_CREDENTIAL, 'u123-stored');
       await writeManifest();
       await mkdir(join(repository, SEED_CONTEXT_FILE));

@@ -237,4 +237,53 @@ describe('the outcome block', () => {
     const earlier = `${OURS}${OUTCOME_BEGIN_MARKER}\nOutcome unknown, the API may have created it, run \`uptimerobot scan --apply\` to check: Stripe (gone).\n${OUTCOME_END_MARKER}\n`;
     expect(carryOverOutcome(earlier)).toEqual([]);
   });
+
+  it('keeps the durable lines of an earlier block when resolution fails', () => {
+    const earlier = renderOutcome(
+      {
+        kind: 'completed',
+        confirmation: 'confirmed',
+        proposal: [
+          { provider: 'Stripe', status: 'create' },
+          { provider: 'Vercel', status: 'already-tracked' },
+        ],
+        results: [{ provider: 'Stripe', status: 'created', monitorId: 5 }],
+        blocked: null,
+      },
+      INVOCATION,
+    );
+    const previousSeed = `${OURS}${earlier.join('\n')}\n`;
+    const lines = renderOutcome(
+      { kind: 'failed', error: { code: 'HTTP_500', message: 'boom' } },
+      INVOCATION,
+      previousSeed,
+    );
+    expect(lines).toEqual([
+      OUTCOME_BEGIN_MARKER,
+      '### Outcome of `uptimerobot init`',
+      '',
+      'Not resolved (HTTP_500): boom. Run `uptimerobot scan --apply` to retry.',
+      'Created: Stripe (monitor 5).',
+      'Already tracked: Vercel.',
+      OUTCOME_END_MARKER,
+    ]);
+    expect(carryOverOutcome(`${OURS}${lines.join('\n')}\n`)).toEqual(earlier);
+    expect(
+      renderOutcome({ kind: 'failed', error: { code: 'HTTP_500', message: 'boom' } }, INVOCATION),
+    ).not.toContain('Created: Stripe (monitor 5).');
+  });
+
+  it('records a provider the catalog could not resolve, so the agent retries rather than creates', () => {
+    const lines = renderOutcome(
+      {
+        kind: 'completed',
+        confirmation: 'not-needed',
+        proposal: [{ provider: 'Stripe', status: 'unresolved' }],
+        results: [],
+        blocked: null,
+      },
+      INVOCATION,
+    );
+    expect(lines).toContain('Unresolved, retry with `uptimerobot scan --apply`: Stripe.');
+  });
 });

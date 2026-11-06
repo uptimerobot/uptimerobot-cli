@@ -177,8 +177,16 @@ function blockText(text: string): string {
   return plain(text).replaceAll('<', '&lt;');
 }
 
-/** What the offer did, for the seed file: the agent must not create these again. */
-export function renderOutcome(outcome: OfferOutcome, invocation: CliInvocation): readonly string[] {
+/**
+ * What the offer did, for the seed file: the agent must not create these again.
+ * A failed resolution says nothing about what an earlier run created, so the
+ * durable lines of the block in `previousSeed` stay under the failure.
+ */
+export function renderOutcome(
+  outcome: OfferOutcome,
+  invocation: CliInvocation,
+  previousSeed?: string,
+): readonly string[] {
   const lines = [
     OUTCOME_BEGIN_MARKER,
     `### Outcome of \`${formatInvocation(invocation, 'init')}\``,
@@ -188,6 +196,7 @@ export function renderOutcome(outcome: OfferOutcome, invocation: CliInvocation):
     return [
       ...lines,
       `Not resolved (${outcome.error.code}): ${blockText(outcome.error.message)}. Run \`${formatInvocation(invocation, 'scan --apply')}\` to retry.`,
+      ...carryOverOutcome(previousSeed).filter((line) => DURABLE_LINE.test(line)),
       OUTCOME_END_MARKER,
     ];
   }
@@ -231,6 +240,12 @@ export function renderOutcome(outcome: OfferOutcome, invocation: CliInvocation):
   if (ambiguous.length > 0) {
     lines.push(
       `Ambiguous, settle with \`${formatInvocation(invocation, 'scan --apply --only <provider>=<id>')}\`: ${ambiguous.join(', ')}.`,
+    );
+  }
+  const unresolved = byRow('unresolved');
+  if (unresolved.length > 0) {
+    lines.push(
+      `Unresolved, retry with \`${formatInvocation(invocation, 'scan --apply')}\`: ${unresolved.join(', ')}.`,
     );
   }
   return [...lines, OUTCOME_END_MARKER];
