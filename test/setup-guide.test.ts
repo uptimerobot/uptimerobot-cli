@@ -85,6 +85,8 @@ describe('renderSetupGuide', () => {
     ['the carve-out for heartbeats with no declared schedule', 'no schedule declared'],
     ['paging the duplicate pre-check', '--cursor'],
     ['the truncated-scan instruction', 'stopped early'],
+    ['the third-party part of the scan file', 'Third-party providers'],
+    ['the third-party confirm guardrail', 'Never pass `--confirm` to `scan --apply`'],
   ])('states %s', (_label, substring) => {
     expect(prose(guide)).toContain(prose(substring));
   });
@@ -176,6 +178,65 @@ describe('renderSetupGuide', () => {
     expect(guide).toContain('No separate "type yes" step');
     // The strict shown-diff-then-yes gate stays, but only for the file edits.
     expect(guide).toContain('one file, one diff, one yes');
+  });
+
+  it('puts the third-party step between discovery and the endpoint proposal', () => {
+    const discover = guide.indexOf('## Step 1 — Discover');
+    const thirdParty = guide.indexOf('## Step 2 — Third-party services');
+    const propose = guide.indexOf('## Step 3 — Propose, then stop');
+    expect(discover).toBeGreaterThan(-1);
+    expect(thirdParty).toBeGreaterThan(discover);
+    expect(propose).toBeGreaterThan(thirdParty);
+    expect(guide).toContain('## Step 7 — Verify');
+    expect(guide).not.toContain('## Step 6 — Verify');
+  });
+
+  it('tells the agent to propose third-party services through the CLI and confirm only on a yes', () => {
+    expect(guide).toContain('uptimerobot scan --apply --json --agent');
+    expect(guide).toContain('uptimerobot scan --apply --confirm --json --agent');
+    const proposalBlock = guide.indexOf('uptimerobot scan --apply --json --agent');
+    const confirmBlock = guide.indexOf('uptimerobot scan --apply --confirm');
+    expect(proposalBlock).toBeLessThan(confirmBlock);
+    expect(prose(guide)).toContain(
+      prose(
+        'only after the user, in a message in this conversation, said yes to the list you showed',
+      ),
+    );
+    expect(prose(guide)).toContain(prose('Then stop and wait for the reply'));
+    expect(prose(guide)).toContain(prose('if the set changes after the answer, ask again'));
+    expect(prose(guide)).toContain(prose('When nothing is creatable it exits 0'));
+    expect(guide).not.toContain('TRACKED_SET_PARTIAL');
+    expect(guide).not.toContain('`null` if the API returned none');
+    expect(prose(guide)).toContain(prose('`CATALOG_UNRESOLVED` means a selected provider'));
+    expect(prose(guide)).toContain(prose('status `unknown` means the API never said'));
+    expect(prose(guide)).toContain(prose('never work around a failed or blocked run'));
+    expect(prose(guide)).toContain(
+      prose(
+        'Whatever Step 2 ends in, created, partly created, unresolved or over allowance, go on to Step 3',
+      ),
+    );
+    expect(prose(guide)).toContain(
+      prose(
+        'one `--only <provider>=<id>` per approved row, with the catalog id from its `proposal[]` row',
+      ),
+    );
+    expect(prose(guide)).toContain(prose('Never confirm with `--skip`'));
+    expect(prose(guide)).toContain(prose('need no base URL'));
+    expect(prose(guide)).toContain(prose('**Third-party services** — one row per service created'));
+    expect(prose(guide)).toContain(prose('Never paste the `scan --apply` JSON'));
+  });
+
+  it('points every step reference at a heading that exists', () => {
+    const headings = new Set([...guide.matchAll(/^## Step (\d+) — /gm)].map((m) => m[1]));
+    const references = [...guide.matchAll(/Step (\d+)/g)].map((m) => m[1]);
+    expect(references.length).toBeGreaterThan(5);
+    for (const reference of references) expect(headings).toContain(reference);
+  });
+
+  it('templates the third-party commands through the npx form too', () => {
+    const viaNpx = renderSetupGuide(VIA_NPX);
+    expect(viaNpx).toContain('npx @uptimerobot/cli scan --apply --json');
+    expect(viaNpx).toContain('npx @uptimerobot/cli scan --apply --confirm');
   });
 
   it('tells the agent to attach an alert contact so monitors are not silent', () => {

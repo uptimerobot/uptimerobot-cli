@@ -463,6 +463,8 @@ describe('init', () => {
     const content = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
     expect(content.startsWith(SEED_BEGIN_PREFIX)).toBe(true);
     expect(content).toContain('# Scan seed context (schema 2)');
+    expect(content).toContain('## Third-party providers (candidates for third-party services)');
+    expect(content).toContain('need no base URL');
     expect(content.trimEnd().endsWith(SEED_END_MARKER)).toBe(true);
   });
 
