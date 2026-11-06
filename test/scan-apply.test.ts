@@ -527,6 +527,21 @@ describe('uptimerobot scan --apply', () => {
     expect(posts(stub)).toEqual([]);
   });
 
+  it('rejects an --only id that is not the id the provider resolved to', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(REPOSITORY);
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'Stripe=802'],
+      env(stub),
+    );
+
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      error: { code: 'INVALID_INPUT', path: 'only', message: expect.stringContaining('801') },
+    });
+    expect(posts(stub)).toEqual([]);
+  });
+
   it('rejects a malformed --only id before any request', async () => {
     const stub = await startStub();
     const root = await writeRepository(REPOSITORY);
@@ -645,7 +660,7 @@ describe('uptimerobot scan --apply', () => {
 
     const declined = await runInteractiveCli(
       ['scan', root, '--apply'],
-      [{ waitFor: 'Create 3 third-party services? [y/N]', input: 'n\n' }],
+      [{ waitFor: 'Create 3 third-party services. Continue? [y/N]', input: 'n\n' }],
       interactiveEnv,
     );
     expect(declined.exitCode).toBe(2);
@@ -655,10 +670,11 @@ describe('uptimerobot scan --apply', () => {
 
     const accepted = await runInteractiveCli(
       ['scan', root, '--apply'],
-      [{ waitFor: 'Create 3 third-party services? [y/N]', input: 'y\n' }],
+      [{ waitFor: 'Create 3 third-party services. Continue? [y/N]', input: 'y\n' }],
       interactiveEnv,
     );
     expect(accepted.exitCode).toBe(0);
+    expect(accepted.output.split('| Provider | Evidence |')).toHaveLength(2);
     expect(accepted.output).toContain('Created: Resend (monitor 5000)');
     expect(posts(stub)).toHaveLength(3);
   }, 30_000);

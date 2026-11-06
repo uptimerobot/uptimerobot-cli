@@ -6,6 +6,7 @@ import {
   formatProposal,
   formatSummary,
   malformedOnly,
+  mismatchedOnly,
   parseOnly,
   selectCandidates,
 } from '../src/lib/third-party/apply.js';
@@ -115,6 +116,43 @@ describe('applyOnlyChoices', () => {
     expect(applyOnlyChoices([ambiguous], ['Vercel=999'], NONE)[0]).toBe(ambiguous);
     expect(applyOnlyChoices([ambiguous], ['Vercel'], NONE)[0]).toBe(ambiguous);
     expect(applyOnlyChoices([ambiguous], ['Vercel=abc'], NONE)[0]).toBe(ambiguous);
+  });
+});
+
+describe('mismatchedOnly', () => {
+  const resolved: ResolvedCandidate = {
+    ...candidate('Stripe'),
+    status: 'create',
+    catalog: { id: 801, name: 'Stripe', state: 'operational', statusPageUrl: 'https://s.example/' },
+    regionDefaulted: false,
+  };
+  const ambiguous: ResolvedCandidate = {
+    ...candidate('Vercel'),
+    status: 'ambiguous',
+    choices: [choice(861, 'Vercel'), choice(862, 'VERCEL')],
+  };
+
+  it('names the first --only entry whose id is not the id its provider resolved to', () => {
+    expect(mismatchedOnly([resolved, ambiguous], ['stripe=802', 'Vercel=999'])).toEqual({
+      entry: 'stripe=802',
+      resolved: [801],
+    });
+    expect(mismatchedOnly([resolved, ambiguous], ['Vercel=999'])).toEqual({
+      entry: 'Vercel=999',
+      resolved: [861, 862],
+    });
+  });
+
+  it('accepts a matching id, a bare name, and an id for a row without a catalog', () => {
+    const unresolved: ResolvedCandidate = {
+      ...candidate('Sentry'),
+      status: 'not-in-catalog',
+      seen: [],
+    };
+    expect(
+      mismatchedOnly([resolved, ambiguous, unresolved], ['Stripe=801', 'vercel=862', 'Sentry=5']),
+    ).toBeUndefined();
+    expect(mismatchedOnly([resolved], ['Stripe'])).toBeUndefined();
   });
 });
 

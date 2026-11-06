@@ -177,8 +177,10 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
     selection: ApplySelection,
     confirmFlag: boolean,
   ): Promise<void> {
+    let shown = false;
     const printProposal = (proposal: Proposal, toStderr = false): void => {
       if (machineOutput && !toStderr) return;
+      shown = true;
       for (const line of formatProposal(proposal)) {
         if (toStderr) this.logToStderr(line);
         else this.log(line);
@@ -213,7 +215,7 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
       throw error;
     }
     // The prompt printed the proposal; a run that never asked still shows it.
-    if (run.confirmation === 'confirmed' || run.confirmation === 'not-needed') {
+    if (!shown && (run.confirmation === 'confirmed' || run.confirmation === 'not-needed')) {
       printProposal(run.proposal);
     }
 
@@ -229,7 +231,9 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
     if (run.confirmation === 'required' || run.confirmation === 'declined') {
       return this.fail(confirmationRequiredError(run.confirmation), 2);
     }
-    if (run.blocked !== undefined) return this.fail(run.blocked, 1);
+    if (run.blocked !== undefined) {
+      return this.fail(run.blocked, run.blocked.code === 'INVALID_INPUT' ? 2 : 1);
+    }
     if (run.failure !== undefined) return this.fail(run.failure.cliError, run.failure.exitCode);
   }
 

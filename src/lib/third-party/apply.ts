@@ -112,6 +112,41 @@ export function unknownSelections(
     .map(({ entry }) => entry);
 }
 
+/** The ids a resolved row can stand for: its catalog row, or each of an ambiguous row's choices. */
+function resolvedIds(row: ResolvedCandidate): number[] {
+  if (row.status === 'ambiguous') return row.choices.map((item) => item.id);
+  return 'catalog' in row ? [row.catalog.id] : [];
+}
+
+/**
+ * The first `--only Name=<id>` whose id is none of the ids its provider
+ * resolved to: silently creating the row the search found instead would
+ * create a service the user did not name.
+ */
+export function mismatchedOnly(
+  rows: readonly ResolvedCandidate[],
+  only: readonly string[],
+): { entry: string; resolved: number[] } | undefined {
+  for (const entry of only) {
+    const { name, id } = parseOnly(entry);
+    if (id === undefined) continue;
+    const row = rows.find((item) => normalizeName(item.provider) === name);
+    if (row === undefined) continue;
+    const resolved = resolvedIds(row);
+    if (resolved.length > 0 && !resolved.includes(id)) return { entry, resolved };
+  }
+  return undefined;
+}
+
+export function onlyMismatchError(mismatch: { entry: string; resolved: number[] }): CliError {
+  return {
+    code: 'INVALID_INPUT',
+    expected: `one of the ids the provider resolved to: ${mismatch.resolved.join(', ')}`,
+    message: `--only ${mismatch.entry} names an id the catalog search did not return for that provider (it returned ${mismatch.resolved.join(', ')}). Nothing was created.`,
+    path: 'only',
+  };
+}
+
 /** The candidates `--only` and `--skip` leave in, before any search is made. */
 export function selectCandidates(
   candidates: readonly ThirdPartyCandidate[],
@@ -230,7 +265,7 @@ export interface ApplyRun {
   confirmation: Confirmation;
   results: readonly CreateResult[];
   failure?: ApiFailure;
-  /** Why the creates were not attempted although confirmed. */
+  /** Why the creates were not attempted: bad input (`INVALID_INPUT`) or a partial tracked set. */
   blocked?: CliError;
 }
 
@@ -258,6 +293,15 @@ export async function runApply(options: {
   confirm: (proposal: Proposal, toCreate: number) => Promise<Confirmation>;
 }): Promise<ApplyRun> {
   const proposal = await prepareProposal(options.candidates, options.selection, options.access);
+  const mismatch = mismatchedOnly(proposal.proposal, options.selection.only);
+  if (mismatch !== undefined) {
+    return {
+      proposal,
+      confirmation: 'not-needed',
+      results: [],
+      blocked: onlyMismatchError(mismatch),
+    };
+  }
   const toCreate = proposal.allowance.proposed;
   const confirmation: Confirmation =
     toCreate === 0
