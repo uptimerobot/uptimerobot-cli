@@ -125,12 +125,15 @@ describe('init', () => {
 
   afterEach(async () => {
     keyring.clear();
-    expect(strayFetch).not.toHaveBeenCalled();
-    vi.unstubAllEnvs();
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-    await rm(configDirectory, { force: true, recursive: true });
-    await rm(repository, { force: true, recursive: true });
+    try {
+      expect(strayFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+      await rm(configDirectory, { force: true, recursive: true });
+      await rm(repository, { force: true, recursive: true });
+    }
   });
 
   it('routes a caller without a credential from any source to signup', async () => {

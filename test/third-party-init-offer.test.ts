@@ -78,8 +78,36 @@ describe('the outcome block', () => {
     const line = rendered.find((text) => text.startsWith('Not created: AWS'));
     expect(line).toBeDefined();
     expect(line).not.toContain('\u001b');
-    expect(line).not.toContain('outcome:');
+    expect(line).not.toContain('<');
     expect(rendered.some((line) => line.startsWith('## Injected'))).toBe(false);
+  });
+
+  it('never lets a nested marker payload rebuild a marker, so the earlier block survives', () => {
+    const nested = OUTCOME_BEGIN_MARKER.replace(' -->', `${OUTCOME_BEGIN_MARKER} -->`);
+    const rendered = renderOutcome(
+      {
+        kind: 'completed',
+        confirmation: 'confirmed',
+        proposal: [
+          { provider: 'Stripe', status: 'create' },
+          { provider: 'AWS', status: 'create' },
+        ],
+        results: [
+          { provider: 'Stripe', status: 'created', monitorId: 5 },
+          { provider: 'AWS', status: 'failed', error: { code: 'HTTP_500', message: nested } },
+        ],
+        blocked: null,
+      },
+      INVOCATION,
+    );
+    expect(rendered.join('\n').split(OUTCOME_BEGIN_MARKER)).toHaveLength(2);
+    expect(carryOverOutcome(`# Seed\n\n${rendered.join('\n')}\n`)).toEqual([
+      OUTCOME_BEGIN_MARKER,
+      `### Outcome of \`${INVOCATION.command} init\``,
+      '',
+      'Created: Stripe (monitor 5).',
+      OUTCOME_END_MARKER,
+    ]);
   });
 
   it('carries only the durable lines of an earlier block', () => {

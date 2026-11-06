@@ -172,9 +172,9 @@ function notCreatedReason(options: {
   return 'not confirmed';
 }
 
-/** Text from the API in the block: one line, no control characters, and never one of our markers. */
+/** Text from the API in the block: one line, no control characters, and no `<`, so no marker can form. */
 function blockText(text: string): string {
-  return plain(text).replaceAll(OUTCOME_BEGIN_MARKER, '').replaceAll(OUTCOME_END_MARKER, '');
+  return plain(text).replaceAll('<', '&lt;');
 }
 
 /** What the offer did, for the seed file: the agent must not create these again. */
