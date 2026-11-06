@@ -1,5 +1,6 @@
 import ky, { isHTTPError } from 'ky';
 import type { ExecutionEnvironment, InvocationMode } from '../lib/invocation.js';
+import { apiFailureFrom } from './errors.js';
 
 export interface ApiClientOptions {
   apiKey: string;
@@ -117,4 +118,23 @@ function hasLongRetryAfter(error: Error): boolean | undefined {
   const seconds = Number(retryAfter);
   const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now();
   return Number.isFinite(delay) && Math.max(0, delay) > MAX_RETRY_DELAY_MS ? true : undefined;
+}
+
+/**
+ * One JSON request that either returns the payload or throws an
+ * {@link ApiFailure}: a non-2xx response becomes the normalized API error, a
+ * transport error becomes `NETWORK_ERROR`.
+ */
+export async function requestJson(client: ApiClient, url: URL, method: string): Promise<unknown> {
+  let result: ApiResult;
+  try {
+    result = await client.request(url, {
+      headers: new Headers({ accept: 'application/json' }),
+      method,
+    });
+  } catch (error) {
+    throw apiFailureFrom(error);
+  }
+  if (!result.response.ok) throw apiFailureFrom(result.response.status, result.payload);
+  return result.payload;
 }
