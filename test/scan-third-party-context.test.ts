@@ -322,8 +322,18 @@ describe('formatThirdPartySection', () => {
     expect(skippedLine?.split(', ')).toHaveLength(21);
     expect(skippedLine).toContain('+5 more (framework or UI library)');
     expect(lines.at(-1)).toBe(
-      '- 601 other dependencies not in the vendor map, listed in the JSON output',
+      '- 601 other dependencies not in the vendor map, the first 500 listed in the JSON output',
     );
+  });
+
+  it('keeps a name that is skipped in one place and unmapped in another in both lists', () => {
+    const context = buildThirdPartyContext([
+      finding('shared', { outcome: 'skip', line: 1 }),
+      finding('shared', { outcome: 'unmapped', line: 2 }),
+    ]);
+    expect(context.totals).toEqual({ skipped: 1, unknown: 1 });
+    expect(context.skipped.map((mention) => mention.name)).toEqual(['shared']);
+    expect(context.unknown.map((mention) => mention.name)).toEqual(['shared']);
   });
 
   it('clips a long rendered item and never prints a backtick', () => {

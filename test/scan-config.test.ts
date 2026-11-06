@@ -270,6 +270,40 @@ describe('terraform', () => {
     ]);
   });
 
+  it('forgets a provider once its block closes, so a resource region never becomes its region', () => {
+    const contents = [
+      'provider "aws" {',
+      '  assume_role {',
+      '    region = "us-west-2"',
+      '  }',
+      '}',
+      'resource "aws_s3_bucket" "b" {',
+      '  region = "us-west-2"',
+      '}',
+      'region = "us-east-1"',
+      'provider "google" {}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['AWS', ''],
+      ['AWS', ''],
+      ['Google Cloud', ''],
+    ]);
+  });
+
+  it('keeps the region of an unknown provider block out of the file default', () => {
+    const contents = 'provider "awscc" {\n  region = "us-west-2"\n}\nprovider "google" {}\n';
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['Google Cloud', ''],
+    ]);
+  });
+
+  it('counts braces outside strings only when closing a provider block', () => {
+    const contents = 'provider "aws" {\n  alias = "}"\n  region = "eu-west-1"\n}\n';
+    expect(only(matchConfig({ path: 'main.tf', contents })).detail.region).toBe('eu-west-1');
+  });
+
   it('reports a resource only through a short service word, never the full type', () => {
     const contents = [
       'resource "aws_deadbeefcafe0123456789secrettoken" "x" {}',

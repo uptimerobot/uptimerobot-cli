@@ -50,8 +50,9 @@ export interface ThirdPartyContext {
   skipped: readonly ThirdPartyMention[];
   /**
    * Protocol clients, unmapped dependencies and hint-only providers. One
-   * entry per distinct unmapped name, so this is the JSON-only audit trail
-   * and can be long; the Markdown counts the unmapped names instead.
+   * entry per distinct name up to {@link MAX_MENTIONS}, so this is the
+   * JSON-only audit trail and can be long; the Markdown counts the unmapped
+   * names instead.
    */
   unknown: readonly ThirdPartyMention[];
 }
@@ -75,7 +76,11 @@ export function buildThirdPartyContext(findings: readonly ThirdPartyFinding[]): 
     if (bucket.has(finding.value)) continue;
     bucket.add(finding.value);
     if (bucket.size > MAX_MENTIONS) continue;
-    mentions.set(finding.value, { name: finding.value, reason, evidence: finding.evidence });
+    mentions.set(`${reason}:${finding.value}`, {
+      name: finding.value,
+      reason,
+      evidence: finding.evidence,
+    });
   }
 
   const candidates: ThirdPartyCandidate[] = [];
@@ -85,7 +90,11 @@ export function buildThirdPartyContext(findings: readonly ThirdPartyFinding[]): 
     if (vendorSignals.length === 0) {
       if (hint !== undefined && !seen.unknown.has(provider)) {
         seen.unknown.add(provider);
-        mentions.set(provider, { name: provider, reason: 'hint', evidence: hint.evidence });
+        mentions.set(`hint:${provider}`, {
+          name: provider,
+          reason: 'hint',
+          evidence: hint.evidence,
+        });
       }
       continue;
     }
@@ -222,8 +231,9 @@ export function formatThirdPartySection(context: ThirdPartyContext): string[] {
     lines.push(`- ${capped(names, MAX_NAMES_PER_LINE).join(', ')} (${REASON_LABELS[reason]})`);
   }
   if (unmapped > 0) {
+    const listed = unmapped > MAX_MENTIONS ? `the first ${MAX_MENTIONS} listed` : 'listed';
     lines.push(
-      `- ${unmapped} other ${unmapped === 1 ? 'dependency' : 'dependencies'} not in the vendor map, listed in the JSON output`,
+      `- ${unmapped} other ${unmapped === 1 ? 'dependency' : 'dependencies'} not in the vendor map, ${listed} in the JSON output`,
     );
   }
   return lines;
