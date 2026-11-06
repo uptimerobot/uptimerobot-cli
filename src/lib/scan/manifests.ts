@@ -79,7 +79,7 @@ const UNKNOWN_LINE = 1;
  * out of the report and the signal names the package alone. Both are capped
  * so a 100 KB string cannot become a 100 KB report line.
  */
-const DEPENDENCY_NAME = /^[A-Za-z0-9@._/!~[\]-]{1,200}$/;
+const DEPENDENCY_NAME = /^[A-Za-z0-9@._/!~[\],-]{1,200}$/;
 const DEPENDENCY_VERSION = /^[A-Za-z0-9.^~<>=!*|,+ -]{0,64}$/;
 
 function sanitized(dependency: Declared): Declared {
@@ -228,8 +228,9 @@ function keyLines(lines: readonly string[], scope: string): Map<string, number> 
   return found;
 }
 
+/** The name ends before a space, marker, comment, URL or operator; a `git+https://` or `./path` line never reads as a name. */
 const PIP_REQUIREMENT =
-  /^([A-Za-z0-9][A-Za-z0-9._-]*(?:\[[^\]]*\])?)\s*((?:[=!~<>]=?|===)\s*[^;#\s]+)?/;
+  /^([A-Za-z0-9][A-Za-z0-9._-]*(?:\[[^\]]*\])?)(?=$|[\s;#@=!~<>])\s*((?:[=!~<>]=?|===)\s*[^;#\s]+)?/;
 
 /** `requirements*.txt` or a `pyproject.toml`: one grammar for the requirement itself. */
 function parseRequirement(text: string, line: number, scope: string): Declared | undefined {
@@ -237,7 +238,7 @@ function parseRequirement(text: string, line: number, scope: string): Declared |
   const match = PIP_REQUIREMENT.exec(text.trim());
   if (match === null || match[1] === undefined) return undefined;
   return {
-    name: match[1],
+    name: match[1].replaceAll(/\s+/g, ''),
     version: (match[2] ?? '').replace(/^==/, '').replaceAll(/\s+/g, ''),
     line,
     scope,

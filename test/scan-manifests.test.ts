@@ -29,11 +29,15 @@ const REQUIREMENTS = [
   'boto3==1.35.80',
   'django-storages==1.14.4',
   'sendgrid==6.11.0',
-  'sentry-sdk==2.19.2',
+  'sentry-sdk[django, celery]==2.19.2',
   'celery==5.4.0',
   'redis>=5.2.1',
   'psycopg[binary]==3.2.3',
   '-r base.txt',
+  'git+https://github.com/org/repo.git#egg=stripe',
+  'https://host.example/stripe-1.whl',
+  'file:///x/stripe',
+  './vendor/stripe',
   '# stripe is only mentioned in this comment',
   '',
 ].join('\n');
@@ -143,7 +147,10 @@ describe('matchManifest on requirements.txt', () => {
       detail: { signal: 'boto3@1.35.80', class: 'runtime' },
     });
     expect(byProvider(findings, 'SendGrid')?.detail.signal).toBe('sendgrid@6.11.0');
-    expect(byProvider(findings, 'Sentry')?.evidence.line).toBe(5);
+    expect(byProvider(findings, 'Sentry')).toMatchObject({
+      evidence: { line: 5 },
+      detail: { signal: 'sentry-sdk[django,celery]@2.19.2' },
+    });
   });
 
   it('keeps comments, includes and protocol clients out of the vendor list', () => {
@@ -155,6 +162,12 @@ describe('matchManifest on requirements.txt', () => {
       'protocol-client',
     );
     expect(findings.find((finding) => finding.value === 'django')?.outcome).toBe('skip');
+  });
+
+  it('reports nothing for URL, path and include lines', () => {
+    const values = findings.map((finding) => finding.value);
+    expect(values.filter((value) => /^(git|https?|file|\.|-)/.test(value))).toEqual([]);
+    expect(byProvider(findings, 'Stripe')).toBeUndefined();
   });
 });
 
