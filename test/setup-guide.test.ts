@@ -205,8 +205,16 @@ describe('renderSetupGuide', () => {
     expect(prose(guide)).toContain(prose('Then stop and wait for the reply'));
     expect(prose(guide)).toContain(prose('if the set changes after the answer, ask again'));
     expect(prose(guide)).toContain(prose('When nothing is creatable it exits 0'));
-    expect(prose(guide)).toContain(prose('`TRACKED_SET_PARTIAL` means nothing was created'));
+    expect(guide).not.toContain('TRACKED_SET_PARTIAL');
+    expect(guide).not.toContain('`null` if the API returned none');
+    expect(prose(guide)).toContain(prose('`CATALOG_UNRESOLVED` means a selected provider'));
+    expect(prose(guide)).toContain(prose('status `unknown` means the API never said'));
     expect(prose(guide)).toContain(prose('never work around a failed or blocked run'));
+    expect(prose(guide)).toContain(
+      prose(
+        'Whatever Step 2 ends in, created, partly created, unresolved or over allowance, go on to Step 3',
+      ),
+    );
     expect(prose(guide)).toContain(
       prose('`--only <provider>` or `--skip <provider>` to match the answer'),
     );
