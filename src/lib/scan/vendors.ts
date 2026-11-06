@@ -178,13 +178,15 @@ export const VENDORS: readonly VendorEntry[] = [
   ]),
   // Messaging
   runtime('Twilio', [
-    pkg('twilio', ['npm', 'pip', 'gem']),
+    pkg('twilio', ['npm', 'pip']),
+    pkg('twilio-ruby', ['gem']),
     pkg('github.com/twilio/twilio-go*', ['go']),
     host('api.twilio.com'),
   ]),
   runtime('SendGrid', [
     pkg('@sendgrid/*', ['npm']),
-    pkg('sendgrid', ['pip', 'gem']),
+    pkg('sendgrid', ['pip']),
+    pkg('sendgrid-ruby', ['gem']),
     host('api.sendgrid.com'),
   ]),
   runtime('Mailgun', [

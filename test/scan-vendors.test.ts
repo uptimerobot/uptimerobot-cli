@@ -141,6 +141,9 @@ describe('matchPackage', () => {
     });
     expect(classifyPackage('npm', 'left-pad')).toEqual({ outcome: 'unmapped', name: 'left-pad' });
     expect(classifyPackage('gem', 'stripe')).toMatchObject({ outcome: 'vendor', name: 'stripe' });
+    expect(classifyPackage('gem', 'twilio-ruby')).toMatchObject({ outcome: 'vendor' });
+    expect(classifyPackage('gem', 'sendgrid-ruby')).toMatchObject({ outcome: 'vendor' });
+    expect(classifyPackage('gem', 'twilio')).toEqual({ outcome: 'unmapped', name: 'twilio' });
   });
 
   it('normalizes catalog names the way the resolver compares them', () => {

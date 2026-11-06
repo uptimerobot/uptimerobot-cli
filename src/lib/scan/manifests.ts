@@ -216,7 +216,8 @@ const JSON_KEY = /"((?:[^"\\]|\\.)*)"\s*:/g;
  */
 function keyLines(lines: readonly string[], scope: string): Map<string, number> {
   const found = new Map<string, number>();
-  const start = lines.findIndex((line) => line.includes(`"${scope}"`));
+  const header = new RegExp(`(?:^|[{,])\\s*"${scope}"\\s*:`);
+  const start = lines.findIndex((line) => header.test(line));
   if (start < 0) return found;
   for (let index = start; index < lines.length; index += 1) {
     for (const match of (lines[index] ?? '').matchAll(JSON_KEY)) {
@@ -446,16 +447,18 @@ const CARGO_TABLE =
 
 /**
  * The dependency a key in a dependency table names: the key itself in
- * `[table]`, or the subtable's name when the key is `version` in
- * `[table.name]`; any other key of a subtable (`features`, `optional`) is not
- * a dependency.
+ * `[table]`, or the subtable's name when the key is `version` or `workspace`
+ * in `[table.name]`; any other key of a subtable (`features`, `optional`) is
+ * not a dependency.
  */
+const SUBTABLE_DEPENDENCY_KEYS = new Set(['version', 'workspace']);
+
 function tableDependency(
   assignment: TomlAssignment,
   table: RegExpExecArray,
 ): Pick<Declared, 'name' | 'version' | 'line'> | undefined {
   const subtable = table.groups?.subtable;
-  if (subtable !== undefined && assignment.key !== 'version') return undefined;
+  if (subtable !== undefined && !SUBTABLE_DEPENDENCY_KEYS.has(assignment.key)) return undefined;
   return {
     name: subtable ?? assignment.key,
     version: versionOf(assignment),
@@ -468,7 +471,7 @@ function parseGoMod(contents: string): Declared[] {
   const declared: Declared[] = [];
   let inBlock = false;
   contents.split('\n').forEach((raw, index) => {
-    const text = raw.replace(/\/\/.*$/, '').trim();
+    const text = raw.replace(/\/\/.*$/s, '').trim();
     if (text === 'require (') {
       inBlock = true;
       return;

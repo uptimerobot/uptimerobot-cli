@@ -320,6 +320,12 @@ describe('matchManifest on go.mod', () => {
     expect(byProvider(findings, 'Twilio')?.evidence.line).toBe(8);
   });
 
+  it('strips a comment on a CRLF line instead of reading it as a module', () => {
+    const crlf = matchManifest({ path: 'go.mod', contents: GO_MOD.replaceAll('\n', '\r\n') });
+    expect(crlf.map((finding) => finding.value)).toEqual(findings.map((finding) => finding.value));
+    expect(crlf.some((finding) => finding.value.startsWith('//'))).toBe(false);
+  });
+
   it('does not report the module itself, a commented-out line, or a build-time class', () => {
     const values = findings.map((finding) => finding.value);
     expect(values).not.toContain('github.com/acme/billing');
@@ -389,6 +395,53 @@ describe('matchManifest on Gemfile, composer.json and Cargo.toml', () => {
     expect(byProvider(findings, 'AWS')).toBeDefined();
     expect(byProvider(findings, 'OpenAI')).toBeUndefined();
     expect(findings.map((finding) => finding.value)).not.toContain('name');
+  });
+
+  it('reads a Cargo dependency inherited from the workspace', () => {
+    const findings = matchManifest({
+      path: 'Cargo.toml',
+      contents: [
+        '[dependencies]',
+        'async-stripe.workspace = true',
+        '',
+        '[dependencies.aws-sdk-s3]',
+        'workspace = true',
+        'features = ["rt-tokio"]',
+        '',
+        '[dependencies.openai]',
+        'features = ["stream"]',
+        '',
+      ].join('\n'),
+    });
+    expect(byProvider(findings, 'Stripe')).toMatchObject({
+      evidence: { line: 2 },
+      detail: { signal: 'async-stripe' },
+    });
+    expect(byProvider(findings, 'AWS')).toMatchObject({
+      evidence: { line: 5 },
+      detail: { signal: 'aws-sdk-s3' },
+    });
+    expect(byProvider(findings, 'OpenAI')).toBeUndefined();
+  });
+
+  it('anchors a package.json section to its key, not to the word inside a value', () => {
+    const findings = matchManifest({
+      path: 'package.json',
+      contents: [
+        '{',
+        '  "keywords": ["dependencies"],',
+        '  "resolutions": { "stripe": "16.0.0" },',
+        '  "dependencies": {',
+        '    "stripe": "17.4.0"',
+        '  }',
+        '}',
+        '',
+      ].join('\n'),
+    });
+    expect(byProvider(findings, 'Stripe')).toMatchObject({
+      evidence: { line: 5 },
+      detail: { signal: 'stripe@17.4.0' },
+    });
   });
 
   it('keeps credentials, keys and control characters out of the report', () => {
