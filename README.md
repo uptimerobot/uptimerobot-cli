@@ -114,19 +114,19 @@ uptimerobot monitors delete 797054213 --confirm
 uptimerobot init
 ```
 
-The scan itself is pattern matching over the working tree. It reaches no network, runs nothing, and never reads `.env` values. Its output sits between `<!-- uptimerobot:scan:begin ... -->` markers, so a rerun replaces only what a previous run wrote and refuses to overwrite a file it did not write.
+The scan itself is pattern matching over the working tree. It reaches no network, runs nothing, and never reads `.env` values. Its output starts with an `<!-- uptimerobot:scan:begin ... -->` marker. A rerun rewrites the whole of `uptimerobot-scan.md` when that marker is there, your own edits to it included, and refuses to overwrite a file that does not start with it, so keep notes elsewhere.
 
-| Flag               | Effect                                                                       |
-| ------------------ | ---------------------------------------------------------------------------- |
-| `--api-key <key>`  | Key for this run, ahead of `UPTIMEROBOT_API_KEY` and the stored login        |
-| `--target <name>`  | Agent to set up: `claude-code`, `codex`, `cursor`, `opencode`, or `gemini`   |
-| `--no-agent`       | Scan, offer third-party services, write the seed context; skip agent setup   |
-| `--no-third-party` | Do not offer to create third-party services for the providers the scan found |
-| `--clean`          | Remove what a previous run planted, then exit                                |
-| `--yes`            | Never prompt; run non-interactively                                          |
-| `--json`           | Structured JSON, which also implies `--yes`                                  |
+| Flag               | Effect                                                                                                                                         |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--api-key <key>`  | Key for this run, ahead of `UPTIMEROBOT_API_KEY` and the stored login                                                                          |
+| `--target <name>`  | Agent to set up: `claude-code`, `codex`, `cursor`, `opencode`, or `gemini`                                                                     |
+| `--no-agent`       | Scan, offer third-party services, write the seed context; skip agent setup                                                                     |
+| `--no-third-party` | Skip `init`'s own offer to create third-party services; the setup guide it writes still tells the agent to propose them through `scan --apply` |
+| `--clean`          | Remove what a previous run planted, then exit                                                                                                  |
+| `--yes`            | Never prompt; run non-interactively                                                                                                            |
+| `--json`           | Structured JSON, which also implies `--yes`                                                                                                    |
 
-`--clean` is terminal, cannot be combined with `--target` or `--no-agent`, and runs before the authentication check because it only removes local files — so it works logged out. Without `--target`, a non-interactive run that detects no agent, or more than one, fails and lists the candidates rather than guessing. Note that `--target` names the agent being set up, while `--agent` marks the invocation itself as agent-driven; they are different flags and can be passed together. `uptimerobot init --help` carries the full precedence rules.
+`--clean` is terminal, cannot be combined with `--target` or `--no-agent`, and runs before the authentication check because it only removes local files — so it works logged out. Without `--target`, a non-interactive run sets up the one agent it detects, or Claude Code when it is among several; it fails and lists the candidates when it detects none, or several without Claude Code. Note that `--target` names the agent being set up, while `--agent` marks the invocation itself as agent-driven; they are different flags and can be passed together. `uptimerobot init --help` carries the full precedence rules.
 
 Only Claude Code has a confirmed first-party install path today — `git clone https://github.com/uptimerobot/ai.git` followed by `claude --plugin-dir ./ai`, which loads the plugin for that session only, since the marketplace listing has not shipped. Codex, Cursor, Gemini, and OpenCode instead get a marked, idempotent UptimeRobot section written to `AGENTS.md` at the project root. Nothing is written to your home directory or to any global agent configuration.
 
@@ -188,7 +188,7 @@ The JSON output carries the same data under `thirdParty` (`candidates`, `skipped
 
 ```sh
 uptimerobot scan --apply                              # proposal, question, creates on yes
-uptimerobot scan --apply --json --agent               # proposal only; exits 2 with CONFIRMATION_REQUIRED when there is something to create, else 0
+uptimerobot scan --apply --json --agent               # proposal only; exits 2 with CONFIRMATION_REQUIRED when there is something to create, 1 with CATALOG_UNRESOLVED when a lookup failed, else 0
 uptimerobot scan --apply --confirm --only Stripe --only Vercel --json
 uptimerobot scan --apply --confirm --skip Sentry
 uptimerobot scan --apply --confirm --only Vercel=862  # settles an ambiguous row
@@ -201,7 +201,7 @@ Each proposal row ends in one status: `create`, `already-tracked`, `not-in-catal
 
 Creates run one at a time in proposal order and stop at the first failure, which is never retried. A create the API never answered (no response, or a server error) is reported as outcome unknown rather than as not created, with no command to repeat it by hand: re-run `scan --apply` to see whether it exists. The create sends only a catalog id, and the search sends only the provider's name from the built-in vendor list; no file content, path or version from the repository reaches a request, but which providers the repository depends on is disclosed to the API through the searches it makes.
 
-Exit codes: 0 when the confirmed set was created in full or there was nothing to create; 1 with `CATALOG_UNRESOLVED` when a selected provider could not be looked up, after any creates that did resolve; 2 with `CONFIRMATION_REQUIRED` when confirmation is absent or declined, or with `INVALID_INPUT`; the authentication code when no key resolves; the API's mapped exit code when a create fails. The `--json` document carries the proposal rows, `allowance` (`used` and `limit`, each null when the account did not report them, and `proposed`), `tracked` (`providerIds`, `partial`), `confirmation` (`required`, `declined`, `confirmed`, `not-needed`, or `blocked` when the input was refused) and `results[]` (`created` with `monitorId`; `unknown` or `failed` with the `error`).
+Exit codes: 0 when the confirmed set was created in full or there was nothing to create; 1 with `CATALOG_UNRESOLVED` when a selected provider could not be looked up, after any creates that did resolve; 2 with `CONFIRMATION_REQUIRED` when confirmation is absent or declined, or with `INVALID_INPUT`; the authentication code when no key resolves; the API's mapped exit code when a create fails. The `--json` document carries the proposal rows, `allowance` (`used` and `limit`, each null when the account did not report them, and `proposed`), `tracked` (`providerIds`, `partial`), `confirmation` (`required`, `declined`, `confirmed`, `not-needed`, or `blocked` when an `--only <provider>=<id>` named an id the search did not return) and `results[]` (`created` with `monitorId`; `unknown` or `failed` with the `error`). A malformed or unknown `--only` or `--skip` name fails before any document is written: the error envelope goes to stderr and stdout stays empty.
 
 At an interactive terminal `uptimerobot init` offers the runtime providers it can match before it starts the agent, when the proposal has something to create and `uptimerobot-scan.md` is its own to write, and records the outcome in that file. `--no-third-party` skips the offer; `--yes`, `--json`, an agent or a pipe also skip it and the handoff points at `scan --apply`. The setup guide tells the agent to run `scan --apply --json --agent`, show the proposal, and pass `--confirm` only after the user says yes in the conversation.
 
