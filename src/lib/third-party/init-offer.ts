@@ -39,7 +39,7 @@ export type OfferOutcome =
       confirmation: Confirmation;
       proposal: readonly OfferRow[];
       results: readonly CreateResult[];
-      /** Why nothing was created although confirmed (a partial tracked set), else null. */
+      /** Why the input was refused before anyone was asked (`INVALID_INPUT`), else null. */
       blocked: { code: string; message: string } | null;
     };
 
@@ -192,25 +192,35 @@ export function renderOutcome(outcome: OfferOutcome, invocation: CliInvocation):
     ];
   }
   const { confirmation, proposal, results, blocked } = outcome;
-  const byResult = (status: CreateResult['status']): string[] =>
-    results.filter((item) => item.status === status).map((item) => item.provider);
   const byRow = (status: ResolvedCandidate['status']): string[] =>
     proposal.filter((row) => row.status === status).map((row) => row.provider);
+  const withError = (status: 'failed' | 'unknown'): string[] =>
+    results.flatMap((item) =>
+      item.status === status ? [`${item.provider} (${blockText(item.error.message)})`] : [],
+    );
   const created = results.flatMap((item) =>
-    item.status === 'created' ? [`${item.provider} (monitor ${item.monitorId ?? 'unknown'})`] : [],
+    item.status === 'created' ? [`${item.provider} (monitor ${item.monitorId})`] : [],
   );
-  const failed = results.flatMap((item) =>
-    item.status === 'failed' ? [`${item.provider} (${blockText(item.error.message)})`] : [],
-  );
+  const unknown = withError('unknown');
+  const failed = withError('failed');
   const attempted = new Set(results.map((item) => item.provider));
   const notAttempted = byRow('create').filter((provider) => !attempted.has(provider));
   if (confirmation !== 'confirmed' || blocked !== null) lines.push('Nothing was created.');
   if (created.length > 0) lines.push(`Created: ${created.join(', ')}.`);
-  const tracked = [...byRow('already-tracked'), ...byResult('already-tracked')];
+  const tracked = byRow('already-tracked');
   if (tracked.length > 0) lines.push(`Already tracked: ${tracked.join(', ')}.`);
+  if (unknown.length > 0) {
+    lines.push(
+      `Outcome unknown, the API may have created it, run \`${formatInvocation(invocation, 'scan --apply')}\` to check: ${unknown.join(', ')}.`,
+    );
+  }
   if (failed.length > 0) lines.push(`Not created: ${failed.join(', ')}.`);
   if (notAttempted.length > 0) {
-    const reason = notCreatedReason({ blocked, confirmation, failed: failed.length > 0 });
+    const reason = notCreatedReason({
+      blocked,
+      confirmation,
+      failed: failed.length > 0 || unknown.length > 0,
+    });
     lines.push(`Not created: ${notAttempted.join(', ')} (${reason}).`);
   }
   const missing = byRow('not-in-catalog');

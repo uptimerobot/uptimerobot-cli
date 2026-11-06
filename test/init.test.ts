@@ -1064,7 +1064,7 @@ describe('init', () => {
         join(repository, 'package.json'),
         '{ "dependencies": { "stripe": "17.4.0", "resend": "4.0.1" } }',
       );
-      stubApi({ createStatus: 500 });
+      stubApi({ createStatus: 422 });
       const { requestConfirmation } = await import('../src/lib/invocation.js');
       vi.mocked(requestConfirmation).mockResolvedValue(true);
       const restoreTerminal = stubTerminal();
@@ -1082,7 +1082,7 @@ describe('init', () => {
       }
     });
 
-    it('creates nothing when the tracked set is partial, and says why', async () => {
+    it('creates with a partial tracked set, since a repeat create is answered with the existing monitor', async () => {
       keyring.set(STORED_CREDENTIAL, 'u123-stored');
       await writeManifest();
       const api = stubApi({ loop: true });
@@ -1094,10 +1094,16 @@ describe('init', () => {
 
         const output = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
 
-        expect(output).toMatchObject({ thirdParty: { blocked: { code: 'TRACKED_SET_PARTIAL' } } });
-        expect(api.posts).toEqual([]);
+        expect(output).toMatchObject({
+          thirdParty: {
+            blocked: null,
+            results: [{ provider: 'Stripe', status: 'created', monitorId: 5001 }],
+          },
+        });
+        expect(api.posts).toHaveLength(1);
         const content = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
-        expect(content).toContain('Not created: Stripe (TRACKED_SET_PARTIAL).');
+        expect(content).toContain('Created: Stripe (monitor 5001).');
+        expect(content).not.toContain('TRACKED_SET_PARTIAL');
       } finally {
         restoreTerminal();
       }

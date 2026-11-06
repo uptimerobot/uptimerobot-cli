@@ -193,7 +193,7 @@ describe('the outcome block', () => {
 
   it('names the reason a confirmed row was not created', () => {
     const outcome = (
-      confirmation: 'confirmed' | 'declined' | 'not-needed',
+      confirmation: 'confirmed' | 'declined' | 'not-needed' | 'blocked',
       blocked: { code: string; message: string } | null,
     ) =>
       renderOutcome(
@@ -207,9 +207,34 @@ describe('the outcome block', () => {
         INVOCATION,
       ).join('\n');
     expect(outcome('declined', null)).toContain('Not created: Stripe (declined at the prompt).');
-    expect(outcome('confirmed', { code: 'TRACKED_SET_PARTIAL', message: 'x' })).toContain(
-      'Not created: Stripe (TRACKED_SET_PARTIAL).',
+    expect(outcome('blocked', { code: 'INVALID_INPUT', message: 'x' })).toContain(
+      'Not created: Stripe (INVALID_INPUT).',
     );
     expect(outcome('not-needed', null)).toContain('Not created: Stripe (not confirmed).');
+  });
+
+  it('keeps a create the API may have made apart from the ones it refused', () => {
+    const lines = renderOutcome(
+      {
+        kind: 'completed',
+        confirmation: 'confirmed',
+        proposal: [
+          { provider: 'Stripe', status: 'create' },
+          { provider: 'AWS', status: 'create' },
+        ],
+        results: [
+          { provider: 'Stripe', status: 'unknown', error: { code: 'HTTP_504', message: 'gone <' } },
+        ],
+        blocked: null,
+      },
+      INVOCATION,
+    );
+    expect(lines).toContain(
+      'Outcome unknown, the API may have created it, run `uptimerobot scan --apply` to check: Stripe (gone &lt;).',
+    );
+    expect(lines).toContain('Not created: AWS (not attempted after the failure above).');
+    expect(lines.join('\n')).not.toContain('Not created: Stripe');
+    const earlier = `${OURS}${OUTCOME_BEGIN_MARKER}\nOutcome unknown, the API may have created it, run \`uptimerobot scan --apply\` to check: Stripe (gone).\n${OUTCOME_END_MARKER}\n`;
+    expect(carryOverOutcome(earlier)).toEqual([]);
   });
 });
