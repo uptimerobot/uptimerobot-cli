@@ -216,8 +216,11 @@ describe('renderSetupGuide', () => {
       ),
     );
     expect(prose(guide)).toContain(
-      prose('`--only <provider>` or `--skip <provider>` to match the answer'),
+      prose(
+        'one `--only <provider>=<id>` per approved row, with the catalog id from its `proposal[]` row',
+      ),
     );
+    expect(prose(guide)).toContain(prose('Never confirm with `--skip`'));
     expect(prose(guide)).toContain(prose('need no base URL'));
     expect(prose(guide)).toContain(prose('**Third-party services** — one row per service created'));
     expect(prose(guide)).toContain(prose('Never paste the `scan --apply` JSON'));
