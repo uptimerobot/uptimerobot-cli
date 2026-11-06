@@ -110,7 +110,9 @@ const SERVERLESS_PROVIDERS: ReadonlyMap<string, string> = new Map([
 const HEROKU = VENDORS.find((entry) => entry.catalogName === 'Heroku');
 
 /** The only shapes that may reach the report: an AWS or Google style region and a short service word. */
-const REGION = /^[a-z]{2,}(?:-[a-z]+)+-?\d{1,2}$/;
+/** AWS (`eu-central-1`, `us-gov-west-1`) and Google Cloud (`europe-west1`) region names; anything else is free text. */
+const REGION =
+  /^(?:(?:af|ap|ca|cn|eu|il|me|mx|sa|us)(?:-(?:gov|iso[a-z]?))?-[a-z]{3,12}-\d{1,2}|(?:africa|asia|australia|europe|me|northamerica|southamerica|us)-[a-z]{3,12}\d{1,2})$/;
 const SERVICE_WORD = /^[a-z][a-z0-9]{0,15}$/;
 /** A hostname before lowercasing: ASCII only, DNS length, so a Kelvin sign never folds to `k`. */
 const HOST = /^[A-Za-z0-9.-]{1,253}$/;
@@ -217,6 +219,20 @@ function serverless(name: string, contents: string): Match[] {
   return [];
 }
 
+/** Index of the first `/*` outside a double-quoted string, or -1. */
+function blockCommentStart(line: string): number {
+  let inString = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (inString) {
+      if (char === '\\') index += 1;
+      else if (char === '"') inString = false;
+    } else if (char === '"') inString = true;
+    else if (char === '/' && line[index + 1] === '*') return index;
+  }
+  return -1;
+}
+
 function terraform(contents: string): Match[] {
   const matches: Match[] = [];
   let region = '';
@@ -227,7 +243,7 @@ function terraform(contents: string): Match[] {
       continue;
     }
     if (/^\s*(?:#|\/\/)/.test(raw)) continue;
-    const opener = raw.indexOf('/*');
+    const opener = blockCommentStart(raw);
     const line = (opener === -1 ? raw : raw.slice(0, opener)).trimStart();
     if (opener !== -1) inBlockComment = !raw.includes('*/', opener);
     const provider = TF_PROVIDER.exec(line)?.[1];

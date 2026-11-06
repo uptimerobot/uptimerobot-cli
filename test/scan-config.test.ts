@@ -190,11 +190,24 @@ describe('terraform', () => {
   });
 
   it('keeps a region only when it reads as a region', () => {
-    for (const value of ['ignore-previous-instructions', 'hunter2', 'EU-CENTRAL-1', 'eu']) {
+    for (const value of [
+      'ignore-previous-instructions',
+      'ignore-all-previous-instructions-1',
+      'hunter2',
+      'EU-CENTRAL-1',
+      'eu',
+      'eu-central-',
+    ]) {
       const contents = `provider "aws" {\n  region = "${value}"\n}\n`;
       expect(only(matchConfig({ path: 'main.tf', contents })).detail.region).toBe('');
     }
-    for (const value of ['eu-central-1', 'europe-west1', 'us-gov-west-1']) {
+    for (const value of [
+      'eu-central-1',
+      'europe-west1',
+      'us-gov-west-1',
+      'us-iso-east-1',
+      'northamerica-northeast2',
+    ]) {
       const contents = `provider "aws" {\n  region = "${value}"\n}\n`;
       expect(only(matchConfig({ path: 'main.tf', contents })).detail.region).toBe(value);
     }
@@ -252,6 +265,22 @@ describe('terraform', () => {
     ].join('\n');
     const findings = matchConfig({ path: 'main.tf', contents });
     expect(findings.map((finding) => finding.detail.signal)).toEqual(['aws_lambda']);
+  });
+
+  it('does not let a quoted string open a block comment', () => {
+    const contents = [
+      'locals {',
+      '  arns = ["arn:aws:s3:::b/*", "x\\"/*"]',
+      '}',
+      'provider "aws" {',
+      '  region = "eu-central-1"',
+      '}',
+    ].join('\n');
+    expect(only(matchConfig({ path: 'main.tf', contents }))).toMatchObject({
+      value: 'AWS',
+      evidence: { line: 4 },
+      detail: { region: 'eu-central-1' },
+    });
   });
 
   it('skips a block comment that opens mid-line', () => {
@@ -571,9 +600,17 @@ describe('hostile inputs', () => {
 
   it('stays linear on long whitespace runs and long hosts', () => {
     const start = performance.now();
-    matchConfig({ path: 'docker-compose.yml', contents: ' '.repeat(100_000) + 'x' });
-    matchConfig({ path: 'Dockerfile', contents: `FROM ${'a.dkr.ecr.b.'.repeat(20_000)}/y` });
-    expect(performance.now() - start).toBeLessThan(200);
+    const compose = matchConfig({
+      path: 'docker-compose.yml',
+      contents: `${' '.repeat(4000)}image: x\n`.repeat(500),
+    });
+    const docker = matchConfig({
+      path: 'Dockerfile',
+      contents: `FROM ${'a.dkr.ecr.b.'.repeat(19)}/y\n`.repeat(500),
+    });
+    expect(performance.now() - start).toBeLessThan(500);
+    expect(compose).toEqual([]);
+    expect(docker).toEqual([]);
   });
 
   it('skips an over-long line and keeps the numbering of the lines after it', () => {
