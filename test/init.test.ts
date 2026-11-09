@@ -152,6 +152,23 @@ describe('init', () => {
     expect(vi.mocked(detectAgentTargets)).not.toHaveBeenCalled();
   });
 
+  it('rejects an invalid UPTIMEROBOT_DEV_API_URL as input, not as a crash', async () => {
+    vi.stubEnv('UPTIMEROBOT_API_KEY', 'u123-from-environment');
+    vi.stubEnv('UPTIMEROBOT_DEV_API_URL', 'not a url');
+    const { default: Init } = await import('../src/commands/init.js');
+
+    await expect(Init.run(['--json'], { root: projectRoot })).rejects.toMatchObject({
+      cliError: {
+        code: 'INVALID_INPUT',
+        expected: 'an absolute URL',
+        message: 'UPTIMEROBOT_DEV_API_URL is not a valid URL.',
+        path: 'UPTIMEROBOT_DEV_API_URL',
+      },
+      oclif: { exit: 2 },
+    });
+    expect(vi.mocked(detectAgentTargets)).not.toHaveBeenCalled();
+  });
+
   it('accepts UPTIMEROBOT_API_KEY instead of a stored credential', async () => {
     vi.stubEnv('UPTIMEROBOT_API_KEY', 'u123-from-environment');
     vi.mocked(detectAgentTargets).mockResolvedValue(['codex']);

@@ -13,7 +13,12 @@ import { renderSetupGuide } from '../lib/agent-setup/setup-guide.js';
 import { AGENT_SETUP_TAG } from '../lib/agent-setup/tag.js';
 import type { AgentTarget } from '../lib/agent-targets.js';
 import { AGENT_TARGETS, DEFAULT_AGENT_TARGET, detectAgentTargets } from '../lib/agent-targets.js';
-import { type ApiAccess, AuthenticationError, resolveApiAccess } from '../lib/auth.js';
+import {
+  type ApiAccess,
+  AuthenticationError,
+  InvalidApiUrlError,
+  resolveApiAccess,
+} from '../lib/auth.js';
 import { BaseCommand } from '../lib/base-command.js';
 import type { SelectionChoice } from '../lib/invocation.js';
 import type { InvocationMode } from '../lib/invocation.js';
@@ -224,6 +229,7 @@ Precedence:
       });
     } catch (error) {
       if (error instanceof AuthenticationError) return this.failAuthentication(error);
+      if (error instanceof InvalidApiUrlError) return this.fail(error.cliError, error.exitCode);
       throw error;
     }
 

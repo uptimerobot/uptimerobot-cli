@@ -2,7 +2,12 @@ import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Args, Flags } from '@oclif/core';
 import { ApiFailure } from '../api/errors.js';
-import { type ApiAccess, AuthenticationError, resolveApiAccess } from '../lib/auth.js';
+import {
+  type ApiAccess,
+  AuthenticationError,
+  InvalidApiUrlError,
+  resolveApiAccess,
+} from '../lib/auth.js';
 import { BaseCommand } from '../lib/base-command.js';
 import {
   type InvocationMode,
@@ -166,17 +171,7 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
       if (error instanceof AuthenticationError) {
         return this.fail({ code: error.code, message: error.message }, error.exitCode);
       }
-      if (error instanceof TypeError && error.message.includes('Invalid URL')) {
-        return this.fail(
-          {
-            code: 'INVALID_INPUT',
-            expected: 'an absolute URL',
-            message: 'UPTIMEROBOT_DEV_API_URL is not a valid URL.',
-            path: 'UPTIMEROBOT_DEV_API_URL',
-          },
-          2,
-        );
-      }
+      if (error instanceof InvalidApiUrlError) return this.fail(error.cliError, error.exitCode);
       throw error;
     }
   }

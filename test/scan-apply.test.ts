@@ -727,6 +727,26 @@ describe('uptimerobot scan --apply', () => {
     expect(posts(stub)).toEqual([]);
   });
 
+  it('rejects an invalid UPTIMEROBOT_DEV_API_URL before any request', async () => {
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--json'], {
+      UPTIMEROBOT_AGENT: '1',
+      UPTIMEROBOT_API_KEY: 'u123-key',
+      UPTIMEROBOT_DEV_API_URL: 'not a url',
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      error: {
+        code: 'INVALID_INPUT',
+        expected: 'an absolute URL',
+        message: 'UPTIMEROBOT_DEV_API_URL is not a valid URL.',
+        path: 'UPTIMEROBOT_DEV_API_URL',
+      },
+    });
+  });
+
   it('fails before any request when no credential resolves', async () => {
     const stub = await startStub();
     const root = await writeRepository(REPOSITORY);
