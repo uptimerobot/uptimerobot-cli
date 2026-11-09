@@ -68,7 +68,9 @@ export function buildThirdPartyContext(findings: readonly ThirdPartyFinding[]): 
   const seen = { skipped: new Set<string>(), unknown: new Set<string>() };
   for (const finding of findings) {
     if (finding.outcome === 'vendor' || finding.outcome === 'hint') {
-      groups.set(finding.value, [...(groups.get(finding.value) ?? []), finding]);
+      const group = groups.get(finding.value);
+      if (group === undefined) groups.set(finding.value, [finding]);
+      else group.push(finding);
       continue;
     }
     const reason = finding.outcome === 'skip' ? 'framework' : finding.outcome;

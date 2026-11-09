@@ -43,9 +43,10 @@ export function repoRelativePath(repoRoot: string, absolute: string): string {
 }
 
 /**
- * Whether a path or name holds a control character, DEL, a backslash or a
- * Unicode format character (bidi override, zero-width space): such a name
- * never reaches a finding, an app or a report line.
+ * Whether a path or name holds a control character (C0, DEL or C1), a
+ * backslash, a Unicode line or paragraph separator, or a format character
+ * (bidi override, zero-width space): such a name never reaches a finding, an
+ * app or a report line.
  */
 export function hasUnsafeCharacters(text: string): boolean {
   for (const character of text) {
@@ -56,4 +57,4 @@ export function hasUnsafeCharacters(text: string): boolean {
   return false;
 }
 
-const FORMAT_CHARACTER = /\p{Cf}/u;
+const FORMAT_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;

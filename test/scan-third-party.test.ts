@@ -13,16 +13,26 @@ import {
  * about reads, so it is asserted against the reads themselves.
  */
 const openedFiles = vi.hoisted(() => [] as string[]);
+/** Runs after each directory listing, so a test can swap an entry between the listing and its use. */
+const afterListing = vi.hoisted(() => ({
+  hook: undefined as undefined | ((directory: string) => Promise<void>),
+}));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs/promises')>();
   const readFile = original.readFile as (path: unknown, options: unknown) => Promise<unknown>;
+  const readdir = original.readdir as (path: unknown, options: unknown) => Promise<unknown>;
   return {
     ...original,
     default: original,
     readFile: (path: unknown, options: unknown) => {
       openedFiles.push(String(path));
       return readFile(path, options);
+    },
+    readdir: async (path: unknown, options: unknown) => {
+      const entries = await readdir(path, options);
+      await afterListing.hook?.(String(path));
+      return entries;
     },
   };
 });
@@ -44,6 +54,7 @@ async function writeRepository(files: RepositoryFixture): Promise<string> {
 
 afterEach(async () => {
   openedFiles.length = 0;
+  afterListing.hook = undefined;
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
 
@@ -253,6 +264,54 @@ describe('scanThirdParty', () => {
     });
     const findings = await scanThirdParty(root);
     expect(summarize(findings)).toEqual(['vendor Resend npm ok/package.json:1 app=ok resend@1']);
+  });
+
+  it('rejects C1 controls and Unicode line separators in a name, not only C0 and format characters', async () => {
+    const root = await writeRepository({
+      'csi\u009b/package.json': '{ "dependencies": { "stripe": "1" } }',
+      'nel\u0085/fly.toml': '',
+      'ls\u2028/vercel.json': '{}',
+      'ps\u2029/package.json': '{ "dependencies": { "resend": "1" } }',
+      'ok/package.json': '{ "dependencies": { "resend": "1" } }',
+    });
+    const findings = await scanThirdParty(root);
+    expect(summarize(findings)).toEqual(['vendor Resend npm ok/package.json:1 app=ok resend@1']);
+  });
+
+  it('does not descend into a directory swapped for a symlink after the listing', async () => {
+    const outside = await writeRepository({
+      'package.json': '{ "dependencies": { "stripe": "1" } }',
+    });
+    const root = await writeRepository({
+      'svc/.keep': '',
+      'ok/package.json': '{ "dependencies": { "resend": "1" } }',
+    });
+    afterListing.hook = async (directory) => {
+      if (directory !== root) return;
+      await rm(join(root, 'svc'), { force: true, recursive: true });
+      await symlink(outside, join(root, 'svc'));
+    };
+    const findings = await scanThirdParty(root);
+    expect(summarize(findings)).toEqual(['vendor Resend npm ok/package.json:1 app=ok resend@1']);
+    expect(openedFiles.some((file) => file.startsWith(outside))).toBe(false);
+    for (const finding of findings) expect(finding.evidence.file).not.toMatch(/(^|\/)\.\.(\/|$)/);
+  });
+
+  it('does not read a file swapped for a symlink after the listing', async () => {
+    const outside = await writeRepository({
+      'secret.txt': '{ "dependencies": { "stripe": "1" } }',
+    });
+    const root = await writeRepository({
+      'svc/package.json': '{ "dependencies": { "resend": "1" } }',
+    });
+    afterListing.hook = async (directory) => {
+      if (directory !== join(root, 'svc')) return;
+      await rm(join(root, 'svc/package.json'));
+      await symlink(join(outside, 'secret.txt'), join(root, 'svc/package.json'));
+    };
+    const findings = await scanThirdParty(root);
+    expect(summarize(findings)).toEqual([]);
+    expect(openedFiles.some((file) => file.startsWith(outside))).toBe(false);
   });
 
   it('does not follow a symlinked .git or .git/config', async () => {

@@ -238,6 +238,47 @@ describe('the outcome block', () => {
     expect(carryOverOutcome(earlier)).toEqual([]);
   });
 
+  it('keeps an earlier Created line through a completed rerun that no longer reports that provider', () => {
+    const earlier = renderOutcome(
+      {
+        kind: 'completed',
+        confirmation: 'confirmed',
+        proposal: [
+          { provider: 'Stripe', status: 'create' },
+          { provider: 'AWS', status: 'create' },
+          { provider: 'Vercel', status: 'already-tracked' },
+        ],
+        results: [
+          { provider: 'Stripe', status: 'created', monitorId: 5001 },
+          { provider: 'AWS', status: 'created', monitorId: 5002 },
+        ],
+        blocked: null,
+      },
+      INVOCATION,
+    );
+    const previousSeed = `${OURS}${earlier.join('\n')}\n`;
+    const lines = renderOutcome(
+      {
+        kind: 'completed',
+        confirmation: 'not-needed',
+        proposal: [
+          { provider: 'Stripe', status: 'unresolved' },
+          { provider: 'AWS', status: 'already-tracked' },
+          { provider: 'Resend', status: 'create' },
+        ],
+        results: [{ provider: 'Resend', status: 'created', monitorId: 5003 }],
+        blocked: null,
+      },
+      INVOCATION,
+      previousSeed,
+    );
+    expect(lines).toContain('Created: Resend (monitor 5003), Stripe (monitor 5001).');
+    expect(lines).toContain('Already tracked: AWS, Vercel.');
+    expect(lines).toContain('Unresolved, retry with `uptimerobot scan --apply`: Stripe.');
+    expect(lines.filter((line) => line.startsWith('Created: '))).toHaveLength(1);
+    expect(lines.join('\n')).not.toContain('AWS (monitor 5002)');
+  });
+
   it('keeps the durable lines of an earlier block when resolution fails', () => {
     const earlier = renderOutcome(
       {

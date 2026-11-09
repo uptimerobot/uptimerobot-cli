@@ -9,7 +9,7 @@ import { operations } from '../generated/operations.js';
 import type { InvocationMode } from '../lib/invocation.js';
 import { detectInvocationMode, isCI } from '../lib/invocation.js';
 import { isPlainRecord, isRecord } from '../lib/objects.js';
-import { MAX_PAGES, PAGE_SIZE, pageThrough } from '../lib/paginate.js';
+import { MAX_PAGES, PAGE_SIZE, type PageResult, pageThrough } from '../lib/paginate.js';
 import { buildUrl } from '../lib/request.js';
 import type { ColumnSpec } from '../output/columns.js';
 import { formatOutput } from '../output/renderer.js';
@@ -73,7 +73,7 @@ interface VerifyOutput {
   monitors: readonly VerifiedMonitor[];
   /** The tag names that were filtered for, in the order they were given. */
   tags: readonly string[];
-  /** True when the page cap was reached, so `monitors` is not the whole answer. */
+  /** True when paging stopped early, at the page cap or a repeated cursor, so `monitors` is not the whole answer. */
   truncated: boolean;
 }
 
@@ -143,22 +143,26 @@ Finding no monitors is a result, not a failure: the command exits 0 whether the 
       throw error;
     }
 
-    const { monitors, truncated } = await this.collectMonitors(tags, apiUrl, apiKey, mode);
+    const { monitors, paging } = await this.collectMonitors(tags, apiUrl, apiKey, mode);
     const output: VerifyOutput = {
       count: monitors.length,
       coverage: { basis: 'tags', note: COVERAGE_NOTE },
       monitors,
       tags,
-      truncated,
+      truncated: paging.truncated,
     };
 
     if (machineOutput) this.log(JSON.stringify(output));
     else for (const line of await reportLines(output)) this.log(line);
     // Matches how a short page reports the rest of a collection: the finding
     // goes to stdout, the caveat about the finding goes to stderr.
-    if (truncated && !machineOutput) {
+    if (paging.truncated && !machineOutput) {
+      const stopped =
+        paging.reason === 'page-cap'
+          ? `Stopped after ${MAX_PAGES} pages.`
+          : 'Stopped at a cursor the API had already handed out.';
       this.logToStderr(
-        `Stopped after ${MAX_PAGES} pages. More monitors carry ${tags.length === 1 ? 'this tag' : 'these tags'} than are listed above.`,
+        `${stopped} More monitors carry ${tags.length === 1 ? 'this tag' : 'these tags'} than are listed above.`,
       );
     }
     return output;
@@ -174,7 +178,7 @@ Finding no monitors is a result, not a failure: the command exits 0 whether the 
     apiUrl: URL,
     apiKey: string,
     mode: InvocationMode,
-  ): Promise<{ monitors: VerifiedMonitor[]; truncated: boolean }> {
+  ): Promise<{ monitors: VerifiedMonitor[]; paging: PageResult }> {
     const client = createApiClient({
       apiKey,
       apiUrl,
@@ -184,12 +188,12 @@ Finding no monitors is a result, not a failure: the command exits 0 whether the 
     });
     const monitors: VerifiedMonitor[] = [];
     try {
-      const { truncated } = await pageThrough({
+      const paging = await pageThrough({
         // Built from the same generated operation `monitors list` uses, so a
         // change to the path or the parameter names cannot leave this command
         // querying a contract that no longer exists.
-        fetchPage: (cursor) =>
-          requestJson(
+        fetchPage: async (cursor) => {
+          const payload = await requestJson(
             client,
             buildUrl(
               MONITORS_LIST,
@@ -197,12 +201,21 @@ Finding no monitors is a result, not a failure: the command exits 0 whether the 
               apiUrl,
             ),
             MONITORS_LIST.method,
-          ),
+          );
+          // A 2xx that is not a list would read as an empty page and a clean
+          // zero, which is the one answer this command exists to make reliable.
+          if (Array.isArray(payload) || (isPlainRecord(payload) && Array.isArray(payload.data)))
+            return payload;
+          throw new ApiFailure(
+            { code: 'INVALID_RESPONSE', message: 'The monitor list did not return monitors.' },
+            1,
+          );
+        },
         onItems: (items) => {
           for (const item of items) monitors.push(verifiedMonitor(item));
         },
       });
-      return { monitors, truncated };
+      return { monitors, paging };
     } catch (error) {
       if (error instanceof ApiFailure) return this.fail(error.cliError, error.exitCode);
       throw error;

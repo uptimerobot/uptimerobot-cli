@@ -2,7 +2,8 @@
  * The one cursor loop every list reader shares: follow `nextCursor` until the
  * API stops handing one out, a cursor repeats (a loop that would never end),
  * or the page cap is reached. A repeated cursor and the cap both make
- * `truncated` true: either way the list is a prefix, not the whole.
+ * `truncated` true, with the reason: either way the list is a prefix, not
+ * the whole, but a caller reports them differently.
  */
 import { isPlainRecord } from './objects.js';
 import { normalizeResult } from '../output/normalize-result.js';
@@ -19,7 +20,11 @@ export interface PageOptions {
   maxPages?: number;
 }
 
-export async function pageThrough(options: PageOptions): Promise<{ truncated: boolean }> {
+export type PageResult =
+  | { truncated: false }
+  | { truncated: true; reason: 'repeated-cursor' | 'page-cap' };
+
+export async function pageThrough(options: PageOptions): Promise<PageResult> {
   const maxPages = options.maxPages ?? MAX_PAGES;
   const seenCursors = new Set<string>();
   let cursor: string | undefined;
@@ -33,9 +38,9 @@ export async function pageThrough(options: PageOptions): Promise<{ truncated: bo
         ? normalized.nextCursor
         : undefined;
     if (next === undefined || next.length === 0) return { truncated: false };
-    if (seenCursors.has(next)) return { truncated: true };
+    if (seenCursors.has(next)) return { truncated: true, reason: 'repeated-cursor' };
     seenCursors.add(next);
     cursor = next;
   }
-  return { truncated: true };
+  return { truncated: true, reason: 'page-cap' };
 }

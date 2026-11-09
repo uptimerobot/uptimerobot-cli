@@ -21,7 +21,6 @@ import {
 } from '../lib/auth.js';
 import { BaseCommand } from '../lib/base-command.js';
 import type { SelectionChoice } from '../lib/invocation.js';
-import type { InvocationMode } from '../lib/invocation.js';
 import { detectInvocationMode, promptSelection } from '../lib/invocation.js';
 import type { SeedContext } from '../lib/scan/index.js';
 import { formatSeedContext, scanRepository } from '../lib/scan/index.js';

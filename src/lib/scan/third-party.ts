@@ -22,7 +22,7 @@
  * without a word, so a result is partial whenever the repository is: a
  * permission error never fails the scan.
  */
-import { lstat, readdir, readFile, stat } from 'node:fs/promises';
+import { lstat, readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type ConfigFinding, isConfigFile, matchConfig } from './config.js';
 import type { ScanFinding } from './finding.js';
@@ -208,7 +208,11 @@ async function collectFiles(
 
     const absolute = join(directory, entry.name);
     if (entry.isDirectory()) {
-      if (shouldWalk(entry.name)) await collectFiles(repoRoot, absolute, budget, candidates);
+      // The listing is not the descent: a directory swapped for a symlink in
+      // between would carry the walk out of the root, so it is checked again,
+      // without following, right before.
+      if (shouldWalk(entry.name) && (await isStillDirectory(absolute)))
+        await collectFiles(repoRoot, absolute, budget, candidates);
       continue;
     }
     if (!entry.isFile() || isSecretFile(entry.name)) continue;
@@ -242,10 +246,19 @@ function appOf(path: string, appDirectories: ReadonlySet<string>): string {
   return '.';
 }
 
+async function isStillDirectory(path: string): Promise<boolean> {
+  try {
+    return (await lstat(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** Reads a listed file, unless it is no longer a regular file: the read never follows a symlink planted since. */
 async function readTextFile(path: string, maxFileBytes: number): Promise<string | undefined> {
   try {
-    const info = await stat(path);
-    if (info.size > maxFileBytes) return undefined;
+    const info = await lstat(path);
+    if (!info.isFile() || info.size > maxFileBytes) return undefined;
     return await readFile(path, 'utf8');
   } catch {
     return undefined;

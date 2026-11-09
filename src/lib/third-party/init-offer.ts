@@ -215,8 +215,20 @@ export function renderOutcome(
   const attempted = new Set(results.map((item) => item.provider));
   const notAttempted = byRow('create').filter((provider) => !attempted.has(provider));
   if (confirmation !== 'confirmed' || blocked !== null) lines.push('Nothing was created.');
-  if (created.length > 0) lines.push(`Created: ${created.join(', ')}.`);
-  const tracked = byRow('already-tracked');
+  // A provider this run says nothing durable about keeps what the earlier
+  // block said: an unresolved or re-proposed row does not undo a create.
+  const earlier = durableEntries(carryOverOutcome(previousSeed));
+  const settled = new Set([
+    ...results.flatMap((item) => (item.status === 'created' ? [item.provider] : [])),
+    ...byRow('already-tracked'),
+  ]);
+  const kept = (prefix: DurablePrefix): string[] =>
+    earlier
+      .filter((entry) => entry.prefix === prefix && !settled.has(entry.provider))
+      .map((entry) => entry.text);
+  const allCreated = [...created, ...kept('Created')];
+  if (allCreated.length > 0) lines.push(`Created: ${allCreated.join(', ')}.`);
+  const tracked = [...byRow('already-tracked'), ...kept('Already tracked')];
   if (tracked.length > 0) lines.push(`Already tracked: ${tracked.join(', ')}.`);
   if (unknown.length > 0) {
     lines.push(
@@ -253,6 +265,24 @@ export function renderOutcome(
 
 /** The only lines of an earlier block that stay true: a service created or found tracked is still there. */
 const DURABLE_LINE = /^(Created|Already tracked): /;
+
+type DurablePrefix = 'Created' | 'Already tracked';
+
+/** One provider's entry on a durable line, as written: `Stripe (monitor 5)` or `Vercel`. */
+function durableEntries(
+  lines: readonly string[],
+): { prefix: DurablePrefix; provider: string; text: string }[] {
+  return lines.flatMap((line) => {
+    const match = /^(Created|Already tracked): (.*)\.$/.exec(line);
+    if (match === null) return [];
+    const prefix: DurablePrefix = match[1] === 'Created' ? 'Created' : 'Already tracked';
+    return (match[2] ?? '').split(', ').map((text) => ({
+      prefix,
+      provider: text.split(' (')[0] ?? text,
+      text,
+    }));
+  });
+}
 
 /**
  * The durable part of the outcome block an earlier run left in our own seed
