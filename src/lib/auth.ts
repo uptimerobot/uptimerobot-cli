@@ -1,6 +1,7 @@
 import type { CredentialBackend, CredentialStore } from './credential-store.js';
 import { credentialStore } from './credential-store.js';
-import type { ExecutionEnvironment, InvocationMode } from './invocation.js';
+import { type ApiClient, createApiClient } from '../api/client.js';
+import { type ExecutionEnvironment, type InvocationMode, isCI } from './invocation.js';
 
 export const PRODUCTION_API_URL = 'https://api.uptimerobot.com/v3';
 
@@ -107,4 +108,32 @@ export async function resolveApiKey(
     'Run `uptimerobot auth login --api-key <key>`, set UPTIMEROBOT_API_KEY, or pass --api-key.',
     2,
   );
+}
+
+export interface ApiAccess {
+  client: ApiClient;
+  apiUrl: URL;
+}
+
+/**
+ * The client an authenticated command talks through: the API URL from the
+ * environment override or production, the key from the shared resolver, the
+ * mode and version stamped on every request. Throws the resolver's
+ * `AuthenticationError`, which a command maps the way it already does.
+ */
+export async function resolveApiAccess(options: {
+  explicitApiKey: unknown;
+  mode: InvocationMode;
+  version: string;
+}): Promise<ApiAccess> {
+  const apiUrl = new URL(process.env.UPTIMEROBOT_DEV_API_URL ?? PRODUCTION_API_URL);
+  const apiKey = await resolveApiKey(options.explicitApiKey, apiUrl.toString());
+  const client = createApiClient({
+    apiKey,
+    apiUrl,
+    environment: isCI() ? 'ci' : 'local',
+    mode: options.mode,
+    version: options.version,
+  });
+  return { client, apiUrl };
 }
