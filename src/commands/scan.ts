@@ -215,6 +215,11 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
         access,
         confirmFlag,
         confirm,
+        // --confirm skips the prompt that would have printed the proposal; it
+        // is still shown before the first create, as the apply contract says.
+        onProposal: (proposal) => {
+          if (confirmFlag) printProposal(proposal);
+        },
       });
     } catch (error) {
       // A refused credential anywhere, the allowance read included, ends the

@@ -4,11 +4,15 @@ export function normalizeApiError(status: number, payload: unknown): CliError {
   const object =
     typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
   const rawMessage = typeof payload === 'string' ? payload : (object.message ?? object.error);
-  const message = Array.isArray(rawMessage)
-    ? rawMessage.map(String).join('; ')
-    : typeof rawMessage === 'string'
-      ? rawMessage
-      : `UptimeRobot API request failed with HTTP ${status}.`;
+  // One line: a message the API breaks across lines would print as a second,
+  // misleading line, while the CLI's own messages keep the layout they chose.
+  const message = (
+    Array.isArray(rawMessage)
+      ? rawMessage.map(String).join('; ')
+      : typeof rawMessage === 'string'
+        ? rawMessage
+        : `UptimeRobot API request failed with HTTP ${status}.`
+  ).replaceAll(/[\t\n\r]+/g, ' ');
   return {
     // Derived from the transport status, never from the body: an upstream code
     // is optional, undocumented, and absent from openapi.yaml, so reporting it

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createApiClient } from '../src/api/client.js';
 import type { ThirdPartyCandidate } from '../src/lib/scan/index.js';
+import { runApply } from '../src/lib/third-party/apply.js';
 import {
   type ApiAccess,
   type ResolvedCandidate,
@@ -590,6 +591,30 @@ describe('resolveCandidates', () => {
       evidence: [{ file: 'package.json', line: 3 }],
       regionDefaulted: false,
     });
+  });
+});
+
+describe('runApply', () => {
+  it('hands the proposal to the caller before any create when --confirm skips the prompt', async () => {
+    const { access, requests } = stubApi({
+      searches: { stripe: [ok({ data: [row(801, 'Stripe')] })] },
+      me: ok({ data: { dependencyMonitorsCount: 0, dependencyMonitorLimit: 10 } }),
+    });
+    let requestsWhenShown = -1;
+    const run = await runApply({
+      candidates: [candidate('Stripe')],
+      selection: { only: [], skip: [], includeBuildTime: false },
+      access,
+      confirmFlag: true,
+      confirm: () => Promise.reject(new Error('--confirm must not ask')),
+      onProposal: () => {
+        requestsWhenShown = requests.length;
+      },
+    });
+    expect(run.confirmation).toBe('confirmed');
+    expect(requestsWhenShown).toBeGreaterThan(-1);
+    expect(requests.slice(0, requestsWhenShown)).not.toContain('/v3/monitors');
+    expect(requests.slice(requestsWhenShown)).toContain('/v3/monitors');
   });
 });
 

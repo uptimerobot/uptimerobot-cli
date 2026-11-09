@@ -372,6 +372,43 @@ describe('matchManifest on Gemfile, composer.json and Cargo.toml', () => {
     );
   });
 
+  it('classes a dev, test, lint, docs or ci requirements file as build-time, like every other dev section', () => {
+    for (const path of ['requirements-dev.txt', 'requirements_test.txt', 'requirements.ci.txt']) {
+      const findings = matchManifest({ path, contents: 'sentry-sdk==2.19.2\n' });
+      expect(byProvider(findings, 'Sentry')?.detail.class, path).toBe('build-time');
+      expect(byProvider(findings, 'Sentry')?.detail.scope, path).toBe('requirements-dev');
+    }
+    const runtime = matchManifest({ path: 'requirements.txt', contents: 'sentry-sdk==2.19.2\n' });
+    expect(byProvider(runtime, 'Sentry')?.detail.class).toBe('runtime');
+  });
+
+  it('keeps a gem grouped through a nested block and reads the hash-rocket group option', () => {
+    const findings = matchManifest({
+      path: 'Gemfile',
+      contents: [
+        'group :development do',
+        '  platforms :mri do',
+        "    gem 'sendgrid-ruby'",
+        '  end',
+        "  gem 'twilio-ruby'",
+        'end',
+        "gem 'stripe', :group => :test",
+        "if ENV['CI']",
+        "  gem 'resend'",
+        'end',
+        "gem 'postmark'",
+        '',
+      ].join('\n'),
+    });
+    const classOf = (pkg: string) =>
+      findings.find((finding) => finding.detail.package === pkg)?.detail.class;
+    expect(classOf('sendgrid-ruby')).toBe('build-time');
+    expect(classOf('twilio-ruby')).toBe('build-time');
+    expect(byProvider(findings, 'Stripe')?.detail.class).toBe('build-time');
+    expect(byProvider(findings, 'Resend')?.detail.class).toBe('runtime');
+    expect(classOf('postmark')).toBe('runtime');
+  });
+
   it('classes a runtime vendor that only sits in a dev section as build-time', () => {
     const npm = matchManifest({
       path: 'package.json',

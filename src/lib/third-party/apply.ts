@@ -321,6 +321,8 @@ export function unresolvedError(proposal: readonly ResolvedCandidate[]): CliErro
  * proposal holds something to create and `--confirm` is absent, create. The
  * caller prints the proposal between the two by passing a `confirm` that does
  * so; it answers `confirmed`, `declined`, or `required` when it could not ask.
+ * `onProposal` runs once the proposal stands and before anything is written,
+ * so a caller can show it even when `--confirm` means no one is asked.
  */
 export async function runApply(options: {
   candidates: readonly ThirdPartyCandidate[];
@@ -328,12 +330,14 @@ export async function runApply(options: {
   access: ApiAccess;
   confirmFlag: boolean;
   confirm: (proposal: Proposal, toCreate: number) => Promise<Confirmation>;
+  onProposal?: (proposal: Proposal) => void;
 }): Promise<ApplyRun> {
   const proposal = await prepareProposal(options.candidates, options.selection, options.access);
   const mismatch = mismatchedOnly(proposal.proposal, options.selection.only);
   if (mismatch !== undefined) {
     return { proposal, confirmation: 'blocked', results: [], blocked: onlyMismatchError(mismatch) };
   }
+  options.onProposal?.(proposal);
   const toCreate = proposal.allowance.proposed;
   const confirmation: Confirmation =
     toCreate === 0

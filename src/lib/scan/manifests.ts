@@ -93,7 +93,11 @@ const DEV_SCOPES = new Set([
   'build-dependencies',
   'project.optional-dependencies',
   'dependency-groups',
+  'requirements-dev',
 ]);
+
+/** `requirements-dev.txt`, `requirements_test.txt`, `requirements.ci.txt`: a file nobody installs in production. */
+const DEV_REQUIREMENTS = /^requirements[-_.](?:dev|development|test|tests|testing|lint|docs|ci)\b/i;
 
 function basename(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
@@ -168,7 +172,7 @@ const PARSERS: Record<PackageEcosystem, (contents: string, name: string) => Decl
     ]),
   composer: (contents) => parseJsonSections(contents, ['require', 'require-dev']),
   pip: (contents, name) =>
-    name === 'pyproject.toml' ? parsePyproject(contents) : parseRequirements(contents),
+    name === 'pyproject.toml' ? parsePyproject(contents) : parseRequirements(contents, name),
   go: parseGoMod,
   gem: parseGemfile,
   cargo: parseCargo,
@@ -251,10 +255,11 @@ function parseRequirement(text: string, line: number, scope: string): Declared |
   };
 }
 
-function parseRequirements(contents: string): Declared[] {
+function parseRequirements(contents: string, name: string): Declared[] {
+  const scope = DEV_REQUIREMENTS.test(name) ? 'requirements-dev' : 'requirements';
   const declared: Declared[] = [];
   contents.split('\n').forEach((text, index) => {
-    const dependency = parseRequirement(text, index + 1, 'requirements');
+    const dependency = parseRequirement(text, index + 1, scope);
     if (dependency !== undefined) declared.push(dependency);
   });
   return declared;
@@ -501,26 +506,31 @@ function parseGoMod(contents: string): Declared[] {
   return declared;
 }
 
+/** Any block opener: `... do`, `... do |x|`, or a leading `if`/`unless`/`case`/`begin`, so its `end` is accounted for. */
+const GEMFILE_BLOCK_OPENER = /(?:\bdo(?:\s*\|[^|]*\|)?$|^(?:if|unless|case|begin)\b)/;
+
 /**
  * `gem 'name', 'constraint'`. A gem inside a `group ... do` block or carrying
- * a `group:` option is not loaded in production, so it is build-time.
+ * a `group:` option is not loaded in production, so it is build-time. Every
+ * block is tracked, not only groups, so a `platforms` or `if` block closing
+ * inside a group does not end the group early.
  */
 function parseGemfile(contents: string): Declared[] {
   const declared: Declared[] = [];
-  let groupDepth = 0;
+  const blocks: ('group' | 'other')[] = [];
   contents.split('\n').forEach((raw, index) => {
     const text = raw.trim();
-    if (/^group\b.*\bdo$/.test(text)) {
-      groupDepth += 1;
+    if (GEMFILE_BLOCK_OPENER.test(text)) {
+      blocks.push(/^group\b/.test(text) ? 'group' : 'other');
       return;
     }
-    if (text === 'end' && groupDepth > 0) {
-      groupDepth -= 1;
+    if (text === 'end') {
+      blocks.pop();
       return;
     }
     const match = /^gem\s+['"]([^'"]+)['"](?:\s*,\s*['"]([^'"]+)['"])?(.*)$/.exec(text);
     if (match === null || match[1] === undefined) return;
-    const grouped = groupDepth > 0 || /\bgroup:/.test(match[3] ?? '');
+    const grouped = blocks.includes('group') || /(?:\bgroup:|:group\s*=>)/.test(match[3] ?? '');
     declared.push({
       name: match[1],
       version: match[2] ?? '',
