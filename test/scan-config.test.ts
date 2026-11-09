@@ -184,8 +184,8 @@ describe('terraform', () => {
     expect(findings.map((finding) => finding.detail.region)).toEqual([
       'europe-west1',
       'europe-west1',
-      'europe-west1',
-      'europe-west1',
+      '',
+      '',
     ]);
   });
 
@@ -230,7 +230,24 @@ describe('terraform', () => {
     expect(vendors(matchConfig({ path: 'main.tf', contents }))).toEqual(['AWS']);
   });
 
-  it('takes the first uncommented region and ignores later ones', () => {
+  it('keeps the masked line as long as the raw one, so an escaped quote before a comment shifts nothing', () => {
+    // One blank short before the fix, the `*/` search started a character
+    // early, read the `*` of `/*` as its close and let the commented region in.
+    const contents = [
+      'provider "aws" {',
+      '  alias = "\\"" */* note',
+      '  region = "us-west-2"',
+      '  */',
+      '  region = "eu-central-1"',
+      '}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['AWS', 'eu-central-1'],
+    ]);
+  });
+
+  it('binds each region to its provider block and ignores commented ones', () => {
     const contents = [
       '# region = "us-east-1"',
       'provider "aws" {',
@@ -241,19 +258,83 @@ describe('terraform', () => {
       '}',
     ].join('\n');
     const findings = matchConfig({ path: 'main.tf', contents });
-    expect(findings.map((finding) => finding.detail.region)).toEqual([
-      'eu-central-1',
-      'eu-central-1',
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['AWS', 'eu-central-1'],
+      ['Google Cloud', 'us-west-2'],
     ]);
   });
 
-  it('shares the file region across providers as a hint', () => {
-    const contents = 'provider "google" {}\nprovider "aws" {\n  region = "eu-west-1"\n}\n';
+  it('keeps a region inside its own provider block', () => {
+    const contents =
+      'provider "google" {}\nprovider "cloudflare" {}\nprovider "aws" {\n  region = "eu-west-1"\n}\nresource "google_storage_bucket" "b" {}\n';
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['Google Cloud', ''],
+      ['Cloudflare', ''],
+      ['AWS', 'eu-west-1'],
+      ['Google Cloud', ''],
+    ]);
+  });
+
+  it('shares a region declared before any provider block with every cloud provider', () => {
+    const contents =
+      'locals { x = 1 }\nregion = "eu-west-1"\nprovider "google" {}\nprovider "cloudflare" {}\nresource "aws_s3_bucket" "b" {}\n';
     const findings = matchConfig({ path: 'main.tf', contents });
     expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
       ['Google Cloud', 'eu-west-1'],
+      ['Cloudflare', ''],
       ['AWS', 'eu-west-1'],
     ]);
+  });
+
+  it('forgets a provider once its block closes, so a resource region never becomes its region', () => {
+    const contents = [
+      'provider "aws" {',
+      '  assume_role {',
+      '    region = "us-west-2"',
+      '  }',
+      '}',
+      'resource "aws_s3_bucket" "b" {',
+      '  region = "us-west-2"',
+      '}',
+      'region = "us-east-1"',
+      'provider "google" {}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['AWS', ''],
+      ['AWS', ''],
+      ['Google Cloud', ''],
+    ]);
+  });
+
+  it('takes a file default only from the top level, never from a resource before the first provider', () => {
+    const contents = [
+      'resource "aws_s3_bucket" "b" {',
+      '  region = "us-west-2"',
+      '}',
+      'provider "aws" {}',
+      'provider "google" {}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['AWS', ''],
+      ['AWS', ''],
+      ['Google Cloud', ''],
+    ]);
+  });
+
+  it('keeps the region of an unknown provider block out of the file default', () => {
+    const contents = 'provider "awscc" {\n  region = "us-west-2"\n}\nprovider "google" {}\n';
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['Google Cloud', ''],
+    ]);
+  });
+
+  it('counts braces outside strings only when closing a provider block', () => {
+    const contents = 'provider "aws" {\n  alias = "}"\n  region = "eu-west-1"\n}\n';
+    expect(only(matchConfig({ path: 'main.tf', contents })).detail.region).toBe('eu-west-1');
   });
 
   it('reports a resource only through a short service word, never the full type', () => {

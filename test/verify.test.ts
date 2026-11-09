@@ -211,6 +211,31 @@ describe('verify', () => {
 
     expect(requests).toHaveLength(2);
     expect(output.count).toBe(2);
+    expect(output.truncated).toBe(true);
+  });
+
+  it('names a repeated cursor as the reason it stopped, not the page cap', async () => {
+    vi.stubEnv('UPTIMEROBOT_OUTPUT', 'table');
+    const looping = 'https://api.uptimerobot.com/v3/monitors?cursor=84';
+    stubApi([
+      { data: [monitor({ id: 1 })], nextLink: looping },
+      { data: [monitor({ id: 2 })], nextLink: looping },
+    ]);
+    const { default: Verify } = await import('../src/commands/verify.js');
+
+    await Verify.run(['--api-key', 'u123-explicit'], { root: projectRoot });
+
+    expect(stderr.join('\n')).toContain('Stopped at a cursor the API had already handed out.');
+    expect(stderr.join('\n')).not.toContain('Stopped after');
+  });
+
+  it('refuses a 2xx body that is not a monitor list instead of reporting zero', async () => {
+    stubApi(['<html>captive portal</html>' as unknown as Page]);
+    const { default: Verify } = await import('../src/commands/verify.js');
+
+    await expect(
+      Verify.run(['--api-key', 'u123-explicit', '--json'], { root: projectRoot }),
+    ).rejects.toMatchObject({ cliError: { code: 'INVALID_RESPONSE' } });
   });
 
   it('says so when it gives up paging rather than passing a partial list off as the whole', async () => {

@@ -14,9 +14,9 @@
  * - `serverless.yml`: `provider.name`, or the inline `provider:` value.
  * - `Procfile`: a Heroku hint, never a candidate.
  * - `*.tf`: `provider "<name>"`, `resource` and `data` types by prefix, and the
- *   first region-shaped `region = "..."` line, stamped on every finding of
- *   the file as a hint (a multi-provider file shares it); line and block
- *   comments skipped, heredocs not.
+ *   region-shaped `region = "..."` line of each provider block, stamped on
+ *   that provider's AWS, Google Cloud or Azure findings as a hint; line and
+ *   block comments skipped, heredocs not.
  * - CI files by path: `.yml` and `.yaml` files under a CI directory pattern,
  *   or a basename pattern at the root or any depth; build-time on their own.
  * - `Dockerfile*`, `*.Dockerfile`, compose files: the registry host of each
@@ -29,6 +29,7 @@
  * given provider, signal and service once, at its first line.
  */
 import type { ScanFinding } from './finding.js';
+import { hasUnsafeCharacters } from './support.js';
 import { VENDORS, type VendorClass, type VendorEntry, type VendorSignal } from './vendors.js';
 
 type ConfigSignal = Exclude<VendorSignal, { kind: 'package' | 'hostname' }>;
@@ -108,6 +109,8 @@ const SERVERLESS_PROVIDERS: ReadonlyMap<string, string> = new Map([
 ]);
 
 const HEROKU = VENDORS.find((entry) => entry.catalogName === 'Heroku');
+/** The providers a terraform `region` value describes; other providers in the same file share none of it. */
+const REGION_VENDORS: ReadonlySet<string> = new Set(['AWS', 'Google Cloud', 'Microsoft Azure']);
 
 /** The only shapes that may reach the report: an AWS or Google style region and a short service word. */
 /** AWS (`eu-central-1`, `us-gov-west-1`) and Google Cloud (`europe-west1`) region names; anything else is free text. */
@@ -116,7 +119,8 @@ const REGION =
 const SERVICE_WORD = /^[a-z][a-z0-9]{0,15}$/;
 /** A hostname before lowercasing: ASCII only, DNS length, so a Kelvin sign never folds to `k`. */
 const HOST = /^[A-Za-z0-9.-]{1,253}$/;
-const UNSAFE_PATH = /(?:^|\/)\.\.(?:\/|$)|[\\\u0000-\u001f\u007f]/;
+/** A `..` segment anywhere in the path. */
+const DOT_DOT_SEGMENT = /(?:^|\/)\.\.(?:\/|$)/;
 const MAX_LINE_LENGTH = 4096;
 
 const TF_PROVIDER = /^\s*provider\s+"([a-z0-9_-]{1,64})"/;
@@ -219,23 +223,59 @@ function serverless(name: string, contents: string): Match[] {
   return [];
 }
 
-/** Index of the first `/*` outside a double-quoted string, or -1. */
-function blockCommentStart(line: string): number {
+/** The line with every character inside a double-quoted string blanked, so syntax can be read outside strings only. */
+function maskStrings(line: string): string {
+  let masked = '';
   let inString = false;
   for (let index = 0; index < line.length; index += 1) {
-    const char = line[index];
+    const char = line[index] ?? '';
     if (inString) {
-      if (char === '\\') index += 1;
-      else if (char === '"') inString = false;
-    } else if (char === '"') inString = true;
-    else if (char === '/' && line[index + 1] === '*') return index;
+      // The escaped character gets its own blank too: the mask keeps the raw
+      // length because its indexes are used on the raw line.
+      if (char === '\\') {
+        index += 1;
+        masked += ' ';
+      } else if (char === '"') inString = false;
+      masked += ' ';
+    } else {
+      if (char === '"') inString = true;
+      masked += char;
+    }
   }
-  return -1;
+  return masked;
 }
+
+/** Index of the first `/*` outside a double-quoted string, or -1. */
+function blockCommentStart(line: string): number {
+  return maskStrings(line).indexOf('/*');
+}
+
+/** Opened minus closed braces outside strings. */
+function braceDelta(line: string): number {
+  const masked = maskStrings(line);
+  return (masked.match(/{/g)?.length ?? 0) - (masked.match(/}/g)?.length ?? 0);
+}
+
+/**
+ * A `region` line belongs to the provider block it sits in: the most recent
+ * `provider` line names it. A top-level region seen before any provider block
+ * is the file's default and reaches every cloud provider of the file.
+ */
+/** A provider block the vendor map does not know still owns the regions inside it. */
+const UNKNOWN_PROVIDER = '';
 
 function terraform(contents: string): Match[] {
   const matches: Match[] = [];
-  let region = '';
+  const regions = new Map<string, string>();
+  let fileRegion = '';
+  // A region counts for the provider whose block it sits in, directly: once
+  // the block closes the provider is forgotten, and a region after the first
+  // provider block belongs to no one. An unknown provider still owns its block.
+  let currentProvider: string | undefined;
+  let providerDepth = -1;
+  let seenProvider = false;
+  let depth = 0;
+  let pendingDelta = 0;
   let inBlockComment = false;
   for (const [index, raw] of lines(contents).entries()) {
     if (inBlockComment) {
@@ -246,9 +286,18 @@ function terraform(contents: string): Match[] {
     const opener = blockCommentStart(raw);
     const line = (opener === -1 ? raw : raw.slice(0, opener)).trimStart();
     if (opener !== -1) inBlockComment = !raw.includes('*/', opener);
+    depth += pendingDelta;
+    pendingDelta = braceDelta(line);
+    if (providerDepth !== -1 && depth < providerDepth) {
+      currentProvider = undefined;
+      providerDepth = -1;
+    }
     const provider = TF_PROVIDER.exec(line)?.[1];
     if (provider !== undefined) {
       const entry = entryFor('terraform-provider', provider);
+      currentProvider = entry?.catalogName ?? UNKNOWN_PROVIDER;
+      providerDepth = depth + 1;
+      seenProvider = true;
       if (entry !== undefined) {
         matches.push({
           kind: 'terraform-provider',
@@ -278,9 +327,18 @@ function terraform(contents: string): Match[] {
       continue;
     }
     const value = TF_REGION.exec(line)?.[1];
-    if (region === '' && value !== undefined && REGION.test(value)) region = value;
+    if (value === undefined || !REGION.test(value)) continue;
+    if (currentProvider === undefined) {
+      if (!seenProvider && depth === 0 && fileRegion === '') fileRegion = value;
+    } else if (depth === providerDepth && !regions.has(currentProvider)) {
+      regions.set(currentProvider, value);
+    }
   }
-  return matches.map((match) => ({ ...match, region }));
+  return matches.map((match) => {
+    const name = match.entry.catalogName;
+    if (!REGION_VENDORS.has(name)) return match;
+    return { ...match, region: regions.get(name) ?? fileRegion };
+  });
 }
 
 function ciFile(path: string): Match[] {
@@ -334,6 +392,22 @@ function isCompose(name: string): boolean {
   return /^(docker-)?compose([.-][\w.-]*)?\.ya?ml$/.test(name);
 }
 
+/** Whether {@link matchConfig} can read anything from this path, judged from its name. */
+export function isConfigFile(path: string): boolean {
+  const name = basename(path);
+  return (
+    path === '.git/config' ||
+    name.endsWith('.tf') ||
+    name === 'serverless.yml' ||
+    name === 'serverless.yaml' ||
+    name === 'Procfile' ||
+    isDockerfile(name) ||
+    isCompose(name) ||
+    entryFor('file', name) !== undefined ||
+    ciFile(path).length > 0
+  );
+}
+
 /** The content reader for a file, picked by name; first match wins, one per file. */
 function contentMatches(input: ConfigInput): Match[] {
   const name = basename(input.path);
@@ -353,7 +427,7 @@ function contentMatches(input: ConfigInput): Match[] {
  * so a compose file inside a workflow directory yields both.
  */
 export function matchConfig(input: ConfigInput): ConfigFinding[] {
-  if (UNSAFE_PATH.test(input.path)) return [];
+  if (DOT_DOT_SEGMENT.test(input.path) || hasUnsafeCharacters(input.path)) return [];
   const seen = new Set<string>();
   const matches = [...ciFile(input.path), ...contentMatches(input)].filter((match) => {
     const key = `${match.kind}\u0000${match.entry.catalogName}\u0000${match.signal}`;
