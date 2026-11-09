@@ -991,7 +991,7 @@ describe('init', () => {
         });
         expect(api.posts).toEqual([]);
         const content = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
-        expect(content).toContain('Nothing was created.');
+        expect(content).toContain('Nothing was created by this run.');
         expect(content).toContain('Not created: Stripe (declined at the prompt).');
       } finally {
         restoreTerminal();

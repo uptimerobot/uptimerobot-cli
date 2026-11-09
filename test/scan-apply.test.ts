@@ -547,6 +547,8 @@ describe('uptimerobot scan --apply', () => {
     });
 
     expect(result.stdout).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/);
+    expect(result.stderr).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/);
+    expect(result.stderr).toContain('boom[31m');
     expect(result.stdout).toContain('https://x.example/[2J]0;pwned/EVIL');
     expect(result.stdout).toContain('Not created: Resend (boom[31m).');
   });

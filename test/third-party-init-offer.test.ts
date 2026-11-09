@@ -279,6 +279,39 @@ describe('the outcome block', () => {
     expect(lines.join('\n')).not.toContain('AWS (monitor 5002)');
   });
 
+  it('never contradicts an earlier Created entry when the same provider is declined on a rerun', () => {
+    const earlier = renderOutcome(
+      {
+        kind: 'completed',
+        confirmation: 'confirmed',
+        proposal: [{ provider: 'Stripe', status: 'create' }],
+        results: [{ provider: 'Stripe', status: 'created', monitorId: 5001 }],
+        blocked: null,
+      },
+      INVOCATION,
+    );
+    const previousSeed = `${OURS}${earlier.join('\n')}\n`;
+    const lines = renderOutcome(
+      {
+        kind: 'completed',
+        confirmation: 'declined',
+        proposal: [
+          { provider: 'Stripe', status: 'create' },
+          { provider: 'AWS', status: 'create' },
+        ],
+        results: [],
+        blocked: null,
+      },
+      INVOCATION,
+      previousSeed,
+    );
+    expect(lines).toContain('Nothing was created by this run.');
+    expect(lines).toContain('Created: Stripe (monitor 5001).');
+    expect(lines).toContain('Not created: AWS (declined at the prompt).');
+    expect(lines.join('\n')).not.toContain('Not created: Stripe');
+    expect(lines.join('\n')).not.toContain('Nothing was created.');
+  });
+
   it('keeps the durable lines of an earlier block when resolution fails', () => {
     const earlier = renderOutcome(
       {

@@ -230,8 +230,12 @@ function maskStrings(line: string): string {
   for (let index = 0; index < line.length; index += 1) {
     const char = line[index] ?? '';
     if (inString) {
-      if (char === '\\') index += 1;
-      else if (char === '"') inString = false;
+      // The escaped character gets its own blank too: the mask keeps the raw
+      // length because its indexes are used on the raw line.
+      if (char === '\\') {
+        index += 1;
+        masked += ' ';
+      } else if (char === '"') inString = false;
       masked += ' ';
     } else {
       if (char === '"') inString = true;

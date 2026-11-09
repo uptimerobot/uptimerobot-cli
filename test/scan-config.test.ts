@@ -230,6 +230,23 @@ describe('terraform', () => {
     expect(vendors(matchConfig({ path: 'main.tf', contents }))).toEqual(['AWS']);
   });
 
+  it('keeps the masked line as long as the raw one, so an escaped quote before a comment shifts nothing', () => {
+    // One blank short before the fix, the `*/` search started a character
+    // early, read the `*` of `/*` as its close and let the commented region in.
+    const contents = [
+      'provider "aws" {',
+      '  alias = "\\"" */* note',
+      '  region = "us-west-2"',
+      '  */',
+      '  region = "eu-central-1"',
+      '}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['AWS', 'eu-central-1'],
+    ]);
+  });
+
   it('binds each region to its provider block and ignores commented ones', () => {
     const contents = [
       '# region = "us-east-1"',

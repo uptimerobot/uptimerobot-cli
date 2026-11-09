@@ -213,11 +213,16 @@ export function renderOutcome(
   const unknown = withError('unknown');
   const failed = withError('failed');
   const attempted = new Set(results.map((item) => item.provider));
-  const notAttempted = byRow('create').filter((provider) => !attempted.has(provider));
-  if (confirmation !== 'confirmed' || blocked !== null) lines.push('Nothing was created.');
   // A provider this run says nothing durable about keeps what the earlier
-  // block said: an unresolved or re-proposed row does not undo a create.
+  // block said: an unresolved or re-proposed row does not undo a create, and
+  // a decline on it is not a "not created" either.
   const earlier = durableEntries(carryOverOutcome(previousSeed));
+  const recorded = new Set(earlier.map((entry) => entry.provider));
+  const notAttempted = byRow('create').filter(
+    (provider) => !attempted.has(provider) && !recorded.has(provider),
+  );
+  if (confirmation !== 'confirmed' || blocked !== null)
+    lines.push('Nothing was created by this run.');
   const settled = new Set([
     ...results.flatMap((item) => (item.status === 'created' ? [item.provider] : [])),
     ...byRow('already-tracked'),
