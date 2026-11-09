@@ -10,6 +10,14 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `incidents list --type` and `--cause` filter incidents by type (Downtime,
+  SlowResponse, VisualChange) and by root cause group (Timeout, an HTTP status
+  class 2xx to 5xx, DNS, AssertionFailed, InvalidJSON, ConfigError), from the
+  updated public API contract. With a filter a page may hold fewer items than
+  `--limit`, even none, while `nextLink` is set: keep paging until it is absent.
+
 ## [1.2.0] - 2026-11-06
 
 ### Added

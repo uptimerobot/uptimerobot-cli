@@ -638,6 +638,36 @@ export const operations = {
         "name": "status",
         "required": false,
         "type": "string"
+      },
+      {
+        "description": "Filter incidents by type. With a filter a page may hold fewer items than `limit`, even none, while `nextLink` is set: keep paging until it is absent.",
+        "enum": [
+          "Downtime",
+          "SlowResponse",
+          "VisualChange"
+        ],
+        "in": "query",
+        "name": "type",
+        "required": false,
+        "type": "string"
+      },
+      {
+        "description": "Filter incidents by root cause group: Timeout, an HTTP status class (2xx–5xx), DNS, AssertionFailed, InvalidJSON or ConfigError. Combines with `type` and the other filters. With a filter a page may hold fewer items than `limit`, even none, while `nextLink` is set: keep paging until it is absent.",
+        "enum": [
+          "Timeout",
+          "2xx",
+          "3xx",
+          "4xx",
+          "5xx",
+          "DNS",
+          "AssertionFailed",
+          "InvalidJSON",
+          "ConfigError"
+        ],
+        "in": "query",
+        "name": "cause",
+        "required": false,
+        "type": "string"
       }
     ],
     "path": "/incidents",
