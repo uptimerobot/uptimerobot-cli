@@ -1,12 +1,12 @@
 # Managed by dependabot-rollout. Grouping/cooldown standard v1.
 version: 2
 updates:
-  - package-ecosystem: "npm"
-    directory: "/"
+  - package-ecosystem: 'npm'
+    directory: '/'
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "04:00"
+      interval: 'weekly'
+      day: 'monday'
+      time: '04:00'
     open-pull-requests-limit: 5
     cooldown:
       default-days: 5
@@ -15,48 +15,48 @@ updates:
       semver-patch-days: 3
     groups:
       security-updates:
-        applies-to: "security-updates"
+        applies-to: 'security-updates'
         patterns:
-          - "*"
+          - '*'
         update-types:
-          - "minor"
-          - "patch"
+          - 'minor'
+          - 'patch'
       dev-dependencies:
-        applies-to: "version-updates"
-        dependency-type: "development"
+        applies-to: 'version-updates'
+        dependency-type: 'development'
         patterns:
-          - "*"
+          - '*'
         update-types:
-          - "minor"
-          - "patch"
+          - 'minor'
+          - 'patch'
       prod-dependencies:
-        applies-to: "version-updates"
-        dependency-type: "production"
+        applies-to: 'version-updates'
+        dependency-type: 'production'
         patterns:
-          - "*"
+          - '*'
         update-types:
-          - "minor"
-          - "patch"
+          - 'minor'
+          - 'patch'
 
   # Bump SHA-pinned GitHub Actions via reviewed PRs so the pins don't go stale.
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "04:00"
+      interval: 'weekly'
+      day: 'monday'
+      time: '04:00'
     open-pull-requests-limit: 5
     cooldown:
       default-days: 7
     groups:
       security-updates:
-        applies-to: "security-updates"
+        applies-to: 'security-updates'
         patterns:
-          - "*"
+          - '*'
         update-types:
-          - "minor"
-          - "patch"
+          - 'minor'
+          - 'patch'
       all:
-        applies-to: "version-updates"
+        applies-to: 'version-updates'
         patterns:
-          - "*"
+          - '*'
