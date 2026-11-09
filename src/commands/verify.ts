@@ -1,6 +1,6 @@
 import { Flags } from '@oclif/core';
-import { createApiClient } from '../api/client.js';
-import { exitCodeFor, normalizeApiError } from '../api/errors.js';
+import { createApiClient, requestJson } from '../api/client.js';
+import { ApiFailure } from '../api/errors.js';
 import { formatInvocation, resolveCliInvocation } from '../lib/agent-setup/cli-invocation.js';
 import { AGENT_SETUP_TAG } from '../lib/agent-setup/tag.js';
 import { AuthenticationError, resolveApiKey } from '../lib/auth.js';
@@ -9,9 +9,9 @@ import { operations } from '../generated/operations.js';
 import type { InvocationMode } from '../lib/invocation.js';
 import { detectInvocationMode, isCI } from '../lib/invocation.js';
 import { isPlainRecord, isRecord } from '../lib/objects.js';
+import { MAX_PAGES, PAGE_SIZE, pageThrough } from '../lib/paginate.js';
 import { buildUrl } from '../lib/request.js';
 import type { ColumnSpec } from '../output/columns.js';
-import { normalizeResult } from '../output/normalize-result.js';
 import { formatOutput } from '../output/renderer.js';
 import { resolveFormat } from '../output/resolve-format.js';
 
@@ -29,17 +29,6 @@ import { resolveFormat } from '../output/resolve-format.js';
 const RUN_REPORT_FILE_NAME = 'uptimerobot-report.md';
 
 const MONITORS_LIST = operations['monitors:list'];
-
-/** `monitors list` caps `limit` at 200, so this is one round trip per 200 monitors. */
-const PAGE_SIZE = 200;
-
-/**
- * A stop for a cursor that never terminates. 10,000 monitors is far past any
- * plausible agent setup, so reaching it means the pagination is wrong rather
- * than the account being large — and the caller is told the list is partial
- * instead of being handed a silently truncated answer.
- */
-const MAX_PAGES = 50;
 
 /**
  * What this command cannot see, stated once and rendered in both output modes
@@ -194,52 +183,30 @@ Finding no monitors is a result, not a failure: the command exits 0 whether the 
       version: this.config.pjson.version,
     });
     const monitors: VerifiedMonitor[] = [];
-    // A cursor that points back at a page already read would loop forever.
-    const seenCursors = new Set<string>();
-    let cursor: string | undefined;
-
-    for (let page = 0; page < MAX_PAGES; page += 1) {
-      // Built from the same generated operation `monitors list` uses, so a
-      // change to the path or the parameter names cannot leave this command
-      // querying a contract that no longer exists.
-      const url = buildUrl(
-        MONITORS_LIST,
-        { path: {}, query: { cursor, limit: PAGE_SIZE, tags: tags.join(',') } },
-        apiUrl,
-      );
-
-      let result: Awaited<ReturnType<typeof client.request>>;
-      try {
-        result = await client.request(url, {
-          headers: new Headers({ accept: 'application/json' }),
-          method: MONITORS_LIST.method,
-        });
-      } catch (error) {
-        return this.fail({ code: 'NETWORK_ERROR', message: describeError(error) }, 1);
-      }
-      if (!result.response.ok) {
-        return this.fail(
-          normalizeApiError(result.response.status, result.payload),
-          exitCodeFor(result.response.status),
-        );
-      }
-
-      const normalized = normalizeResult(result.payload);
-      const items =
-        isPlainRecord(normalized) && Array.isArray(normalized.items) ? normalized.items : [];
-      for (const item of items) monitors.push(verifiedMonitor(item));
-
-      const next =
-        isPlainRecord(normalized) && typeof normalized.nextCursor === 'string'
-          ? normalized.nextCursor
-          : undefined;
-      if (next === undefined || next.length === 0 || seenCursors.has(next)) {
-        return { monitors, truncated: false };
-      }
-      seenCursors.add(next);
-      cursor = next;
+    try {
+      const { truncated } = await pageThrough({
+        // Built from the same generated operation `monitors list` uses, so a
+        // change to the path or the parameter names cannot leave this command
+        // querying a contract that no longer exists.
+        fetchPage: (cursor) =>
+          requestJson(
+            client,
+            buildUrl(
+              MONITORS_LIST,
+              { path: {}, query: { cursor, limit: PAGE_SIZE, tags: tags.join(',') } },
+              apiUrl,
+            ),
+            MONITORS_LIST.method,
+          ),
+        onItems: (items) => {
+          for (const item of items) monitors.push(verifiedMonitor(item));
+        },
+      });
+      return { monitors, truncated };
+    } catch (error) {
+      if (error instanceof ApiFailure) return this.fail(error.cliError, error.exitCode);
+      throw error;
     }
-    return { monitors, truncated: true };
   }
 }
 
@@ -321,8 +288,4 @@ function tagNames(value: unknown): readonly string[] {
 
 function joinTags(value: unknown): unknown {
   return Array.isArray(value) && value.length > 0 ? value.join(', ') : undefined;
-}
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

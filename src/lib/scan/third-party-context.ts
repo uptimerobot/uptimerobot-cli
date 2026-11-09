@@ -206,7 +206,12 @@ const REASON_LABELS: Readonly<Record<ThirdPartyMentionReason, string>> = {
 
 /** The Markdown section, as lines without a trailing blank. */
 export function formatThirdPartySection(context: ThirdPartyContext): string[] {
-  const lines = ['## Third-party providers (candidates for third-party services)'];
+  const lines = [
+    '## Third-party providers (candidates for third-party services)',
+    '',
+    '> These need no base URL: `uptimerobot scan --apply` resolves them against the catalog',
+    '> and creates a third-party service per confirmed row.',
+  ];
   const runtime = context.candidates.filter((candidate) => candidate.class === 'runtime');
   const buildTime = context.candidates.filter((candidate) => candidate.class === 'build-time');
 
