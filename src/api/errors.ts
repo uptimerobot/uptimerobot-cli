@@ -40,3 +40,31 @@ export function exitCodeFor(status: number): number {
   if (status === 429) return 7;
   return 1;
 }
+
+/**
+ * A failed API call as a thrown value: the normalized error and the exit code
+ * it maps to, so a library function can stop on the first failure and a
+ * command can report it the way every other command does.
+ */
+export class ApiFailure extends Error {
+  readonly cliError: CliError;
+  readonly exitCode: number;
+
+  constructor(cliError: CliError, exitCode: number) {
+    super(cliError.message);
+    this.name = 'ApiFailure';
+    this.cliError = cliError;
+    this.exitCode = exitCode;
+  }
+}
+
+/** The failure for a response the client returned, or a transport error it threw. */
+export function apiFailureFrom(error: unknown): ApiFailure;
+export function apiFailureFrom(status: number, payload: unknown): ApiFailure;
+export function apiFailureFrom(errorOrStatus: unknown, payload?: unknown): ApiFailure {
+  if (typeof errorOrStatus === 'number') {
+    return new ApiFailure(normalizeApiError(errorOrStatus, payload), exitCodeFor(errorOrStatus));
+  }
+  const message = errorOrStatus instanceof Error ? errorOrStatus.message : String(errorOrStatus);
+  return new ApiFailure({ code: 'NETWORK_ERROR', message }, 1);
+}

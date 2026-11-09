@@ -249,6 +249,7 @@ describe('scanThirdParty', () => {
       'a\nb\u001b[31m/package.json': '{ "dependencies": { "stripe": "1" } }',
       'ok/package.json': '{ "dependencies": { "resend": "1" } }',
       'ok/vercel\u0007.json': '{}',
+      'evil\u202e\u200b/fly.toml': '',
     });
     const findings = await scanThirdParty(root);
     expect(summarize(findings)).toEqual(['vendor Resend npm ok/package.json:1 app=ok resend@1']);

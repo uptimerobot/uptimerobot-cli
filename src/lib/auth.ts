@@ -1,6 +1,7 @@
 import type { CredentialBackend, CredentialStore } from './credential-store.js';
 import { credentialStore } from './credential-store.js';
-import type { ExecutionEnvironment, InvocationMode } from './invocation.js';
+import { type ApiClient, createApiClient } from '../api/client.js';
+import { type ExecutionEnvironment, type InvocationMode, isCI } from './invocation.js';
 
 export const PRODUCTION_API_URL = 'https://api.uptimerobot.com/v3';
 
@@ -24,6 +25,29 @@ export class AuthenticationError extends Error {
   ) {
     super(message);
   }
+}
+
+/** The development API URL override is not a URL: an input error, with the same shape every command prints for one. */
+export class InvalidApiUrlError extends Error {
+  readonly cliError = {
+    code: 'INVALID_INPUT',
+    expected: 'an absolute URL',
+    message: 'UPTIMEROBOT_DEV_API_URL is not a valid URL.',
+    path: 'UPTIMEROBOT_DEV_API_URL',
+  } as const;
+
+  readonly exitCode = 2;
+
+  constructor() {
+    super('UPTIMEROBOT_DEV_API_URL is not a valid URL.');
+  }
+}
+
+function resolveApiUrl(): URL {
+  const override = process.env.UPTIMEROBOT_DEV_API_URL;
+  if (override === undefined) return new URL(PRODUCTION_API_URL);
+  if (!URL.canParse(override)) throw new InvalidApiUrlError();
+  return new URL(override);
 }
 
 export async function saveValidatedApiKey(
@@ -107,4 +131,33 @@ export async function resolveApiKey(
     'Run `uptimerobot auth login --api-key <key>`, set UPTIMEROBOT_API_KEY, or pass --api-key.',
     2,
   );
+}
+
+export interface ApiAccess {
+  client: ApiClient;
+  apiUrl: URL;
+}
+
+/**
+ * The client an authenticated command talks through: the API URL from the
+ * environment override or production, the key from the shared resolver, the
+ * mode and version stamped on every request. Throws the resolver's
+ * `AuthenticationError`, or `InvalidApiUrlError` for a bad override, which a
+ * command maps the way it already does.
+ */
+export async function resolveApiAccess(options: {
+  explicitApiKey: unknown;
+  mode: InvocationMode;
+  version: string;
+}): Promise<ApiAccess> {
+  const apiUrl = resolveApiUrl();
+  const apiKey = await resolveApiKey(options.explicitApiKey, apiUrl.toString());
+  const client = createApiClient({
+    apiKey,
+    apiUrl,
+    environment: isCI() ? 'ci' : 'local',
+    mode: options.mode,
+    version: options.version,
+  });
+  return { client, apiUrl };
 }

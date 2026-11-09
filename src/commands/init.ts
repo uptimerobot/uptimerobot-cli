@@ -1,4 +1,5 @@
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { access, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Flags } from '@oclif/core';
 import type { CliInvocation } from '../lib/agent-setup/cli-invocation.js';
@@ -12,12 +13,27 @@ import { renderSetupGuide } from '../lib/agent-setup/setup-guide.js';
 import { AGENT_SETUP_TAG } from '../lib/agent-setup/tag.js';
 import type { AgentTarget } from '../lib/agent-targets.js';
 import { AGENT_TARGETS, DEFAULT_AGENT_TARGET, detectAgentTargets } from '../lib/agent-targets.js';
-import { AuthenticationError, PRODUCTION_API_URL, resolveApiKey } from '../lib/auth.js';
+import {
+  type ApiAccess,
+  AuthenticationError,
+  InvalidApiUrlError,
+  resolveApiAccess,
+} from '../lib/auth.js';
 import { BaseCommand } from '../lib/base-command.js';
 import type { SelectionChoice } from '../lib/invocation.js';
+import type { InvocationMode } from '../lib/invocation.js';
 import { detectInvocationMode, promptSelection } from '../lib/invocation.js';
 import type { SeedContext } from '../lib/scan/index.js';
 import { formatSeedContext, scanRepository } from '../lib/scan/index.js';
+import {
+  type OfferDecision,
+  type OfferOutcome,
+  carryOverOutcome,
+  decideOffer,
+  offerThirdParty,
+  renderOutcome,
+  wantsApplyHint,
+} from '../lib/third-party/init-offer.js';
 import { resolveFormat } from '../output/resolve-format.js';
 
 /** No signup address is published in this repository, so the public one is used. */
@@ -117,6 +133,8 @@ interface InitOutput {
   /** Null when --no-agent skipped setup. */
   skills: InitSkillsOutput | null;
   target: AgentTarget | null;
+  /** The third-party offer, or null when it was not made (see `decideOffer`). */
+  thirdParty: OfferOutcome | null;
   /** Proves afterwards what the agent actually created. */
   verifyCommand: string;
 }
@@ -167,6 +185,9 @@ Precedence:
     'no-launch': Flags.boolean({
       description: 'Do not open the coding agent; only write the scan and print the handoff hint',
     }),
+    'no-third-party': Flags.boolean({
+      description: 'Do not offer to create third-party services for the providers the scan found',
+    }),
     target: Flags.option({ options: AGENT_TARGETS })({
       description: 'Coding agent to set up for',
     }),
@@ -199,13 +220,16 @@ Precedence:
     // caller without an account is routed to signup immediately. The shared
     // resolver owns the precedence between --api-key, UPTIMEROBOT_API_KEY and
     // a stored login, which keeps init consistent with every API command.
+    let access: ApiAccess;
     try {
-      await resolveApiKey(
-        flags['api-key'],
-        new URL(process.env.UPTIMEROBOT_DEV_API_URL ?? PRODUCTION_API_URL).toString(),
-      );
+      access = await resolveApiAccess({
+        explicitApiKey: flags['api-key'],
+        mode,
+        version: this.config.pjson.version,
+      });
     } catch (error) {
       if (error instanceof AuthenticationError) return this.failAuthentication(error);
+      if (error instanceof InvalidApiUrlError) return this.fail(error.cliError, error.exitCode);
       throw error;
     }
 
@@ -257,7 +281,27 @@ Precedence:
     // than to answer the question itself, which is why the file it writes
     // keeps the rejections too.
     const context = await scanRepository(root);
-    const seedContext = await this.writeSeedContext(root, context, invocation);
+    const seedPath = join(root, SEED_CONTEXT_FILE_NAME);
+    const previousSeed = await readMarkedFile(seedPath);
+    const decision: OfferDecision = decideOffer({
+      interactive,
+      optedOut: flags['no-third-party'] === true,
+      hasRuntimeCandidates: context.thirdParty.candidates.some((c) => c.class === 'runtime'),
+      previousSeed,
+      seedBeginPrefix: SEED_BEGIN_PREFIX,
+      seedWritable: await canWriteSeed(seedPath, root),
+    });
+    const thirdParty =
+      decision === 'offer'
+        ? await offerThirdParty({ context, access, mode, invocation, io: this })
+        : null;
+    // A run that made no offer, or whose offer could not resolve, keeps what an
+    // earlier one recorded, so no rerun erases "Created: Stripe" from the seed file.
+    const outcomeLines =
+      thirdParty === null
+        ? carryOverOutcome(previousSeed)
+        : renderOutcome(thirdParty, invocation, previousSeed);
+    const seedContext = await this.writeSeedContext(root, context, invocation, outcomeLines);
     // Written next to the scan and on the same terms, so the two halves of the
     // handoff always arrive together. Unconditional, like the scan: a --no-agent
     // run still leaves the guide for whichever agent the user opens later.
@@ -292,7 +336,7 @@ Precedence:
       invocation: invocation.command,
       launchCommand: plan === null ? null : describeLaunch(plan),
       launched: willLaunch,
-      nextSteps: nextSteps(target, invocation),
+      nextSteps: nextSteps(target, invocation, wantsApplyHint(decision)),
       prompt: agentPrompt(),
       repoRoot: root,
       seedContext,
@@ -307,6 +351,7 @@ Precedence:
               outcome: report.outcome,
             },
       target: target ?? null,
+      thirdParty,
       verifyCommand: verifyCommand(invocation),
     };
 
@@ -376,7 +421,11 @@ Precedence:
    * every byte of it, and the marker is there so a rerun can tell its own
    * output from a file someone else put at that name.
    */
-  private renderSeedContext(context: SeedContext, invocation: CliInvocation): string {
+  private renderSeedContext(
+    context: SeedContext,
+    invocation: CliInvocation,
+    outcomeLines: readonly string[],
+  ): string {
     return [
       `${SEED_BEGIN_PREFIX} version=${this.config.pjson.version} schema=${context.schemaVersion} -->`,
       '',
@@ -384,6 +433,7 @@ Precedence:
       `this file with \`${formatInvocation(invocation, 'init --clean')}\`. Edits are overwritten.`,
       '',
       formatSeedContext(context).trimEnd(),
+      ...(outcomeLines.length === 0 ? [] : ['', ...outcomeLines]),
       '',
       SEED_END_MARKER,
       '',
@@ -465,12 +515,13 @@ Precedence:
     root: string,
     context: SeedContext,
     invocation: CliInvocation,
+    outcomeLines: readonly string[],
   ): Promise<InitSeedOutput> {
     const written = await this.writeMarkedFile({
       beginPrefix: SEED_BEGIN_PREFIX,
       existsCode: 'SEED_CONTEXT_EXISTS',
       path: join(root, SEED_CONTEXT_FILE_NAME),
-      rendered: this.renderSeedContext(context, invocation),
+      rendered: this.renderSeedContext(context, invocation, outcomeLines),
       writeCode: 'SEED_CONTEXT_WRITE_FAILED',
     });
     return { ...written, schemaVersion: context.schemaVersion, summary: context.summary };
@@ -575,7 +626,7 @@ function handoffLines(output: InitOutput, context: SeedContext): readonly string
 function scanSummaryLines(output: InitOutput, context: SeedContext): readonly string[] {
   const { summary } = context;
   return [
-    `Scanned ${output.repoRoot}: ${count(summary.accepted, 'candidate')}, ${summary.rejected} skipped, ${count(summary.heartbeats, 'scheduled job')}.`,
+    `Scanned ${output.repoRoot}: ${count(summary.accepted, 'candidate')}, ${summary.rejected} skipped, ${count(summary.heartbeats, 'scheduled job')}, ${count(summary.thirdPartyProviders, 'third-party provider')}.`,
     writtenLine(output.setupGuide),
     writtenLine(output.seedContext),
   ];
@@ -606,7 +657,11 @@ function count(value: number, noun: string): string {
  * The handoff itself. Every command it names is templated, so a caller who
  * arrived through npx is never told to run a binary they do not have.
  */
-function nextSteps(target: AgentTarget | undefined, invocation: CliInvocation): readonly string[] {
+function nextSteps(
+  target: AgentTarget | undefined,
+  invocation: CliInvocation,
+  thirdPartyHint: boolean,
+): readonly string[] {
   const opening =
     target === undefined
       ? `Agent setup was skipped. ${SETUP_GUIDE_FILE_NAME} and ${SEED_CONTEXT_FILE_NAME} are ready for whichever coding agent you use — open them in this repository and ask:`
@@ -617,6 +672,11 @@ function nextSteps(target: AgentTarget | undefined, invocation: CliInvocation): 
     `  ${agentPrompt()}`,
     '',
     `Following ${SETUP_GUIDE_FILE_NAME}, it proposes monitors and heartbeat pings, asks before creating anything, tags what it creates \`${AGENT_SETUP_TAG}\`, and writes ${RUN_REPORT_FILE_NAME}.`,
+    ...(thirdPartyHint
+      ? [
+          `Create the third-party services the scan found with \`${formatInvocation(invocation, 'scan --apply')}\`; the agent does the same from the guide.`,
+        ]
+      : []),
     ...(target === undefined
       ? [`Set an agent up later with \`${formatInvocation(invocation, 'init --target <name>')}\`.`]
       : []),
@@ -709,5 +769,21 @@ async function readMarkedFile(path: string): Promise<string | undefined> {
     return await readFile(path, 'utf8');
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Whether the seed file can be written: an existing path must be a regular
+ * file with write access; a missing one needs a writable directory. A path
+ * that exists as anything else (a directory, a socket) cannot be written.
+ */
+async function canWriteSeed(seedPath: string, directory: string): Promise<boolean> {
+  try {
+    const existing = await stat(seedPath).catch(() => undefined);
+    if (existing !== undefined && !existing.isFile()) return false;
+    await access(existing === undefined ? directory : seedPath, constants.W_OK);
+    return true;
+  } catch {
+    return false;
   }
 }

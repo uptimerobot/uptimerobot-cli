@@ -80,7 +80,7 @@ const UNKNOWN_LINE = 1;
  * so a 100 KB string cannot become a 100 KB report line.
  */
 const DEPENDENCY_NAME = /^[A-Za-z0-9@._/!~[\],-]{1,200}$/;
-const DEPENDENCY_VERSION = /^[A-Za-z0-9.^~<>=!*|,+ -]{0,64}$/;
+const DEPENDENCY_VERSION = /^[A-Za-z0-9.^~<>=!*|,+ -]{0,32}$/;
 
 function sanitized(dependency: Declared): Declared {
   return DEPENDENCY_VERSION.test(dependency.version) ? dependency : { ...dependency, version: '' };
