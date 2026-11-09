@@ -211,7 +211,9 @@ describe('agent detection', () => {
   });
 
   it('resolves a Windows executable through PATHEXT', async () => {
-    await createExecutable(binDirectory, 'gemini.cmd');
+    // Spelled as PATHEXT lists it: the suite runs on case-sensitive file
+    // systems too, where `gemini.cmd` would not be the `gemini.CMD` looked up.
+    await createExecutable(binDirectory, 'gemini.CMD');
     const windows = probe({
       env: { PATH: binDirectory, PATHEXT: '.COM;.EXE;.CMD' },
       platform: 'win32',
