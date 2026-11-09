@@ -38,6 +38,9 @@ export function confirmationAvailable(mode: InvocationMode): boolean {
 
 export async function requestConfirmation(summary: string, mode: InvocationMode): Promise<boolean> {
   if (!confirmationAvailable(mode)) return false;
+  // An input that already ended will never emit the close the race below
+  // waits on; it is the same no, decided before the question is printed.
+  if (process.stdin.readableEnded) return false;
   const reader = createInterface({ input: process.stdin, output: process.stderr });
   try {
     // An input that ends before an answer (Ctrl-D, Ctrl-C, a closed stdin) is a

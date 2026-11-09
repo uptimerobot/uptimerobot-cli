@@ -279,12 +279,13 @@ export async function createProposed(
     }
     const monitorId = monitorIdOf(payload);
     if (monitorId === null) {
-      // The API always answers a create with the monitor; anything else is not a create.
+      // A 2xx without the monitor: the API probably wrote it and did not say,
+      // which is `unknown`, never a create to repeat by hand.
       const failure = new ApiFailure(
         { code: 'INVALID_RESPONSE', message: 'The create did not return a monitor.' },
         1,
       );
-      results.push({ provider: row.provider, status: 'failed', error: failure.cliError });
+      results.push({ provider: row.provider, status: 'unknown', error: failure.cliError });
       return { results, failure };
     }
     results.push({ provider: row.provider, status: 'created', monitorId });
@@ -391,7 +392,7 @@ function evidenceCell(row: ResolvedCandidate): string {
 
 /** Text from the API or the catalog: no control characters, one line. */
 export function plain(text: string): string {
-  return text.replaceAll(CONTROL_CHARACTERS, '').replaceAll(/\s+/g, ' ');
+  return text.replaceAll(/\s+/g, ' ').replaceAll(CONTROL_CHARACTERS, '');
 }
 
 function cell(text: string): string {

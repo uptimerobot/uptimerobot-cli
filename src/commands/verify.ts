@@ -192,8 +192,8 @@ Finding no monitors is a result, not a failure: the command exits 0 whether the 
         // Built from the same generated operation `monitors list` uses, so a
         // change to the path or the parameter names cannot leave this command
         // querying a contract that no longer exists.
-        fetchPage: async (cursor) => {
-          const payload = await requestJson(
+        fetchPage: (cursor) =>
+          requestJson(
             client,
             buildUrl(
               MONITORS_LIST,
@@ -201,16 +201,7 @@ Finding no monitors is a result, not a failure: the command exits 0 whether the 
               apiUrl,
             ),
             MONITORS_LIST.method,
-          );
-          // A 2xx that is not a list would read as an empty page and a clean
-          // zero, which is the one answer this command exists to make reliable.
-          if (Array.isArray(payload) || (isPlainRecord(payload) && Array.isArray(payload.data)))
-            return payload;
-          throw new ApiFailure(
-            { code: 'INVALID_RESPONSE', message: 'The monitor list did not return monitors.' },
-            1,
-          );
-        },
+          ),
         onItems: (items) => {
           for (const item of items) monitors.push(verifiedMonitor(item));
         },

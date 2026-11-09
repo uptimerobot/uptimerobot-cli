@@ -3,8 +3,10 @@
  * API stops handing one out, a cursor repeats (a loop that would never end),
  * or the page cap is reached. A repeated cursor and the cap both make
  * `truncated` true, with the reason: either way the list is a prefix, not
- * the whole, but a caller reports them differently.
+ * the whole, but a caller reports them differently. A 2xx body that is not a
+ * list is refused here, once, rather than read as a complete empty list.
  */
+import { ApiFailure } from '../api/errors.js';
 import { isPlainRecord } from './objects.js';
 import { normalizeResult } from '../output/normalize-result.js';
 
@@ -30,9 +32,13 @@ export async function pageThrough(options: PageOptions): Promise<PageResult> {
   let cursor: string | undefined;
   for (let page = 0; page < maxPages; page += 1) {
     const normalized = normalizeResult(await options.fetchPage(cursor));
-    const items =
-      isPlainRecord(normalized) && Array.isArray(normalized.items) ? normalized.items : [];
-    options.onItems(items);
+    if (!isPlainRecord(normalized) || !Array.isArray(normalized.items)) {
+      throw new ApiFailure(
+        { code: 'INVALID_RESPONSE', message: 'The list did not return a page of items.' },
+        1,
+      );
+    }
+    options.onItems(normalized.items);
     const next =
       isPlainRecord(normalized) && typeof normalized.nextCursor === 'string'
         ? normalized.nextCursor

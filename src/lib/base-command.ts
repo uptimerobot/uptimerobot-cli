@@ -10,6 +10,8 @@ import {
 import { isUnknownCommandMessage, withConfiguredCommandId } from './command-id.js';
 
 const TERMINAL_CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
+/** A line break or tab in an API message would print a second, misleading line. */
+const LINE_BREAK = /[\t\n\r]+/g;
 
 export abstract class BaseCommand extends Command {
   protected override async catch(error: Error & { exitCode?: number }): Promise<never> {
@@ -31,7 +33,7 @@ export abstract class BaseCommand extends Command {
     // the JSON envelope is left as is for the machine reading it.
     this.logToStderr(
       failure && !machineOutput
-        ? `${error.cliError.message.replaceAll(TERMINAL_CONTROL, '')}${error.cliError.code ? ` (${error.cliError.code})` : ''}`
+        ? `${error.cliError.message.replaceAll(TERMINAL_CONTROL, '').replaceAll(LINE_BREAK, ' ')}${error.cliError.code ? ` (${error.cliError.code})` : ''}`
         : JSON.stringify(errorEnvelope(error)),
     );
     process.exitCode = exitCodeForError(error);

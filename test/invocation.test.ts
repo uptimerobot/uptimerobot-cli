@@ -80,6 +80,19 @@ describe('requestConfirmation', () => {
     await expect(answer).resolves.toBe(false);
   });
 
+  it('answers no at once when stdin had already ended before the question', async () => {
+    const { stdin, stderrText } = fakeTerminal();
+    // Consumed and ended by an earlier reader, as a second prompt would find it.
+    stdin.resume();
+    stdin.end();
+    await new Promise((resolve) => stdin.once('end', resolve));
+
+    await expect(requestConfirmation('Create 2 third-party services now', 'human')).resolves.toBe(
+      false,
+    );
+    expect(stderrText()).toBe('');
+  });
+
   it('does not prompt an agent', async () => {
     const { stderrText } = fakeTerminal();
 

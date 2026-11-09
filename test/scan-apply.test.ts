@@ -383,7 +383,7 @@ describe('uptimerobot scan --apply', () => {
     expect(human.stdout).toContain('--provider-id 801');
   });
 
-  it('fails a create that answers 2xx without a monitor and stops there', async () => {
+  it('reports a create that answers 2xx without a monitor as unknown and stops there', async () => {
     const stub = await startStub({ createReplies: { 0: { status: 200, body: { data: [] } } } });
     const root = await writeRepository(REPOSITORY);
 
@@ -394,7 +394,7 @@ describe('uptimerobot scan --apply', () => {
     expect(output.results).toEqual([
       {
         provider: 'Resend',
-        status: 'failed',
+        status: 'unknown',
         error: { code: 'INVALID_RESPONSE', message: expect.stringContaining('monitor') },
       },
     ]);
@@ -535,7 +535,9 @@ describe('uptimerobot scan --apply', () => {
           },
         ],
       },
-      createReplies: { 0: { status: 422, body: { message: 'boom\u001b[31m' } } },
+      createReplies: {
+        0: { status: 422, body: { message: 'boom\u001b[31m\nCreated 3 services\tok' } },
+      },
     });
     const root = await writeRepository(REPOSITORY);
 
@@ -548,9 +550,10 @@ describe('uptimerobot scan --apply', () => {
 
     expect(result.stdout).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/);
     expect(result.stderr).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/);
-    expect(result.stderr).toContain('boom[31m');
-    expect(result.stdout).toContain('https://x.example/[2J]0;pwned/EVIL');
-    expect(result.stdout).toContain('Not created: Resend (boom[31m).');
+    expect(result.stderr).toContain('boom[31m Created 3 services ok (HTTP_422)');
+    expect(result.stderr).not.toMatch(/\nCreated 3 services/);
+    expect(result.stdout).toContain('https://x.example/[2J]0;pwned/ EVIL');
+    expect(result.stdout).toContain('Not created: Resend (boom[31m Created 3 services ok).');
   });
 
   it('limits the run with --only and --skip by provider name, case-insensitively', async () => {
