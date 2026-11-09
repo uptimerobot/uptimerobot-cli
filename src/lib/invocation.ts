@@ -40,7 +40,12 @@ export async function requestConfirmation(summary: string, mode: InvocationMode)
   if (!confirmationAvailable(mode)) return false;
   const reader = createInterface({ input: process.stdin, output: process.stderr });
   try {
-    const answer = await reader.question(`${summary}. Continue? [y/N] `);
+    // An input that ends before an answer (Ctrl-D, Ctrl-C, a closed stdin) is a
+    // no, not a hang: the question would otherwise never settle.
+    const answer = await Promise.race([
+      reader.question(`${summary}. Continue? [y/N] `),
+      new Promise<string>((resolve) => reader.once('close', () => resolve(''))),
+    ]);
     return /^(y|yes)$/i.test(answer.trim());
   } finally {
     reader.close();

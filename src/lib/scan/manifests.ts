@@ -80,7 +80,7 @@ const UNKNOWN_LINE = 1;
  * so a 100 KB string cannot become a 100 KB report line.
  */
 const DEPENDENCY_NAME = /^[A-Za-z0-9@._/!~[\],-]{1,200}$/;
-const DEPENDENCY_VERSION = /^[A-Za-z0-9.^~<>=!*|,+ -]{0,64}$/;
+const DEPENDENCY_VERSION = /^[A-Za-z0-9.^~<>=!*|,+ -]{0,32}$/;
 
 function sanitized(dependency: Declared): Declared {
   return DEPENDENCY_VERSION.test(dependency.version) ? dependency : { ...dependency, version: '' };
@@ -108,6 +108,11 @@ function ecosystemFor(path: string): PackageEcosystem | undefined {
   if (name === 'composer.json') return 'composer';
   if (name === 'Cargo.toml') return 'cargo';
   return undefined;
+}
+
+/** Whether {@link matchManifest} has a parser for this path, judged from its name. */
+export function isManifestFile(path: string): boolean {
+  return ecosystemFor(path) !== undefined;
 }
 
 /** Runs the right parser for the file and classifies every declared dependency. */

@@ -71,6 +71,15 @@ describe('requestConfirmation', () => {
     await expect(answer).resolves.toBe(false);
   });
 
+  it('treats an input that ends before an answer as a no, instead of hanging', async () => {
+    const { stdin } = fakeTerminal();
+
+    const answer = requestConfirmation('Create 2 third-party services now', 'human');
+    stdin.end();
+
+    await expect(answer).resolves.toBe(false);
+  });
+
   it('does not prompt an agent', async () => {
     const { stderrText } = fakeTerminal();
 

@@ -41,3 +41,20 @@ export function compareStrings(left: string, right: string): number {
 export function repoRelativePath(repoRoot: string, absolute: string): string {
   return relative(repoRoot, absolute).split(sep).join('/');
 }
+
+/**
+ * Whether a path or name holds a control character (C0, DEL or C1), a
+ * backslash, a Unicode line or paragraph separator, or a format character
+ * (bidi override, zero-width space): such a name never reaches a finding, an
+ * app or a report line.
+ */
+export function hasUnsafeCharacters(text: string): boolean {
+  for (const character of text) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code < 0x20 || code === 0x7f || character === '\\') return true;
+    if (FORMAT_CHARACTER.test(character)) return true;
+  }
+  return false;
+}
+
+const FORMAT_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
