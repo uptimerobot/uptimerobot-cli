@@ -254,8 +254,8 @@ function braceDelta(line: string): number {
 
 /**
  * A `region` line belongs to the provider block it sits in: the most recent
- * `provider` line names it. A region seen before any provider block is the
- * file's default and reaches every cloud provider of the file.
+ * `provider` line names it. A top-level region seen before any provider block
+ * is the file's default and reaches every cloud provider of the file.
  */
 /** A provider block the vendor map does not know still owns the regions inside it. */
 const UNKNOWN_PROVIDER = '';
@@ -325,7 +325,7 @@ function terraform(contents: string): Match[] {
     const value = TF_REGION.exec(line)?.[1];
     if (value === undefined || !REGION.test(value)) continue;
     if (currentProvider === undefined) {
-      if (!seenProvider && fileRegion === '') fileRegion = value;
+      if (!seenProvider && depth === 0 && fileRegion === '') fileRegion = value;
     } else if (depth === providerDepth && !regions.has(currentProvider)) {
       regions.set(currentProvider, value);
     }

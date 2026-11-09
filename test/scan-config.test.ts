@@ -291,6 +291,22 @@ describe('terraform', () => {
     ]);
   });
 
+  it('takes a file default only from the top level, never from a resource before the first provider', () => {
+    const contents = [
+      'resource "aws_s3_bucket" "b" {',
+      '  region = "us-west-2"',
+      '}',
+      'provider "aws" {}',
+      'provider "google" {}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['AWS', ''],
+      ['AWS', ''],
+      ['Google Cloud', ''],
+    ]);
+  });
+
   it('keeps the region of an unknown provider block out of the file default', () => {
     const contents = 'provider "awscc" {\n  region = "us-west-2"\n}\nprovider "google" {}\n';
     const findings = matchConfig({ path: 'main.tf', contents });
