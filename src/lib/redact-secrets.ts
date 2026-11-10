@@ -41,16 +41,17 @@ function redactValue(value: unknown, path: string[], redacted: string[]): unknow
 }
 
 const NO_KEYS: ReadonlySet<string> = new Set();
-const HEARTBEAT_SECRET_KEYS: ReadonlySet<string> = new Set(['pingUrl', 'url']);
+const HEARTBEAT_SECRET_KEYS: ReadonlySet<string> = new Set(['heartbeatUrl', 'pingUrl', 'url']);
 
 /**
  * Fields that carry a secret because of the record they sit in rather than what
  * they are called. A heartbeat monitor's `url` is the token its ping endpoint
- * is built from, and `pingUrl` is that endpoint: anyone holding either can
- * report the heartbeat, so a leak keeps a dead service looking alive with no
- * alert and nothing on the monitor to show for it. Every other monitor type
- * uses `url` for a target address, which is not a secret — hence the type
- * check rather than a name added to sensitive-fields.ts.
+ * is built from, and `heartbeatUrl` (from the API) and `pingUrl` (from the CLI)
+ * are that endpoint: anyone holding any of them can report the heartbeat, so a
+ * leak keeps a dead service looking alive with no alert and nothing on the
+ * monitor to show for it. Every other monitor type uses `url` for a target
+ * address, which is not a secret, and has a null `heartbeatUrl` — hence the
+ * type check rather than names added to sensitive-fields.ts.
  */
 function contextualSensitiveKeys(record: Record<string, unknown>): ReadonlySet<string> {
   return record.type === 'HEARTBEAT' ? HEARTBEAT_SECRET_KEYS : NO_KEYS;

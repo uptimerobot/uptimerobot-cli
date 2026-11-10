@@ -164,6 +164,77 @@ describe('response redaction', () => {
     });
   });
 
+  it('redacts every name of a heartbeat ping URL and lists them on stderr', async () => {
+    const token = '997c8970ac0fcdffd5f5702754307572c377f8e6';
+    const pingUrl = `https://heartbeat.uptimerobot.com/m803704830-${token}`;
+    const monitor = { id: 803704830, type: 'HEARTBEAT', url: token, heartbeatUrl: pingUrl };
+    const apiUrl = await serve(monitor);
+
+    const redacted = await runCli(['monitors', 'get', '803704830', '--json'], environment(apiUrl));
+    const revealed = await runCli(
+      ['monitors', 'get', '803704830', '--json', '--reveal-secrets'],
+      environment(apiUrl),
+    );
+    const raw = await runCli(['monitors', 'get', '803704830', '--raw'], environment(apiUrl));
+
+    expect(redacted.stdout).not.toContain(token);
+    expect(redacted).toEqual({
+      exitCode: 0,
+      stderr:
+        'Redacted credential-like response fields: url, heartbeatUrl, pingUrl. ' +
+        'Re-run with --reveal-secrets to show them.\n',
+      stdout:
+        '{"id":803704830,"type":"HEARTBEAT","url":"[REDACTED]","heartbeatUrl":"[REDACTED]",' +
+        '"pingUrl":"[REDACTED]"}\n',
+    });
+    expect({ ...revealed, stdout: JSON.parse(revealed.stdout) }).toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: { ...monitor, pingUrl },
+    });
+    expect({ ...raw, stdout: JSON.parse(raw.stdout) }).toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: monitor,
+    });
+  });
+
+  it('redacts heartbeats in a list without touching other monitor types', async () => {
+    const token = '997c8970ac0fcdffd5f5702754307572c377f8e6';
+    const http = { id: 1, type: 'HTTP', url: 'https://checkout.example.com', heartbeatUrl: null };
+    const heartbeat = {
+      id: 803704830,
+      type: 'HEARTBEAT',
+      url: token,
+      heartbeatUrl: `https://heartbeat.uptimerobot.com/m803704830-${token}`,
+    };
+    const apiUrl = await serve({ data: [http, heartbeat] });
+
+    const json = await runCli(['monitors', 'list', '--json'], environment(apiUrl));
+    const table = await runCli(
+      ['monitors', 'list', '--format', 'table', '--all'],
+      environment(apiUrl),
+    );
+
+    expect(json.stdout).not.toContain(token);
+    expect({ ...json, stdout: JSON.parse(json.stdout) }).toEqual({
+      exitCode: 0,
+      stderr:
+        'Redacted credential-like response fields: items[1].url, items[1].heartbeatUrl, ' +
+        'items[1].pingUrl. Re-run with --reveal-secrets to show them.\n',
+      stdout: {
+        items: [
+          http,
+          { ...heartbeat, url: '[REDACTED]', heartbeatUrl: '[REDACTED]', pingUrl: '[REDACTED]' },
+        ],
+        nextCursor: null,
+      },
+    });
+    expect(table.exitCode).toBe(0);
+    expect(table.stdout).not.toContain(token);
+    expect(table.stdout).toContain('https://checkout.example.com');
+  });
+
   it('redacts the resource returned by a create', async () => {
     const created = { id: 99, friendlyName: 'checkout-api', httpPassword: SECRET };
     const apiUrl = await serve(created, 201);

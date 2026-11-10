@@ -40,7 +40,7 @@ uptimerobot --help
 
 ```sh
 uptimerobot version --json
-# {"version":"1.1.0","platform":"darwin-arm64","node":"24.12.0"}
+# {"version":"1.2.0","platform":"darwin-arm64","node":"24.12.0"}
 ```
 
 ## AI agent skills
@@ -213,19 +213,19 @@ uptimerobot monitors third-party-service incidents activity-log 800123456 123456
 
 ## Heartbeat monitors
 
-A heartbeat monitor stays silent until something pings it, so normalized output carries a derived `pingUrl` — the address that job should call. Both it and the `url` it is built from are secrets, so both are redacted unless you ask for them:
+A heartbeat monitor stays silent until something pings it. The API returns the address that job should call as `heartbeatUrl`, and normalized output repeats it as `pingUrl`. Both, and the `url` token they are built from, are secrets, so all three are redacted unless you ask for them:
 
 ```sh
 uptimerobot monitors get 803704830 --json
-# {"type":"HEARTBEAT","id":803704830,"url":"[REDACTED]","pingUrl":"[REDACTED]"}
+# {"type":"HEARTBEAT","id":803704830,"url":"[REDACTED]","heartbeatUrl":"[REDACTED]","pingUrl":"[REDACTED]"}
 
 uptimerobot monitors get 803704830 --json --reveal-secrets
-# {"type":"HEARTBEAT","id":803704830,"url":"997c8970…","pingUrl":"https://heartbeat.uptimerobot.com/m803704830-997c8970…"}
+# {"type":"HEARTBEAT","id":803704830,"url":"997c8970…","heartbeatUrl":"https://heartbeat.uptimerobot.com/m803704830-997c8970…","pingUrl":"https://heartbeat.uptimerobot.com/m803704830-997c8970…"}
 ```
 
-Reach for `--reveal-secrets` when wiring up the job that pings it, which is normally once per monitor. Anyone holding the ping URL can report the heartbeat on your behalf, so a leaked one keeps a dead service looking alive with no alert raised. `url` on every other monitor type is a target address, not a secret, and is never redacted.
+Reach for `--reveal-secrets` when wiring up the job that pings it, which is normally once per monitor. Anyone holding the ping URL can report the heartbeat on your behalf, so a leaked one keeps a dead service looking alive with no alert raised. `url` on every other monitor type is a target address, not a secret, and is never redacted; `heartbeatUrl` is `null` there.
 
-The URL is composed from the monitor's `id` and `url`, where `url` carries the monitor's token rather than a target address. Set `UPTIMEROBOT_HEARTBEAT_URL` to point at a different host. The field is derived by the CLI, not returned by the API, so `--raw` does not include it.
+`pingUrl` is added by the CLI, so `--raw` does not include it. When a response has no `heartbeatUrl`, the CLI composes `pingUrl` from the monitor's `id` and `url`, where `url` carries the monitor's token rather than a target address; set `UPTIMEROBOT_HEARTBEAT_URL` to point that composition at a different host.
 
 ## Validate before sending
 

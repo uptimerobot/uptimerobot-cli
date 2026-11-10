@@ -10,6 +10,38 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `incidents list --type` and `--cause` filter incidents by type (Downtime,
+  SlowResponse, VisualChange) and by root cause group (Timeout, an HTTP status
+  class 2xx to 5xx, DNS, AssertionFailed, InvalidJSON, ConfigError), from the
+  updated public API contract. With a filter a page may hold fewer items than
+  `--limit`, even none, while `nextCursor` is set: pass it through `--cursor`
+  until it is null.
+
+## [1.2.0] - 2026-11-06
+
+### Added
+
+- `incidents list --limit` sets the page size (1 to 200, default 50), from the
+  updated public API contract. The API now pages incidents with an opaque
+  cursor, which `--cursor` accepts unchanged. `--cursor` still accepts an
+  incident id, the cursor of the earlier version of the endpoint.
+
+### Changed
+
+- `pingUrl` mirrors the API's `heartbeatUrl` instead of being composed by the
+  CLI, as the 1.0.0 entry said it would once the API had the field. The values
+  are the same for the production API. `UPTIMEROBOT_HEARTBEAT_URL` now applies
+  only to responses without `heartbeatUrl`.
+
+### Fixed
+
+- A heartbeat monitor's `heartbeatUrl` is redacted. The API returns the ping
+  URL under that name, and only `url` and `pingUrl` were hidden, so JSON, JSONL,
+  `--all` tables, and agent mode printed the URL that anyone can report the
+  heartbeat with. `--reveal-secrets` and `--raw` still show it.
+
 ## [1.1.0] - 2026-11-04
 
 ### Added
@@ -232,7 +264,8 @@ freeze; each entry is a change that would otherwise have needed a 2.0.
 - Redirects are followed manually and the origin is re-checked at every hop
   before credentials are attached; cross-origin redirects are refused.
 
-[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.2.0...v0.3.0
