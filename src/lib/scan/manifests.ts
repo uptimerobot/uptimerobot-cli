@@ -1,0 +1,582 @@
+/**
+ * Reads dependency manifests and names the third-party providers they point
+ * at, with `package@version` and `path:line` evidence for each.
+ *
+ * Only structured dependency fields count. A `description`, a README, a
+ * comment or a script line can name any vendor it likes and yields nothing,
+ * because repository text is data to this scan, never an instruction. Pure:
+ * takes a path and the file's contents, reads nothing else, never throws for a
+ * manifest's own sake (malformed JSON yields no findings).
+ *
+ * Sections read, and nothing else:
+ * - `package.json`: `dependencies`, `peerDependencies`, `optionalDependencies`
+ *   (runtime), `devDependencies` (build-time).
+ * - `composer.json`: `require` (runtime), `require-dev` (build-time).
+ * - `requirements*.txt`: every requirement line.
+ * - `pyproject.toml`: `[project] dependencies` and `[tool.poetry.dependencies]`
+ *   (runtime, plus Poetry's `main` group); `[project.optional-dependencies]`,
+ *   `[dependency-groups]`, `[tool.poetry.dev-dependencies]` and every other
+ *   Poetry group (build-time). `[table.name]` subtables count, `[[arrays]]` do not.
+ * - `go.mod`: `require` lines, `// indirect` included.
+ * - `Gemfile`: `gem` lines; a `group` block or `group:` option is build-time.
+ * - `Cargo.toml`: `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`,
+ *   their `[target.<cfg>.*]` forms and `[table.name]` subtables.
+ * Renames (`package = "real-name"` in Cargo or Poetry) are not resolved; the
+ * declared name is what the map sees.
+ */
+import { isPlainRecord } from '../objects.js';
+import type { ScanFinding } from './finding.js';
+import { type PackageEcosystem, type VendorClass, classifyPackage } from './vendors.js';
+
+/**
+ * `vendor`: a mapped provider. `skip`: a framework or library on the skip list.
+ * `protocol-client`: a database or queue client whose server is unknown.
+ * `unmapped`: a name the map does not know; the scan does not search it.
+ */
+export type ManifestOutcome = 'vendor' | 'skip' | 'protocol-client' | 'unmapped';
+
+/**
+ * One dependency the manifest declares. For a `vendor` outcome `value` is the
+ * provider's catalog name and `detail.signal` is `package@version`; for every
+ * other outcome `value` is the normalized package name. `kind` is the ecosystem.
+ */
+export interface ManifestFinding extends ScanFinding {
+  outcome: ManifestOutcome;
+  detail: {
+    /** `package@version`, or the package alone when the manifest pins nothing. */
+    signal: string;
+    package: string;
+    version: string;
+    /** The manifest section the dependency sits in, as the manifest names it. */
+    scope: string;
+    /** The section's class for non-vendor outcomes; the provider's class for a vendor. */
+    class: VendorClass;
+  };
+}
+
+export interface ManifestInput {
+  /** Repository-relative POSIX path; the basename picks the parser. */
+  path: string;
+  contents: string;
+}
+
+interface Declared {
+  name: string;
+  version: string;
+  line: number;
+  scope: string;
+  /** The dependency section's own class: `devDependencies` is build-time. */
+  class: VendorClass;
+}
+
+/** An evidence line of 1 also means "location unknown", as in {@link ScanEvidence}. */
+const UNKNOWN_LINE = 1;
+
+/**
+ * What may reach a finding. A dependency name outside this grammar is not a
+ * dependency in any ecosystem here and is dropped; a version outside it
+ * (`git+https://user:token@host/x.git`, a key, control characters) is kept
+ * out of the report and the signal names the package alone. Both are capped
+ * so a 100 KB string cannot become a 100 KB report line.
+ */
+const DEPENDENCY_NAME = /^[A-Za-z0-9@._/!~[\],-]{1,200}$/;
+const DEPENDENCY_VERSION = /^[A-Za-z0-9.^~<>=!*|,+ -]{0,32}$/;
+
+function sanitized(dependency: Declared): Declared {
+  return DEPENDENCY_VERSION.test(dependency.version) ? dependency : { ...dependency, version: '' };
+}
+
+const DEV_SCOPES = new Set([
+  'devDependencies',
+  'require-dev',
+  'dev-dependencies',
+  'build-dependencies',
+  'project.optional-dependencies',
+  'dependency-groups',
+  'requirements-dev',
+]);
+
+/** `requirements-dev.txt`, `requirements_test.txt`, `requirements.ci.txt`: a file nobody installs in production. */
+const DEV_REQUIREMENTS = /^requirements[-_.](?:dev|development|test|tests|testing|lint|docs|ci)\b/i;
+
+function basename(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1);
+}
+
+function ecosystemFor(path: string): PackageEcosystem | undefined {
+  const name = basename(path);
+  if (name === 'package.json') return 'npm';
+  if (name === 'pyproject.toml' || /^requirements[\w.-]*\.txt$/.test(name)) return 'pip';
+  if (name === 'go.mod') return 'go';
+  if (name === 'Gemfile') return 'gem';
+  if (name === 'composer.json') return 'composer';
+  if (name === 'Cargo.toml') return 'cargo';
+  return undefined;
+}
+
+/** Whether {@link matchManifest} has a parser for this path, judged from its name. */
+export function isManifestFile(path: string): boolean {
+  return ecosystemFor(path) !== undefined;
+}
+
+/** Runs the right parser for the file and classifies every declared dependency. */
+export function matchManifest(input: ManifestInput): ManifestFinding[] {
+  const ecosystem = ecosystemFor(input.path);
+  if (ecosystem === undefined) return [];
+  const declared = PARSERS[ecosystem](input.contents, basename(input.path));
+  return declared
+    .filter((dependency) => DEPENDENCY_NAME.test(dependency.name))
+    .map((dependency) => classify(ecosystem, input.path, sanitized(dependency)));
+}
+
+function classify(
+  ecosystem: PackageEcosystem,
+  file: string,
+  dependency: Declared,
+): ManifestFinding {
+  const signal =
+    dependency.version === '' ? dependency.name : `${dependency.name}@${dependency.version}`;
+  const classified = classifyPackage(ecosystem, dependency.name);
+  const base = {
+    kind: ecosystem,
+    evidence: { file, line: dependency.line },
+    detail: {
+      signal,
+      package: dependency.name,
+      version: dependency.version,
+      scope: dependency.scope,
+      class: dependency.class,
+    },
+  };
+  if (classified.outcome !== 'vendor') {
+    return { ...base, outcome: classified.outcome, value: classified.name };
+  }
+  // A vendor only in a dev section is build-time; a build-time vendor stays so.
+  const vendorClass: VendorClass =
+    dependency.class === 'build-time' ? 'build-time' : classified.match.entry.class;
+  return {
+    ...base,
+    outcome: 'vendor',
+    value: classified.match.entry.catalogName,
+    detail: { ...base.detail, class: vendorClass },
+  };
+}
+
+const PARSERS: Record<PackageEcosystem, (contents: string, name: string) => Declared[]> = {
+  npm: (contents) =>
+    parseJsonSections(contents, [
+      'dependencies',
+      'peerDependencies',
+      'optionalDependencies',
+      'devDependencies',
+    ]),
+  composer: (contents) => parseJsonSections(contents, ['require', 'require-dev']),
+  pip: (contents, name) =>
+    name === 'pyproject.toml' ? parsePyproject(contents) : parseRequirements(contents, name),
+  go: parseGoMod,
+  gem: parseGemfile,
+  cargo: parseCargo,
+};
+
+function scopeClass(scope: string): VendorClass {
+  return DEV_SCOPES.has(scope) ? 'build-time' : 'runtime';
+}
+
+/**
+ * JSON manifests (npm, composer). The object is parsed for the names and
+ * versions, and the line of each name is found by looking for its quoted key
+ * after the section's own key, so evidence lines are real and free text
+ * elsewhere in the file cannot contribute a dependency.
+ */
+function parseJsonSections(contents: string, sections: readonly string[]): Declared[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents);
+  } catch {
+    return [];
+  }
+  if (!isPlainRecord(parsed)) return [];
+  const lines = contents.split('\n');
+  const declared: Declared[] = [];
+  for (const scope of sections) {
+    const section = parsed[scope];
+    if (!isPlainRecord(section)) continue;
+    const lineOf = keyLines(lines, scope);
+    for (const [name, version] of Object.entries(section)) {
+      const line = lineOf.get(name) ?? UNKNOWN_LINE;
+      declared.push({
+        name,
+        version: typeof version === 'string' ? version : '',
+        line,
+        scope,
+        class: scopeClass(scope),
+      });
+    }
+  }
+  return declared;
+}
+
+const JSON_KEY = /"((?:[^"\\]|\\.)*)"\s*:/g;
+
+/**
+ * The line of every quoted key from the section's own line on, first
+ * occurrence wins, in one pass over the file. A minified manifest puts every
+ * key on line 1, which is also {@link UNKNOWN_LINE}.
+ */
+function keyLines(lines: readonly string[], scope: string): Map<string, number> {
+  const found = new Map<string, number>();
+  const header = new RegExp(`(?:^|[{,])\\s*"${scope}"\\s*:`);
+  const start = lines.findIndex((line) => header.test(line));
+  if (start < 0) return found;
+  for (let index = start; index < lines.length; index += 1) {
+    for (const match of (lines[index] ?? '').matchAll(JSON_KEY)) {
+      const key = match[1];
+      if (key !== undefined && key !== scope && !found.has(key)) found.set(key, index + 1);
+    }
+  }
+  return found;
+}
+
+/** The name ends before a space, marker, comment, URL or operator; a `git+https://` or `./path` line never reads as a name. */
+const PIP_REQUIREMENT =
+  /^([A-Za-z0-9][A-Za-z0-9._-]*(?:\[[^\]]*\])?)(?=$|[\s;#@=!~<>])\s*((?:[=!~<>]=?|===)\s*[^;#\s]+)?/;
+
+/** `requirements*.txt` or a `pyproject.toml`: one grammar for the requirement itself. */
+function parseRequirement(text: string, line: number, scope: string): Declared | undefined {
+  // Blank lines, comments and `-r`/`--option` lines fail the grammar on their first character.
+  const match = PIP_REQUIREMENT.exec(text.trim());
+  if (match === null || match[1] === undefined) return undefined;
+  return {
+    name: match[1].replaceAll(/\s+/g, ''),
+    version: (match[2] ?? '').replace(/^==/, '').replaceAll(/\s+/g, ''),
+    line,
+    scope,
+    class: scopeClass(scope),
+  };
+}
+
+function parseRequirements(contents: string, name: string): Declared[] {
+  const scope = DEV_REQUIREMENTS.test(name) ? 'requirements-dev' : 'requirements';
+  const declared: Declared[] = [];
+  contents.split('\n').forEach((text, index) => {
+    const dependency = parseRequirement(text, index + 1, scope);
+    if (dependency !== undefined) declared.push(dependency);
+  });
+  return declared;
+}
+
+/** One `key = value` pair from a TOML file, with the table it sits in. */
+interface TomlAssignment {
+  table: string;
+  key: string;
+  /** The value's lines, so array items keep their own line numbers. */
+  value: readonly { text: string; line: number }[];
+  line: number;
+}
+
+/**
+ * `text` up to its first `#` outside quoted strings (`keepStrings`), or only
+ * the characters outside quoted strings with the comment removed (the default,
+ * for bracket counting).
+ */
+function tomlCode(text: string, options: { keepStrings?: boolean } = {}): string {
+  let out = '';
+  let quote: string | undefined;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index] ?? '';
+    if (quote !== undefined) {
+      if (options.keepStrings === true) out += char;
+      if (char === '\\' && quote === '"') {
+        if (options.keepStrings === true) out += text[index + 1] ?? '';
+        index += 1;
+      } else if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === '"' || char === "'") quote = char;
+    else if (char === '#') break;
+    if (char !== '#') out += char;
+  }
+  return out;
+}
+
+/** Lines an unterminated array or inline table may span before it is abandoned. */
+const MAX_OPEN_VALUE_LINES = 2000;
+
+/** `[name]` or `[[name]]`, hand-parsed: a regex here backtracks on a long unclosed line. */
+function tomlHeader(line: string): string | undefined {
+  if (!line.startsWith('[') || !line.endsWith(']')) return undefined;
+  const inner = line.slice(line.startsWith('[[') ? 2 : 1, line.endsWith(']]') ? -2 : -1).trim();
+  return inner === '' || inner.includes(']') ? undefined : inner;
+}
+
+/** True on a line that opens or closes a triple-quoted string without closing it again. */
+function togglesMultilineString(line: string): boolean {
+  return (line.split('"""').length + line.split("'''").length) % 2 === 1;
+}
+/** A bare or quoted key; a dotted key (`serde.version = "1"`) is `key` plus `subkey`. */
+const TOML_KEY = /^("[^"]*"|'[^']*'|[A-Za-z0-9_-]+)(?:\.([A-Za-z0-9_.-]+))?\s*=\s*(.*)$/;
+
+/**
+ * A line-level TOML reader: enough for dependency tables, no more. Tracks the
+ * current table (`[x]` and `[[x]]`, trailing comments allowed), and joins the
+ * lines of an array or inline table opened on a key's line until its brackets
+ * balance outside quotes. A TOML parser is not a dependency of this package.
+ */
+function readToml(contents: string): TomlAssignment[] {
+  const assignments: TomlAssignment[] = [];
+  let table = '';
+  let open: { value: { text: string; line: number }[]; depth: number } | undefined;
+  let inString = false;
+  contents.split('\n').forEach((raw, index) => {
+    const line = index + 1;
+    // A triple-quoted string can hold a fake `[dependencies]` header; none of its lines count.
+    if (inString) {
+      if (togglesMultilineString(raw)) inString = false;
+      return;
+    }
+    const code = tomlCode(raw);
+    const header = tomlHeader(tomlCode(raw, { keepStrings: true }).trim());
+    if (open !== undefined) {
+      if (header === undefined && open.value.length < MAX_OPEN_VALUE_LINES) {
+        // Comments inside an array never reach the value: `# "stripe",` is not a dependency.
+        open.value.push({ text: tomlCode(raw, { keepStrings: true }), line });
+        open.depth += depthDelta(code);
+        if (open.depth > 0) return;
+      }
+      // Balanced, or abandoned: a header or the line cap ends an unterminated value.
+      open = undefined;
+      if (header === undefined) return;
+    }
+    if (header !== undefined) {
+      table = header;
+      return;
+    }
+    if (togglesMultilineString(raw)) {
+      inString = true;
+      return;
+    }
+    const match = TOML_KEY.exec(raw.trim());
+    if (match === null || match[1] === undefined) return;
+    const key = match[1].replaceAll(/^["']|["']$/g, '');
+    const value = tomlCode(match[3] ?? '', { keepStrings: true });
+    const parts = [{ text: value, line }];
+    const assignment: TomlAssignment = {
+      // `serde.version = "1"` is the subtable `[dependencies.serde]` on one line.
+      table: match[2] === undefined ? table : `${table}.${key}`,
+      key: match[2] === undefined ? key : match[2].slice(match[2].lastIndexOf('.') + 1),
+      value: parts,
+      line,
+    };
+    assignments.push(assignment);
+    const depth = depthDelta(tomlCode(value));
+    if (depth > 0) open = { value: parts, depth };
+  });
+  return assignments;
+}
+
+function depthDelta(code: string): number {
+  let depth = 0;
+  for (const char of code) {
+    if (char === '[' || char === '{') depth += 1;
+    else if (char === ']' || char === '}') depth -= 1;
+  }
+  return depth;
+}
+
+/** Every quoted string in the value, with the line it sits on. */
+function quotedItems(assignment: TomlAssignment): { text: string; line: number }[] {
+  const items: { text: string; line: number }[] = [];
+  for (const { text, line } of assignment.value) {
+    for (const found of text.matchAll(/"((?:[^"\\]|\\.)*)"|'([^']*)'/g)) {
+      items.push({ text: found[1] ?? found[2] ?? '', line });
+    }
+  }
+  return items;
+}
+
+/** `"1.0"` or `{ version = "1.0", ... }` on the key's line; '' when neither. */
+function versionOf(assignment: TomlAssignment): string {
+  const text = assignment.value.map((part) => part.text).join(' ');
+  const quoted = /^\s*"([^"]*)"/.exec(text);
+  if (quoted !== null) return quoted[1] ?? '';
+  return /version\s*=\s*"([^"]*)"/.exec(text)?.[1] ?? '';
+}
+
+/**
+ * PEP 621 (`[project] dependencies`, `[project.optional-dependencies]`), PEP 735
+ * (`[dependency-groups]`) and Poetry (`[tool.poetry.dependencies]`,
+ * `dev-dependencies`, `group.<name>.dependencies`, and the `[table.<name>]`
+ * subtable form). Only the main dependencies are runtime; every optional, dev
+ * or group table is build-time, except Poetry's `main` group.
+ */
+function parsePyproject(contents: string): Declared[] {
+  const declared: Declared[] = [];
+  const push = (dependency: Declared | undefined) => {
+    if (dependency !== undefined && dependency.name !== 'python') declared.push(dependency);
+  };
+  for (const assignment of readToml(contents)) {
+    const { table, key } = assignment;
+    if (table === 'project' && key === 'dependencies') {
+      for (const item of quotedItems(assignment))
+        push(parseRequirement(item.text, item.line, 'dependencies'));
+    } else if (table === 'project.optional-dependencies' || table === 'dependency-groups') {
+      for (const item of quotedItems(assignment))
+        push(parseRequirement(item.text, item.line, table));
+    } else {
+      const poetry = POETRY_TABLE.exec(table);
+      const dependency = poetry === null ? undefined : tableDependency(assignment, poetry);
+      if (poetry === null || dependency === undefined) continue;
+      const scope = poetry.groups?.scope ?? '';
+      const cls: VendorClass =
+        scope === 'dependencies' || poetry.groups?.group === 'main' ? 'runtime' : 'build-time';
+      push({ ...dependency, scope, class: cls });
+    }
+  }
+  return declared;
+}
+
+/**
+ * Cargo: `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, the
+ * `[target.<cfg>.<table>]` forms and the `[<table>.<name>]` subtable form.
+ */
+function parseCargo(contents: string): Declared[] {
+  const declared: Declared[] = [];
+  for (const assignment of readToml(contents)) {
+    const match = CARGO_TABLE.exec(assignment.table);
+    const dependency = match === null ? undefined : tableDependency(assignment, match);
+    if (match === null || dependency === undefined) continue;
+    const scope = match.groups?.scope ?? '';
+    declared.push({ ...dependency, scope, class: scopeClass(scope) });
+  }
+  return declared;
+}
+
+const POETRY_TABLE =
+  /^tool\.poetry\.(?<scope>dependencies|dev-dependencies|group\.(?<group>[^.]+)\.dependencies)(?:\.(?<subtable>[^.]+))?$/;
+const CARGO_TABLE =
+  /^(?:target\.[^.]+\.)?(?<scope>dependencies|dev-dependencies|build-dependencies)(?:\.(?<subtable>[^.]+))?$/;
+
+/**
+ * The dependency a key in a dependency table names: the key itself in
+ * `[table]`, or the subtable's name when the key is `version` or `workspace`
+ * in `[table.name]`; any other key of a subtable (`features`, `optional`) is
+ * not a dependency.
+ */
+const SUBTABLE_DEPENDENCY_KEYS = new Set(['version', 'workspace']);
+
+function tableDependency(
+  assignment: TomlAssignment,
+  table: RegExpExecArray,
+): Pick<Declared, 'name' | 'version' | 'line'> | undefined {
+  const subtable = table.groups?.subtable;
+  if (subtable !== undefined && !SUBTABLE_DEPENDENCY_KEYS.has(assignment.key)) return undefined;
+  return {
+    name: subtable ?? assignment.key,
+    version: versionOf(assignment),
+    line: assignment.line,
+  };
+}
+
+/** `go.mod`: every `require` line, single or block form; the module line is not a dependency. */
+function parseGoMod(contents: string): Declared[] {
+  const declared: Declared[] = [];
+  let inBlock = false;
+  contents.split('\n').forEach((raw, index) => {
+    const text = raw.replace(/\/\/.*$/s, '').trim();
+    if (text === 'require (') {
+      inBlock = true;
+      return;
+    }
+    if (inBlock && text === ')') {
+      inBlock = false;
+      return;
+    }
+    const single = /^require\s+([^\s(]+)\s+(\S+)/.exec(text);
+    const inner = inBlock ? /^(\S+)\s+(\S+)/.exec(text) : null;
+    const match = single ?? inner;
+    if (match === null || match[1] === undefined) return;
+    declared.push({
+      name: match[1],
+      version: match[2] ?? '',
+      line: index + 1,
+      scope: 'require',
+      class: 'runtime',
+    });
+  });
+  return declared;
+}
+
+/** Any block opener: `... do`, `... do |x|`, or a leading `if`/`unless`/`case`/`begin`, so its `end` is accounted for. */
+const GEMFILE_BLOCK_OPENER = /(?:\bdo(?:\s*\|[^|]*\|)?$|^(?:if|unless|case|begin)\b)/;
+
+/**
+ * Bundler installs every group unless the deploy leaves it out, and what a
+ * deploy leaves out is development and test. Production, staging, default and
+ * custom groups are runtime.
+ */
+const DEV_GEM_GROUPS = new Set([
+  'development',
+  'dev',
+  'test',
+  'tests',
+  'testing',
+  'lint',
+  'docs',
+  'ci',
+]);
+
+/** The group names on a `group :a, :b do` line or in a `group:` / `:group =>` option, as symbols or strings. */
+function gemGroups(text: string): string[] {
+  return [...text.matchAll(/(?::|['"])([A-Za-z0-9_]+)['"]?/g)].map((match) => match[1] ?? '');
+}
+
+function isDevGroupList(groups: readonly string[]): boolean {
+  return groups.length > 0 && groups.every((group) => DEV_GEM_GROUPS.has(group.toLowerCase()));
+}
+
+/**
+ * `gem 'name', 'constraint'`. A gem whose groups are all dev-type, from the
+ * `group ... do` blocks around it or its own `group:` option, is build-time;
+ * any other group keeps it runtime. Every block is tracked, not only groups,
+ * so a `platforms` or `if` block closing inside a group does not end the group
+ * early, and a trailing comment or modifier on `end` still closes it.
+ */
+function parseGemfile(contents: string): Declared[] {
+  const declared: Declared[] = [];
+  const blocks: ({ kind: 'group'; dev: boolean } | { kind: 'other' })[] = [];
+  contents.split('\n').forEach((raw, index) => {
+    const text = raw
+      .replace(/\r$/, '')
+      .replace(/\s#.*$/, '')
+      .trim();
+    if (GEMFILE_BLOCK_OPENER.test(text)) {
+      const group = /^group\b(.*)\bdo\b/.exec(text);
+      blocks.push(
+        group === null
+          ? { kind: 'other' }
+          : { kind: 'group', dev: isDevGroupList(gemGroups(group[1] ?? '')) },
+      );
+      return;
+    }
+    if (/^end\b/.test(text)) {
+      blocks.pop();
+      return;
+    }
+    const match = /^gem\s+['"]([^'"]+)['"](?:\s*,\s*['"]([^'"]+)['"])?(.*)$/.exec(text);
+    if (match === null || match[1] === undefined) return;
+    const option = /(?:\bgroup:|:group\s*=>)\s*(\[[^\]]*\]|[^,]+)/.exec(match[3] ?? '');
+    const groups = blocks.filter((block) => block.kind === 'group');
+    const grouped =
+      option !== null
+        ? isDevGroupList(gemGroups(option[1] ?? ''))
+        : groups.length > 0 && groups.every((block) => block.kind === 'group' && block.dev);
+    declared.push({
+      name: match[1],
+      version: match[2] ?? '',
+      line: index + 1,
+      scope: grouped ? 'group' : 'gem',
+      class: grouped ? 'build-time' : 'runtime',
+    });
+  });
+  return declared;
+}

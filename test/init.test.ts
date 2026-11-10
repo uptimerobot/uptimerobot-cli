@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,7 +42,11 @@ vi.mock('../src/lib/agent-targets.js', async (importOriginal) => {
  */
 vi.mock('../src/lib/invocation.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/lib/invocation.js')>();
-  return { ...original, promptSelection: vi.fn(original.promptSelection) };
+  return {
+    ...original,
+    promptSelection: vi.fn(original.promptSelection),
+    requestConfirmation: vi.fn(original.requestConfirmation),
+  };
 });
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -80,6 +84,7 @@ describe('init', () => {
   let repository: string;
   let logged: string[];
   let detectAgentTargets: typeof import('../src/lib/agent-targets.js').detectAgentTargets;
+  let strayFetch: ReturnType<typeof vi.fn<typeof fetch>>;
 
   beforeEach(async () => {
     configDirectory = await mkdtemp(join(tmpdir(), 'uptimerobot-cli-test-'));
@@ -108,17 +113,27 @@ describe('init', () => {
     vi.mocked(detectAgentTargets).mockResolvedValue([]);
     // Module-level vi.fn mocks keep their calls across tests, so this one is
     // cleared too — otherwise `mock.calls[0]` is whatever an earlier test did.
-    const { promptSelection } = await import('../src/lib/invocation.js');
+    const { promptSelection, requestConfirmation } = await import('../src/lib/invocation.js');
     vi.mocked(promptSelection).mockReset();
     vi.mocked(promptSelection).mockResolvedValue(undefined);
+    vi.mocked(requestConfirmation).mockReset();
+    vi.mocked(requestConfirmation).mockResolvedValue(false);
+    // No test here may reach a real API; a stray call fails the test in afterEach.
+    strayFetch = vi.fn<typeof fetch>(async () => new Response('{}', { status: 599 }));
+    vi.stubGlobal('fetch', strayFetch);
   });
 
   afterEach(async () => {
     keyring.clear();
-    vi.unstubAllEnvs();
-    vi.restoreAllMocks();
-    await rm(configDirectory, { force: true, recursive: true });
-    await rm(repository, { force: true, recursive: true });
+    try {
+      expect(strayFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+      await rm(configDirectory, { force: true, recursive: true });
+      await rm(repository, { force: true, recursive: true });
+    }
   });
 
   it('routes a caller without a credential from any source to signup', async () => {
@@ -134,6 +149,23 @@ describe('init', () => {
       oclif: { exit: 2 },
     });
     expect(keyring.size).toBe(0);
+    expect(vi.mocked(detectAgentTargets)).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid UPTIMEROBOT_DEV_API_URL as input, not as a crash', async () => {
+    vi.stubEnv('UPTIMEROBOT_API_KEY', 'u123-from-environment');
+    vi.stubEnv('UPTIMEROBOT_DEV_API_URL', 'not a url');
+    const { default: Init } = await import('../src/commands/init.js');
+
+    await expect(Init.run(['--json'], { root: projectRoot })).rejects.toMatchObject({
+      cliError: {
+        code: 'INVALID_INPUT',
+        expected: 'an absolute URL',
+        message: 'UPTIMEROBOT_DEV_API_URL is not a valid URL.',
+        path: 'UPTIMEROBOT_DEV_API_URL',
+      },
+      oclif: { exit: 2 },
+    });
     expect(vi.mocked(detectAgentTargets)).not.toHaveBeenCalled();
   });
 
@@ -456,13 +488,15 @@ describe('init', () => {
       seedContext: {
         outcome: 'created',
         path: join(repository, SEED_CONTEXT_FILE),
-        schemaVersion: 1,
-        summary: { accepted: 0, heartbeats: 0, rejected: 0 },
+        schemaVersion: 2,
+        summary: { accepted: 0, heartbeats: 0, rejected: 0, thirdPartyProviders: 0 },
       },
     });
     const content = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
     expect(content.startsWith(SEED_BEGIN_PREFIX)).toBe(true);
-    expect(content).toContain('# Scan seed context (schema 1)');
+    expect(content).toContain('# Scan seed context (schema 2)');
+    expect(content).toContain('## Third-party providers (candidates for third-party services)');
+    expect(content).toContain('need no base URL');
     expect(content.trimEnd().endsWith(SEED_END_MARKER)).toBe(true);
   });
 
@@ -683,7 +717,7 @@ describe('init', () => {
     expect(logged).toHaveLength(1);
     expect(JSON.parse(logged[0] ?? '')).toMatchObject({
       nextSteps: expect.any(Array),
-      seedContext: { schemaVersion: 1 },
+      seedContext: { schemaVersion: 2 },
       skills: { instructions: expect.any(Array) },
       target: 'codex',
     });
@@ -812,5 +846,403 @@ describe('init', () => {
     expect(output).toMatchObject({ launched: false });
     expect(logged).toHaveLength(1);
     expect(logged.join('\n')).not.toContain('Opening Claude Code');
+  });
+
+  describe('offers the third-party services', () => {
+    const ROW = {
+      id: 801,
+      name: 'Stripe',
+      logoUrl: null,
+      statusPageUrl: 'https://status.stripe.example/',
+      state: 'operational',
+      matchedComponent: null,
+      isTracked: false,
+    };
+
+    /** A fake API routed by path; created monitors land in its list. */
+    function stubApi(
+      options: {
+        monitorsStatus?: number;
+        tracked?: number[];
+        createStatus?: number;
+        loop?: boolean;
+      } = {},
+    ): {
+      paths: string[];
+      posts: unknown[];
+    } {
+      const paths: string[] = [];
+      const posts: unknown[] = [];
+      const monitors: unknown[] = (options.tracked ?? []).map((providerId, index) => ({
+        id: 100 + index,
+        type: 'THIRD_PARTY_SERVICE',
+        config: { thirdPartyService: { providerId } },
+      }));
+      vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof fetch>(async (input, init) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+          const url = new URL(request.url);
+          paths.push(`${request.method} ${url.pathname}${url.search}`);
+          const json = (status: number, body: unknown): Response =>
+            new Response(JSON.stringify(body), {
+              headers: { 'content-type': 'application/json' },
+              status,
+            });
+          if (url.pathname.endsWith('/user/me')) {
+            return json(200, { data: { dependencyMonitorsCount: 1, dependencyMonitorLimit: 10 } });
+          }
+          if (url.pathname.endsWith('/monitors') && request.method === 'GET') {
+            return json(options.monitorsStatus ?? 200, {
+              data: monitors,
+              ...(options.loop === true ? { nextCursor: 'again' } : {}),
+            });
+          }
+          if (url.pathname.endsWith('/third-party-providers')) {
+            const term = url.searchParams.get('search');
+            const rows =
+              term === 'stripe'
+                ? [ROW]
+                : term === 'resend'
+                  ? [{ ...ROW, id: 77, name: 'Resend' }]
+                  : [];
+            return json(200, { data: rows });
+          }
+          if (url.pathname.endsWith('/monitors') && request.method === 'POST') {
+            posts.push(await request.json());
+            if (options.createStatus !== undefined) {
+              return json(options.createStatus, { message: 'create refused' });
+            }
+            const monitor = {
+              id: 5000 + posts.length,
+              type: 'THIRD_PARTY_SERVICE',
+              config: { thirdPartyService: { providerId: 801 } },
+            };
+            monitors.push(monitor);
+            return json(201, { data: monitor });
+          }
+          return json(404, {});
+        }),
+      );
+      return { paths, posts };
+    }
+
+    async function writeManifest(): Promise<void> {
+      await writeFile(
+        join(repository, 'package.json'),
+        '{ "dependencies": { "stripe": "17.4.0", "next": "15.1.0" } }',
+      );
+    }
+
+    const catalogCalls = (paths: readonly string[]): string[] =>
+      paths.filter((path) => path.includes('third-party-providers'));
+
+    it('asks once at a terminal, creates on yes, and records the outcome in the seed file', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      const api = stubApi();
+      const { requestConfirmation } = await import('../src/lib/invocation.js');
+      vi.mocked(requestConfirmation).mockResolvedValue(true);
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+
+        const output = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+
+        expect(output).toMatchObject({
+          thirdParty: {
+            kind: 'completed',
+            confirmation: 'confirmed',
+            proposal: [{ provider: 'Stripe', status: 'create' }],
+            results: [{ provider: 'Stripe', status: 'created', monitorId: 5001 }],
+          },
+        });
+        expect(logged.filter((line) => line.startsWith('| Provider |'))).toHaveLength(1);
+        expect(vi.mocked(requestConfirmation)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(requestConfirmation).mock.calls[0]?.[0]).toBe(
+          'Create 1 third-party service now',
+        );
+        expect(api.posts).toHaveLength(1);
+        const content = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
+        expect(content).toContain('### Outcome of `uptimerobot init`');
+        expect(content).toContain('<!-- uptimerobot:scan:third-party-outcome:begin -->');
+        expect(content).toContain('<!-- uptimerobot:scan:third-party-outcome:end -->');
+        expect(content).toContain('Created: Stripe (monitor 5001).');
+        expect(logged.join('\n')).toContain('| Stripe | stripe@17.4.0 | runtime |');
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('creates nothing on no and says so in the seed file', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      const api = stubApi();
+      const { requestConfirmation } = await import('../src/lib/invocation.js');
+      vi.mocked(requestConfirmation).mockResolvedValue(false);
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+
+        const output = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+
+        expect(output).toMatchObject({
+          thirdParty: { kind: 'completed', confirmation: 'declined' },
+        });
+        expect(api.posts).toEqual([]);
+        const content = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
+        expect(content).toContain('Nothing was created.');
+        expect(content).toContain('Not created: Stripe (declined at the prompt).');
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('makes no catalog call under --no-third-party, --json, or --yes, and points at scan --apply', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      const api = stubApi();
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+
+        const skipped = await Init.run(['--no-launch', '--no-agent', '--no-third-party'], {
+          root: projectRoot,
+        });
+        expect(skipped).toMatchObject({ thirdParty: null });
+        const machine = await Init.run(['--no-launch', '--no-agent', '--json'], {
+          root: projectRoot,
+        });
+        expect(machine).toMatchObject({ thirdParty: null });
+        const yes = await Init.run(['--no-launch', '--no-agent', '--yes'], { root: projectRoot });
+        expect(yes).toMatchObject({ thirdParty: null });
+        if (!('nextSteps' in yes)) throw new Error('expected the setup output');
+        expect(yes.nextSteps.join('\n')).toContain('uptimerobot scan --apply');
+        expect(catalogCalls(api.paths)).toEqual([]);
+        expect(api.posts).toEqual([]);
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('keeps going to the agent setup when the account cannot be read', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      const api = stubApi({ monitorsStatus: 500 });
+      const { requestConfirmation } = await import('../src/lib/invocation.js');
+      vi.mocked(requestConfirmation).mockResolvedValue(true);
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+
+        const output = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+
+        expect(output).toMatchObject({
+          thirdParty: { kind: 'failed', error: { code: 'HTTP_500' } },
+          seedContext: { outcome: 'created' },
+        });
+        expect(api.posts).toEqual([]);
+        expect(vi.mocked(requestConfirmation)).not.toHaveBeenCalled();
+        expect(logged.join('\n')).toContain('Third-party services were not resolved');
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('records only this run when a later offer cannot resolve, never an earlier create', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      stubApi();
+      const { requestConfirmation } = await import('../src/lib/invocation.js');
+      vi.mocked(requestConfirmation).mockResolvedValue(true);
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+        await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+        expect(await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8')).toContain(
+          'Created: Stripe (monitor 5001).',
+        );
+
+        const api = stubApi({ monitorsStatus: 500 });
+        const rerun = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+
+        expect(rerun).toMatchObject({
+          thirdParty: { kind: 'failed', error: { code: 'HTTP_500' } },
+        });
+        expect(api.posts).toEqual([]);
+        const seed = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
+        expect(seed).toContain('Not resolved (HTTP_500)');
+        expect(seed).not.toContain('Created: Stripe (monitor 5001).');
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('asks nothing when every candidate is already tracked, and records that', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      const api = stubApi({ tracked: [801] });
+      const { requestConfirmation } = await import('../src/lib/invocation.js');
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+
+        const output = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+
+        expect(output).toMatchObject({
+          thirdParty: {
+            confirmation: 'not-needed',
+            proposal: [{ provider: 'Stripe', status: 'already-tracked' }],
+          },
+        });
+        expect(vi.mocked(requestConfirmation)).not.toHaveBeenCalled();
+        expect(api.posts).toEqual([]);
+        const content = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
+        expect(content).toContain('Already tracked: Stripe.');
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('records a failed create and the rows it never reached', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeFile(
+        join(repository, 'package.json'),
+        '{ "dependencies": { "stripe": "17.4.0", "resend": "4.0.1" } }',
+      );
+      stubApi({ createStatus: 422 });
+      const { requestConfirmation } = await import('../src/lib/invocation.js');
+      vi.mocked(requestConfirmation).mockResolvedValue(true);
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+
+        const output = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+
+        expect(output).toMatchObject({ seedContext: { outcome: 'created' } });
+        const content = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
+        expect(content).toContain('Not created: Resend (create refused).');
+        expect(content).toContain('Not created: Stripe (not attempted after the failure above).');
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('creates with a partial tracked set, since a repeat create is answered with the existing monitor', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      const api = stubApi({ loop: true });
+      const { requestConfirmation } = await import('../src/lib/invocation.js');
+      vi.mocked(requestConfirmation).mockResolvedValue(true);
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+
+        const output = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+
+        expect(output).toMatchObject({
+          thirdParty: {
+            blocked: null,
+            results: [{ provider: 'Stripe', status: 'created', monitorId: 5001 }],
+          },
+        });
+        expect(api.posts).toHaveLength(1);
+        const content = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
+        expect(content).toContain('Created: Stripe (monitor 5001).');
+        expect(content).not.toContain('TRACKED_SET_PARTIAL');
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('offers nothing and hints nothing when the scan found no runtime provider', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+
+        const output = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+
+        expect(output).toMatchObject({ thirdParty: null });
+        if (!('nextSteps' in output)) throw new Error('expected the setup output');
+        expect(output.nextSteps.join('\n')).not.toContain('scan --apply');
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('skips the offer in agent mode and writes no outcome block on a later rerun', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      const api = stubApi();
+      const { requestConfirmation } = await import('../src/lib/invocation.js');
+      vi.mocked(requestConfirmation).mockResolvedValue(true);
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+        await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+        const first = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
+        expect(first).toContain('Created: Stripe (monitor 5001).');
+
+        vi.stubEnv('UPTIMEROBOT_AGENT', '1');
+        const rerun = await Init.run(['--no-launch', '--no-agent', '--json'], {
+          root: projectRoot,
+        });
+
+        expect(rerun).toMatchObject({ thirdParty: null, seedContext: { outcome: 'updated' } });
+        const second = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
+        expect(second).not.toContain('Created: Stripe (monitor 5001).');
+        expect(second).not.toContain('third-party-outcome');
+
+        vi.stubEnv('UPTIMEROBOT_OUTPUT', 'table');
+        const tableRerun = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+
+        expect(tableRerun).toMatchObject({
+          thirdParty: null,
+          seedContext: { outcome: 'unchanged' },
+        });
+        expect(api.posts).toHaveLength(1);
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('does not offer when the seed file cannot be written', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      await mkdir(join(repository, SEED_CONTEXT_FILE));
+      const api = stubApi();
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+
+        await expect(
+          Init.run(['--no-launch', '--no-agent'], { root: projectRoot }),
+        ).rejects.toMatchObject({ cliError: { code: 'SEED_CONTEXT_WRITE_FAILED' } });
+        expect(catalogCalls(api.paths)).toEqual([]);
+        expect(api.posts).toEqual([]);
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('does not offer when the seed file belongs to someone else', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      await writeFile(join(repository, SEED_CONTEXT_FILE), '# someone else wrote this\n');
+      const api = stubApi();
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+
+        await expect(
+          Init.run(['--no-launch', '--no-agent'], { root: projectRoot }),
+        ).rejects.toMatchObject({ cliError: { code: 'SEED_CONTEXT_EXISTS' } });
+        expect(catalogCalls(api.paths)).toEqual([]);
+        expect(api.posts).toEqual([]);
+      } finally {
+        restoreTerminal();
+      }
+    });
   });
 });

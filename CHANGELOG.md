@@ -12,12 +12,35 @@ may change in minor releases.
 
 ### Added
 
+- The scan finds the third-party providers a repository depends on, from
+  dependency manifests, deploy files, terraform, CI files, container registries
+  and the git remote, and reports them in a "Third-party providers" section
+  with `package@version` and `path:line` evidence.
+- `uptimerobot scan --json` carries those providers under `thirdParty`; the
+  seed context schema is 2.
+- `uptimerobot scan --apply` resolves the providers against the catalog and
+  the account, prints a proposal, asks, and creates a third-party service per
+  confirmed row. An agent or a pipe must pass `--confirm`; a missing or
+  declined confirmation exits 2 with `CONFIRMATION_REQUIRED`. New error code
+  `CATALOG_UNRESOLVED` (exit 1) when a selected provider could not be looked
+  up. A create the API never answered is reported as `unknown`, not as failed.
+- `uptimerobot init` offers to create the third-party services at an
+  interactive terminal, records the outcome in `uptimerobot-scan.md`, and its
+  `--json` output gains a `thirdParty` field; `--no-third-party` skips the
+  offer. The setup guide gains a third-party step between discovery and the
+  endpoint proposal.
 - `incidents list --type` and `--cause` filter incidents by type (Downtime,
   SlowResponse, VisualChange) and by root cause group (Timeout, an HTTP status
   class 2xx to 5xx, DNS, AssertionFailed, InvalidJSON, ConfigError), from the
   updated public API contract. With a filter a page may hold fewer items than
   `--limit`, even none, while `nextCursor` is set: pass it through `--cursor`
   until it is null.
+
+### Changed
+
+- A confirmation prompt whose input ends before an answer (Ctrl-D, a closed
+  stdin) counts as a no instead of leaving the command waiting; Ctrl-C at the
+  prompt exits 130 instead of reading as a no.
 
 ## [1.2.0] - 2026-11-06
 
