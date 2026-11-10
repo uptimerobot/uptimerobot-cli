@@ -573,14 +573,24 @@ export const operations = {
     "commandId": "incidents:list",
     "contentTypes": [],
     "defaultApiUrl": "https://api.uptimerobot.com/v3",
-    "description": "List all incidents in a user's account with optional filtering. Values can be paginated with the cursor parameter.",
+    "description": "List all incidents in a user's account with optional filtering. Sorted by start date descending, newest first. Values can be paginated with the cursor parameter.",
     "destructive": false,
     "method": "GET",
     "operationId": "IncidentsController_list",
     "parameters": [
       {
-        "description": "Cursor to paginate through incidents (incident ID)",
-        "example": "12345",
+        "description": "Maximum number of items to return per page. Default: 50, Min: 1, Max: 200.",
+        "example": 50,
+        "in": "query",
+        "maximum": 200,
+        "minimum": 1,
+        "name": "limit",
+        "required": false,
+        "type": "number"
+      },
+      {
+        "description": "Opaque cursor taken from the previous page’s `nextLink`. An incident ID from an earlier version of this endpoint is still accepted and resumes right after that incident.",
+        "example": "MTc4OTA0NTYwMDAwMHwxNDAwfDMxOTg0OTk3MTM4MTQ2NzcxMg",
         "in": "query",
         "name": "cursor",
         "required": false,
@@ -626,6 +636,36 @@ export const operations = {
         ],
         "in": "query",
         "name": "status",
+        "required": false,
+        "type": "string"
+      },
+      {
+        "description": "Filter incidents by type. With a filter a page may hold fewer items than `limit`, even none, while `nextLink` is set: keep paging until it is absent.",
+        "enum": [
+          "Downtime",
+          "SlowResponse",
+          "VisualChange"
+        ],
+        "in": "query",
+        "name": "type",
+        "required": false,
+        "type": "string"
+      },
+      {
+        "description": "Filter incidents by root cause group: Timeout, an HTTP status class (2xx–5xx), DNS, AssertionFailed, InvalidJSON or ConfigError. Combines with `type` and the other filters. With a filter a page may hold fewer items than `limit`, even none, while `nextLink` is set: keep paging until it is absent.",
+        "enum": [
+          "Timeout",
+          "2xx",
+          "3xx",
+          "4xx",
+          "5xx",
+          "DNS",
+          "AssertionFailed",
+          "InvalidJSON",
+          "ConfigError"
+        ],
+        "in": "query",
+        "name": "cause",
         "required": false,
         "type": "string"
       }
