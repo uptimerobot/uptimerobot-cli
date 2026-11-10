@@ -21,12 +21,12 @@ may change in minor releases.
 
 ### Changed
 
-- `--config-udp-payload` on `monitors create`, `monitors create udp` and
-  `monitors update` documents the hex form, from the updated public API
-  contract: `0x` followed by an even number of hex digits is sent as raw bytes,
-  any other value as text. The flag now has the API's 1000-character limit, so
-  a longer payload is rejected before the request is sent. `monitors create`
-  and `monitors create udp` gain a hex payload example.
+- `--config-udp-payload` on `monitors create udp` and `monitors update`
+  documents the hex form, from the updated public API contract: `0x` followed
+  by an even number of hex digits is sent as raw bytes, any other value as
+  text. The flag now has the API's 1000-character limit, so a longer payload is
+  rejected before the request is sent. `monitors create` and
+  `monitors create udp` gain a hex payload example.
 
 ## [1.2.0] - 2026-11-06
 
