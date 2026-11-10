@@ -3392,6 +3392,10 @@ info:
 
     | `009-036` | 400 | portAlertCondition can only be set on PORT monitors. |
 
+    | `009-039` | 400 | The filter selects more monitors than one bulk call acts
+    on, and nothing was changed. Narrow the filter by group or tag and repeat
+    the call. |
+
     | `013-002` | 403 | The plan of the account allows no more status pages.
     Delete one or upgrade the plan. |
 
@@ -3500,6 +3504,7 @@ components:
             - 009-033
             - 009-034
             - 009-036
+            - 009-039
             - 013-006
             - 013-002
             - 013-008
