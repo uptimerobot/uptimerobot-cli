@@ -154,10 +154,7 @@ export async function offerThirdParty(options: {
 
 // --- The outcome block in the seed file ------------------------------------
 
-/**
- * The block's own markers, so a later run that makes no offer can carry it
- * over whatever its heading says. A persisted format: change with care.
- */
+/** The block's own markers, so a reader can find it whatever its heading says. A persisted format: change with care. */
 export const OUTCOME_BEGIN_MARKER = '<!-- uptimerobot:scan:third-party-outcome:begin -->';
 export const OUTCOME_END_MARKER = '<!-- uptimerobot:scan:third-party-outcome:end -->';
 
@@ -178,15 +175,11 @@ function blockText(text: string): string {
 }
 
 /**
- * What the offer did, for the seed file: the agent must not create these again.
- * A failed resolution says nothing about what an earlier run created, so the
- * durable lines of the block in `previousSeed` stay under the failure.
+ * What this run's offer did, for the seed file. Only this run: the live
+ * monitor list is the record of what exists, and the API's create is
+ * idempotent, so an earlier block is never copied forward.
  */
-export function renderOutcome(
-  outcome: OfferOutcome,
-  invocation: CliInvocation,
-  previousSeed?: string,
-): readonly string[] {
+export function renderOutcome(outcome: OfferOutcome, invocation: CliInvocation): readonly string[] {
   const lines = [
     OUTCOME_BEGIN_MARKER,
     `### Outcome of \`${formatInvocation(invocation, 'init')}\``,
@@ -196,7 +189,6 @@ export function renderOutcome(
     return [
       ...lines,
       `Not resolved (${outcome.error.code}): ${blockText(outcome.error.message)}. Run \`${formatInvocation(invocation, 'scan --apply')}\` to retry.`,
-      ...carryOverOutcome(previousSeed).filter((line) => DURABLE_LINE.test(line)),
       OUTCOME_END_MARKER,
     ];
   }
@@ -213,27 +205,10 @@ export function renderOutcome(
   const unknown = withError('unknown');
   const failed = withError('failed');
   const attempted = new Set(results.map((item) => item.provider));
-  // A provider this run says nothing durable about keeps what the earlier
-  // block said: an unresolved or re-proposed row does not undo a create, and
-  // a decline on it is not a "not created" either.
-  const earlier = durableEntries(carryOverOutcome(previousSeed));
-  const recorded = new Set(earlier.map((entry) => entry.provider));
-  const notAttempted = byRow('create').filter(
-    (provider) => !attempted.has(provider) && !recorded.has(provider),
-  );
-  if (confirmation !== 'confirmed' || blocked !== null)
-    lines.push('Nothing was created by this run.');
-  const settled = new Set([
-    ...results.flatMap((item) => (item.status === 'created' ? [item.provider] : [])),
-    ...byRow('already-tracked'),
-  ]);
-  const kept = (prefix: DurablePrefix): string[] =>
-    earlier
-      .filter((entry) => entry.prefix === prefix && !settled.has(entry.provider))
-      .map((entry) => entry.text);
-  const allCreated = [...created, ...kept('Created')];
-  if (allCreated.length > 0) lines.push(`Created: ${allCreated.join(', ')}.`);
-  const tracked = [...byRow('already-tracked'), ...kept('Already tracked')];
+  const notAttempted = byRow('create').filter((provider) => !attempted.has(provider));
+  if (confirmation !== 'confirmed' || blocked !== null) lines.push('Nothing was created.');
+  if (created.length > 0) lines.push(`Created: ${created.join(', ')}.`);
+  const tracked = byRow('already-tracked');
   if (tracked.length > 0) lines.push(`Already tracked: ${tracked.join(', ')}.`);
   if (unknown.length > 0) {
     lines.push(
@@ -266,45 +241,4 @@ export function renderOutcome(
     );
   }
   return [...lines, OUTCOME_END_MARKER];
-}
-
-/** The only lines of an earlier block that stay true: a service created or found tracked is still there. */
-const DURABLE_LINE = /^(Created|Already tracked): /;
-
-type DurablePrefix = 'Created' | 'Already tracked';
-
-/** One provider's entry on a durable line, as written: `Stripe (monitor 5)` or `Vercel`. */
-function durableEntries(
-  lines: readonly string[],
-): { prefix: DurablePrefix; provider: string; text: string }[] {
-  return lines.flatMap((line) => {
-    const match = /^(Created|Already tracked): (.*)\.$/.exec(line);
-    if (match === null) return [];
-    const prefix: DurablePrefix = match[1] === 'Created' ? 'Created' : 'Already tracked';
-    return (match[2] ?? '').split(', ').map((text) => ({
-      prefix,
-      provider: text.split(' (')[0] ?? text,
-      text,
-    }));
-  });
-}
-
-/**
- * The durable part of the outcome block an earlier run left in our own seed
- * file, so a run that makes no offer keeps what was created. Declines,
- * failures and ambiguities are not carried: the next run or `scan --apply`
- * settles them afresh. The last block wins when a file somehow holds two;
- * nothing is carried when either marker is missing or no line is durable.
- */
-export function carryOverOutcome(previousSeed: string | undefined): readonly string[] {
-  if (previousSeed === undefined) return [];
-  const start = previousSeed.lastIndexOf(OUTCOME_BEGIN_MARKER);
-  if (start === -1) return [];
-  const end = previousSeed.indexOf(OUTCOME_END_MARKER, start);
-  if (end === -1) return [];
-  const lines = previousSeed.slice(start, end).split('\n');
-  const heading = lines.find((line) => line.startsWith('### '));
-  const durable = lines.filter((line) => DURABLE_LINE.test(line));
-  if (heading === undefined || durable.length === 0) return [];
-  return [OUTCOME_BEGIN_MARKER, heading, '', ...durable, OUTCOME_END_MARKER];
 }

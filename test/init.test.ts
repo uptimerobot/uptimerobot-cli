@@ -991,7 +991,7 @@ describe('init', () => {
         });
         expect(api.posts).toEqual([]);
         const content = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
-        expect(content).toContain('Nothing was created by this run.');
+        expect(content).toContain('Nothing was created.');
         expect(content).toContain('Not created: Stripe (declined at the prompt).');
       } finally {
         restoreTerminal();
@@ -1049,7 +1049,7 @@ describe('init', () => {
       }
     });
 
-    it('keeps what an earlier run created when a later offer cannot resolve', async () => {
+    it('records only this run when a later offer cannot resolve, never an earlier create', async () => {
       keyring.set(STORED_CREDENTIAL, 'u123-stored');
       await writeManifest();
       stubApi();
@@ -1072,7 +1072,7 @@ describe('init', () => {
         expect(api.posts).toEqual([]);
         const seed = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
         expect(seed).toContain('Not resolved (HTTP_500)');
-        expect(seed).toContain('Created: Stripe (monitor 5001).');
+        expect(seed).not.toContain('Created: Stripe (monitor 5001).');
       } finally {
         restoreTerminal();
       }
@@ -1171,7 +1171,7 @@ describe('init', () => {
       }
     });
 
-    it('skips the offer in agent mode and keeps an earlier outcome on a later rerun', async () => {
+    it('skips the offer in agent mode and writes no outcome block on a later rerun', async () => {
       keyring.set(STORED_CREDENTIAL, 'u123-stored');
       await writeManifest();
       const api = stubApi();
@@ -1189,8 +1189,10 @@ describe('init', () => {
           root: projectRoot,
         });
 
-        expect(rerun).toMatchObject({ thirdParty: null, seedContext: { outcome: 'unchanged' } });
-        expect(await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8')).toBe(first);
+        expect(rerun).toMatchObject({ thirdParty: null, seedContext: { outcome: 'updated' } });
+        const second = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
+        expect(second).not.toContain('Created: Stripe (monitor 5001).');
+        expect(second).not.toContain('third-party-outcome');
 
         vi.stubEnv('UPTIMEROBOT_OUTPUT', 'table');
         const tableRerun = await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });

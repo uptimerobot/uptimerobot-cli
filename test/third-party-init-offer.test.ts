@@ -3,7 +3,6 @@ import type { CliInvocation } from '../src/lib/agent-setup/cli-invocation.js';
 import {
   OUTCOME_BEGIN_MARKER,
   OUTCOME_END_MARKER,
-  carryOverOutcome,
   decideOffer,
   renderOutcome,
   wantsApplyHint,
@@ -82,7 +81,7 @@ describe('the outcome block', () => {
     expect(rendered.some((line) => line.startsWith('## Injected'))).toBe(false);
   });
 
-  it('never lets a nested marker payload rebuild a marker, so the earlier block survives', () => {
+  it('never lets a nested marker payload rebuild a marker', () => {
     const nested = OUTCOME_BEGIN_MARKER.replace(' -->', `${OUTCOME_BEGIN_MARKER} -->`);
     const rendered = renderOutcome(
       {
@@ -101,44 +100,11 @@ describe('the outcome block', () => {
       INVOCATION,
     );
     expect(rendered.join('\n').split(OUTCOME_BEGIN_MARKER)).toHaveLength(2);
-    expect(carryOverOutcome(`# Seed\n\n${rendered.join('\n')}\n`)).toEqual([
-      OUTCOME_BEGIN_MARKER,
-      `### Outcome of \`${INVOCATION.command} init\``,
-      '',
-      'Created: Stripe (monitor 5).',
-      OUTCOME_END_MARKER,
-    ]);
+    expect(rendered.join('\n').split(OUTCOME_END_MARKER)).toHaveLength(2);
   });
 
-  it('carries only the durable lines of an earlier block', () => {
-    const rendered = renderOutcome(
-      {
-        kind: 'completed',
-        confirmation: 'confirmed',
-        proposal: [
-          { provider: 'Stripe', status: 'create' },
-          { provider: 'Vercel', status: 'already-tracked' },
-          { provider: 'Resend', status: 'ambiguous' },
-          { provider: 'AWS', status: 'create' },
-        ],
-        results: [
-          { provider: 'Stripe', status: 'created', monitorId: 5 },
-          { provider: 'AWS', status: 'failed', error: { code: 'HTTP_500', message: 'boom' } },
-        ],
-        blocked: null,
-      },
-      INVOCATION,
-    );
-    const carried = carryOverOutcome(`${OURS}${rendered.join('\n')}\n`);
-    expect(carried).toEqual([
-      OUTCOME_BEGIN_MARKER,
-      '### Outcome of `uptimerobot init`',
-      '',
-      'Created: Stripe (monitor 5).',
-      'Already tracked: Vercel.',
-      OUTCOME_END_MARKER,
-    ]);
-    const declined = renderOutcome(
+  it('writes only this run, so a provider created earlier and declined now reads as not created', () => {
+    const lines = renderOutcome(
       {
         kind: 'completed',
         confirmation: 'declined',
@@ -148,47 +114,9 @@ describe('the outcome block', () => {
       },
       INVOCATION,
     );
-    expect(carryOverOutcome(`${OURS}${declined.join('\n')}\n`)).toEqual([]);
-  });
-
-  it('round-trips through carryOverOutcome whatever its heading says', () => {
-    const rendered = renderOutcome(
-      {
-        kind: 'completed',
-        confirmation: 'confirmed',
-        proposal: [{ provider: 'Stripe', status: 'create' }],
-        results: [{ provider: 'Stripe', status: 'created', monitorId: 5001 }],
-        blocked: null,
-      },
-      INVOCATION,
-    );
-    const file = `${OURS}\nbody\n\n${rendered.join('\n')}\n<!-- uptimerobot:scan:end -->\n`;
-    expect(carryOverOutcome(file)).toEqual(rendered);
-    // Only the heading and the durable lines come back; this block holds nothing else.
-    const renamed = file.replace('### Outcome of', '### Whatever a later version says');
-    expect(carryOverOutcome(renamed).join('\n')).toContain('Created: Stripe (monitor 5001).');
-  });
-
-  it('carries the last block when a file holds two, and none without both markers', () => {
-    const block = (text: string) => `${OUTCOME_BEGIN_MARKER}\n${text}\n${OUTCOME_END_MARKER}`;
-    const second = block('### Outcome of x\n\nCreated: Second (monitor 2).');
-    expect(
-      carryOverOutcome(
-        `${OURS}${block('### Outcome of x\n\nCreated: First (monitor 1).')}\n${second}\n`,
-      ),
-    ).toEqual([
-      OUTCOME_BEGIN_MARKER,
-      '### Outcome of x',
-      '',
-      'Created: Second (monitor 2).',
-      OUTCOME_END_MARKER,
-    ]);
-    expect(carryOverOutcome(`${OURS}${block('no heading\nCreated: X (monitor 1).')}\n`)).toEqual(
-      [],
-    );
-    expect(carryOverOutcome(`${OURS}${OUTCOME_BEGIN_MARKER}\nno end\n`)).toEqual([]);
-    expect(carryOverOutcome(`${OURS}### Outcome of nothing\n`)).toEqual([]);
-    expect(carryOverOutcome(undefined)).toEqual([]);
+    expect(lines).toContain('Nothing was created.');
+    expect(lines).toContain('Not created: Stripe (declined at the prompt).');
+    expect(lines.join('\n')).not.toContain('Created: Stripe (monitor');
   });
 
   it('names the reason a confirmed row was not created', () => {
@@ -234,117 +162,6 @@ describe('the outcome block', () => {
     );
     expect(lines).toContain('Not created: AWS (not attempted after the failure above).');
     expect(lines.join('\n')).not.toContain('Not created: Stripe');
-    const earlier = `${OURS}${OUTCOME_BEGIN_MARKER}\nOutcome unknown, the API may have created it, run \`uptimerobot scan --apply\` to check: Stripe (gone).\n${OUTCOME_END_MARKER}\n`;
-    expect(carryOverOutcome(earlier)).toEqual([]);
-  });
-
-  it('keeps an earlier Created line through a completed rerun that no longer reports that provider', () => {
-    const earlier = renderOutcome(
-      {
-        kind: 'completed',
-        confirmation: 'confirmed',
-        proposal: [
-          { provider: 'Stripe', status: 'create' },
-          { provider: 'AWS', status: 'create' },
-          { provider: 'Vercel', status: 'already-tracked' },
-        ],
-        results: [
-          { provider: 'Stripe', status: 'created', monitorId: 5001 },
-          { provider: 'AWS', status: 'created', monitorId: 5002 },
-        ],
-        blocked: null,
-      },
-      INVOCATION,
-    );
-    const previousSeed = `${OURS}${earlier.join('\n')}\n`;
-    const lines = renderOutcome(
-      {
-        kind: 'completed',
-        confirmation: 'not-needed',
-        proposal: [
-          { provider: 'Stripe', status: 'unresolved' },
-          { provider: 'AWS', status: 'already-tracked' },
-          { provider: 'Resend', status: 'create' },
-        ],
-        results: [{ provider: 'Resend', status: 'created', monitorId: 5003 }],
-        blocked: null,
-      },
-      INVOCATION,
-      previousSeed,
-    );
-    expect(lines).toContain('Created: Resend (monitor 5003), Stripe (monitor 5001).');
-    expect(lines).toContain('Already tracked: AWS, Vercel.');
-    expect(lines).toContain('Unresolved, retry with `uptimerobot scan --apply`: Stripe.');
-    expect(lines.filter((line) => line.startsWith('Created: '))).toHaveLength(1);
-    expect(lines.join('\n')).not.toContain('AWS (monitor 5002)');
-  });
-
-  it('never contradicts an earlier Created entry when the same provider is declined on a rerun', () => {
-    const earlier = renderOutcome(
-      {
-        kind: 'completed',
-        confirmation: 'confirmed',
-        proposal: [{ provider: 'Stripe', status: 'create' }],
-        results: [{ provider: 'Stripe', status: 'created', monitorId: 5001 }],
-        blocked: null,
-      },
-      INVOCATION,
-    );
-    const previousSeed = `${OURS}${earlier.join('\n')}\n`;
-    const lines = renderOutcome(
-      {
-        kind: 'completed',
-        confirmation: 'declined',
-        proposal: [
-          { provider: 'Stripe', status: 'create' },
-          { provider: 'AWS', status: 'create' },
-        ],
-        results: [],
-        blocked: null,
-      },
-      INVOCATION,
-      previousSeed,
-    );
-    expect(lines).toContain('Nothing was created by this run.');
-    expect(lines).toContain('Created: Stripe (monitor 5001).');
-    expect(lines).toContain('Not created: AWS (declined at the prompt).');
-    expect(lines.join('\n')).not.toContain('Not created: Stripe');
-    expect(lines.join('\n')).not.toContain('Nothing was created.');
-  });
-
-  it('keeps the durable lines of an earlier block when resolution fails', () => {
-    const earlier = renderOutcome(
-      {
-        kind: 'completed',
-        confirmation: 'confirmed',
-        proposal: [
-          { provider: 'Stripe', status: 'create' },
-          { provider: 'Vercel', status: 'already-tracked' },
-        ],
-        results: [{ provider: 'Stripe', status: 'created', monitorId: 5 }],
-        blocked: null,
-      },
-      INVOCATION,
-    );
-    const previousSeed = `${OURS}${earlier.join('\n')}\n`;
-    const lines = renderOutcome(
-      { kind: 'failed', error: { code: 'HTTP_500', message: 'boom' } },
-      INVOCATION,
-      previousSeed,
-    );
-    expect(lines).toEqual([
-      OUTCOME_BEGIN_MARKER,
-      '### Outcome of `uptimerobot init`',
-      '',
-      'Not resolved (HTTP_500): boom. Run `uptimerobot scan --apply` to retry.',
-      'Created: Stripe (monitor 5).',
-      'Already tracked: Vercel.',
-      OUTCOME_END_MARKER,
-    ]);
-    expect(carryOverOutcome(`${OURS}${lines.join('\n')}\n`)).toEqual(earlier);
-    expect(
-      renderOutcome({ kind: 'failed', error: { code: 'HTTP_500', message: 'boom' } }, INVOCATION),
-    ).not.toContain('Created: Stripe (monitor 5).');
   });
 
   it('records a provider the catalog could not resolve, so the agent retries rather than creates', () => {

@@ -197,11 +197,22 @@ export interface ResolveOptions {
   timeBudgetMs?: number;
 }
 
-/** A failure a retry may clear, which counts toward the abort; a 400 or 404 is this term's alone. */
+/** A failure a retry may clear, which counts toward the abort; a 400 is this term's alone. */
 function isTransient(error: ApiFailure): boolean {
   const status = error.cliError.status;
   if (status === undefined) return true;
   return TRANSIENT_STATUSES.has(status) || status >= 500;
+}
+
+function featureUnavailable(error: ApiFailure): ApiFailure {
+  return new ApiFailure(
+    {
+      ...error.cliError,
+      code: 'THIRD_PARTY_UNAVAILABLE',
+      message: 'Third-party monitoring is not available on this account.',
+    },
+    error.exitCode,
+  );
 }
 
 function failureOf(error: unknown): ResolutionFailure {
@@ -250,6 +261,9 @@ export async function resolveCandidates(
       if (error instanceof ApiFailure) {
         const status = error.cliError.status;
         if (status === 401 || status === 403) throw error;
+        // A missing term answers 200 with no rows; the only 404 is the API
+        // saying the account has no third-party monitoring, so no search can.
+        if (status === 404) throw featureUnavailable(error);
         if (isTransient(error)) consecutiveFailures += 1;
       } else {
         consecutiveFailures += 1;

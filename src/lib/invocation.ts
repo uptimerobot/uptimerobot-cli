@@ -42,9 +42,16 @@ export async function requestConfirmation(summary: string, mode: InvocationMode)
   // waits on; it is the same no, decided before the question is printed.
   if (process.stdin.readableEnded) return false;
   const reader = createInterface({ input: process.stdin, output: process.stderr });
+  // readline swallows Ctrl-C in raw mode and would close as a plain no; the
+  // command must stop instead, as it does at the agent-selection prompt.
+  reader.once('SIGINT', () => {
+    reader.close();
+    process.stderr.write('\n');
+    process.exit(130);
+  });
   try {
-    // An input that ends before an answer (Ctrl-D, Ctrl-C, a closed stdin) is a
-    // no, not a hang: the question would otherwise never settle.
+    // An input that ends before an answer (Ctrl-D, a closed stdin) is a no,
+    // not a hang: the question would otherwise never settle.
     const answer = await Promise.race([
       reader.question(`${summary}. Continue? [y/N] `),
       new Promise<string>((resolve) => reader.once('close', () => resolve(''))),

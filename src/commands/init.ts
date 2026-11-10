@@ -27,7 +27,6 @@ import { formatSeedContext, scanRepository } from '../lib/scan/index.js';
 import {
   type OfferDecision,
   type OfferOutcome,
-  carryOverOutcome,
   decideOffer,
   offerThirdParty,
   renderOutcome,
@@ -294,12 +293,9 @@ Precedence:
       decision === 'offer'
         ? await offerThirdParty({ context, access, mode, invocation, io: this })
         : null;
-    // A run that made no offer, or whose offer could not resolve, keeps what an
-    // earlier one recorded, so no rerun erases "Created: Stripe" from the seed file.
-    const outcomeLines =
-      thirdParty === null
-        ? carryOverOutcome(previousSeed)
-        : renderOutcome(thirdParty, invocation, previousSeed);
+    // Only this run's offer is recorded: the live monitor list, not the seed
+    // file, is the record of what exists.
+    const outcomeLines = thirdParty === null ? [] : renderOutcome(thirdParty, invocation);
     const seedContext = await this.writeSeedContext(root, context, invocation, outcomeLines);
     // Written next to the scan and on the same terms, so the two halves of the
     // handoff always arrive together. Unconditional, like the scan: a --no-agent

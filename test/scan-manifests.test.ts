@@ -409,6 +409,58 @@ describe('matchManifest on Gemfile, composer.json and Cargo.toml', () => {
     expect(classOf('postmark')).toBe('runtime');
   });
 
+  it('keeps a gem in a production, staging or custom group as runtime; only dev-type groups are build-time', () => {
+    const findings = matchManifest({
+      path: 'Gemfile',
+      contents: [
+        'group :production do',
+        "  gem 'stripe'",
+        'end',
+        'group :staging, :production do',
+        "  gem 'twilio-ruby'",
+        'end',
+        'group :development, :test do',
+        "  gem 'sendgrid-ruby'",
+        'end',
+        "gem 'postmark', group: :production",
+        "gem 'resend', group: [:development, :test]",
+        "gem 'cloudinary', :group => [:test, :production]",
+        '',
+      ].join('\n'),
+    });
+    const classOf = (pkg: string) =>
+      findings.find((finding) => finding.detail.package === pkg)?.detail.class;
+    expect(classOf('stripe')).toBe('runtime');
+    expect(classOf('twilio-ruby')).toBe('runtime');
+    expect(classOf('sendgrid-ruby')).toBe('build-time');
+    expect(classOf('postmark')).toBe('runtime');
+    expect(classOf('resend')).toBe('build-time');
+    expect(classOf('cloudinary')).toBe('runtime');
+  });
+
+  it('closes a block on an end that carries a trailing comment or modifier', () => {
+    const findings = matchManifest({
+      path: 'Gemfile',
+      contents: [
+        'group :test do # unit',
+        "  gem 'resend'",
+        'end # test',
+        "gem 'stripe'",
+        'group :development do',
+        "  gem 'sendgrid-ruby'",
+        "end if ENV['DEV']",
+        "gem 'postmark'",
+        '',
+      ].join('\n'),
+    });
+    const classOf = (pkg: string) =>
+      findings.find((finding) => finding.detail.package === pkg)?.detail.class;
+    expect(classOf('resend')).toBe('build-time');
+    expect(classOf('stripe')).toBe('runtime');
+    expect(classOf('sendgrid-ruby')).toBe('build-time');
+    expect(classOf('postmark')).toBe('runtime');
+  });
+
   it('classes a runtime vendor that only sits in a dev section as build-time', () => {
     const npm = matchManifest({
       path: 'package.json',

@@ -514,8 +514,28 @@ describe('resolveCandidates', () => {
     ).rejects.toMatchObject({ cliError: { status: 401 } });
   });
 
+  it('stops on a 404, which is the account lacking the feature, not a missing term', async () => {
+    const { access, requests } = stubApi({
+      searches: { stripe: [{ status: 404, body: {} }], vercel: [rows(row(861, 'Vercel'))] },
+    });
+    await expect(
+      resolveCandidates([candidate('Stripe'), candidate('Vercel')], {
+        access,
+        includeBuildTime: false,
+        tracked: NONE,
+      }),
+    ).rejects.toMatchObject({
+      cliError: {
+        code: 'THIRD_PARTY_UNAVAILABLE',
+        status: 404,
+        message: expect.stringContaining('not available on this account'),
+      },
+    });
+    expect(requests.filter((path) => path.includes('third-party-providers'))).toHaveLength(1);
+  });
+
   it('does not count a failure that belongs to one term toward the abort', async () => {
-    const missing: Reply = { status: 404, body: {} };
+    const missing: Reply = { status: 400, body: {} };
     const { access } = stubApi({
       searches: { a: [missing], b: [missing], c: [missing], d: [rows(row(1, 'D'))] },
     });
@@ -529,7 +549,7 @@ describe('resolveCandidates', () => {
       'unresolved',
       'create',
     ]);
-    expect(resolved[0]).toMatchObject({ failure: { code: 'HTTP_404' } });
+    expect(resolved[0]).toMatchObject({ failure: { code: 'HTTP_400' } });
   });
 
   it('leaves the rest unresolved once the time budget is spent', async () => {

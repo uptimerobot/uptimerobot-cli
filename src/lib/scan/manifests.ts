@@ -510,27 +510,63 @@ function parseGoMod(contents: string): Declared[] {
 const GEMFILE_BLOCK_OPENER = /(?:\bdo(?:\s*\|[^|]*\|)?$|^(?:if|unless|case|begin)\b)/;
 
 /**
- * `gem 'name', 'constraint'`. A gem inside a `group ... do` block or carrying
- * a `group:` option is not loaded in production, so it is build-time. Every
- * block is tracked, not only groups, so a `platforms` or `if` block closing
- * inside a group does not end the group early.
+ * Bundler installs every group unless the deploy leaves it out, and what a
+ * deploy leaves out is development and test. Production, staging, default and
+ * custom groups are runtime.
+ */
+const DEV_GEM_GROUPS = new Set([
+  'development',
+  'dev',
+  'test',
+  'tests',
+  'testing',
+  'lint',
+  'docs',
+  'ci',
+]);
+
+/** The group names on a `group :a, :b do` line or in a `group:` / `:group =>` option, as symbols or strings. */
+function gemGroups(text: string): string[] {
+  return [...text.matchAll(/(?::|['"])([A-Za-z0-9_]+)['"]?/g)].map((match) => match[1] ?? '');
+}
+
+function isDevGroupList(groups: readonly string[]): boolean {
+  return groups.length > 0 && groups.every((group) => DEV_GEM_GROUPS.has(group.toLowerCase()));
+}
+
+/**
+ * `gem 'name', 'constraint'`. A gem whose groups are all dev-type, from the
+ * `group ... do` blocks around it or its own `group:` option, is build-time;
+ * any other group keeps it runtime. Every block is tracked, not only groups,
+ * so a `platforms` or `if` block closing inside a group does not end the group
+ * early, and a trailing comment or modifier on `end` still closes it.
  */
 function parseGemfile(contents: string): Declared[] {
   const declared: Declared[] = [];
-  const blocks: ('group' | 'other')[] = [];
+  const blocks: ({ kind: 'group'; dev: boolean } | { kind: 'other' })[] = [];
   contents.split('\n').forEach((raw, index) => {
-    const text = raw.trim();
+    const text = raw.replace(/\s#.*$/, '').trim();
     if (GEMFILE_BLOCK_OPENER.test(text)) {
-      blocks.push(/^group\b/.test(text) ? 'group' : 'other');
+      const group = /^group\b(.*)\bdo\b/.exec(text);
+      blocks.push(
+        group === null
+          ? { kind: 'other' }
+          : { kind: 'group', dev: isDevGroupList(gemGroups(group[1] ?? '')) },
+      );
       return;
     }
-    if (text === 'end') {
+    if (/^end\b/.test(text)) {
       blocks.pop();
       return;
     }
     const match = /^gem\s+['"]([^'"]+)['"](?:\s*,\s*['"]([^'"]+)['"])?(.*)$/.exec(text);
     if (match === null || match[1] === undefined) return;
-    const grouped = blocks.includes('group') || /(?:\bgroup:|:group\s*=>)/.test(match[3] ?? '');
+    const option = /(?:\bgroup:|:group\s*=>)\s*(\[[^\]]*\]|[^,]+)/.exec(match[3] ?? '');
+    const groups = blocks.filter((block) => block.kind === 'group');
+    const grouped =
+      option !== null
+        ? isDevGroupList(gemGroups(option[1] ?? ''))
+        : groups.length > 0 && groups.every((block) => block.kind === 'group' && block.dev);
     declared.push({
       name: match[1],
       version: match[2] ?? '',

@@ -1,5 +1,5 @@
 import { PassThrough } from 'node:stream';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isCI, promptSecret, requestConfirmation } from '../src/lib/invocation.js';
 
 const stdinDescriptor = Object.getOwnPropertyDescriptor(process, 'stdin');
@@ -78,6 +78,20 @@ describe('requestConfirmation', () => {
     stdin.end();
 
     await expect(answer).resolves.toBe(false);
+  });
+
+  it('aborts the whole command with exit code 130 on Ctrl-C at the question', async () => {
+    const { stdin, stderrText } = fakeTerminal();
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    try {
+      const answer = requestConfirmation('Create 2 third-party services now', 'human');
+      stdin.write('\u0003');
+      await expect(answer).resolves.toBe(false);
+      expect(exit).toHaveBeenCalledWith(130);
+      expect(stderrText()).toContain('Continue? [y/N] ');
+    } finally {
+      exit.mockRestore();
+    }
   });
 
   it('answers no at once when stdin had already ended before the question', async () => {
