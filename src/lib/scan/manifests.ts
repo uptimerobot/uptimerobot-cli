@@ -545,7 +545,10 @@ function parseGemfile(contents: string): Declared[] {
   const declared: Declared[] = [];
   const blocks: ({ kind: 'group'; dev: boolean } | { kind: 'other' })[] = [];
   contents.split('\n').forEach((raw, index) => {
-    const text = raw.replace(/\s#.*$/, '').trim();
+    const text = raw
+      .replace(/\r$/, '')
+      .replace(/\s#.*$/, '')
+      .trim();
     if (GEMFILE_BLOCK_OPENER.test(text)) {
       const group = /^group\b(.*)\bdo\b/.exec(text);
       blocks.push(

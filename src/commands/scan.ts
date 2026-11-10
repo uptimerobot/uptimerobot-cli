@@ -136,14 +136,15 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
       // scan and before any request, like every other authenticated command.
       const access = await this.resolveAccess(flags['api-key'], mode);
       const context = await scanRepository(repoRoot);
-      const unknown = unknownSelections(context.thirdParty.candidates, selection);
+      const unknownByFlag = unknownSelections(context.thirdParty.candidates, selection);
+      const unknown = [...unknownByFlag.only, ...unknownByFlag.skip];
       if (unknown.length > 0) {
         return this.fail(
           {
             code: 'INVALID_INPUT',
             expected: 'a provider the scan found',
             message: `No scanned provider matches ${unknown.join(', ')}.`,
-            path: 'only',
+            path: unknownByFlag.only.length > 0 ? 'only' : 'skip',
           },
           2,
         );

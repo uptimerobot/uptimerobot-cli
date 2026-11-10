@@ -438,6 +438,19 @@ describe('matchManifest on Gemfile, composer.json and Cargo.toml', () => {
     expect(classOf('cloudinary')).toBe('runtime');
   });
 
+  it('reads a CRLF Gemfile the same as an LF one, comments and block ends included', () => {
+    const lf = ['group :test do # unit', "  gem 'resend'", 'end # test', "gem 'stripe'", ''].join(
+      '\n',
+    );
+    const classes = (contents: string) =>
+      matchManifest({ path: 'Gemfile', contents }).map((f) => [f.detail.package, f.detail.class]);
+    expect(classes(lf)).toEqual([
+      ['resend', 'build-time'],
+      ['stripe', 'runtime'],
+    ]);
+    expect(classes(lf.replaceAll('\n', '\r\n'))).toEqual(classes(lf));
+  });
+
   it('closes a block on an end that carries a trailing comment or modifier', () => {
     const findings = matchManifest({
       path: 'Gemfile',

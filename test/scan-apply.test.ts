@@ -511,9 +511,26 @@ describe('uptimerobot scan --apply', () => {
     const typo = await runCli(['scan', root, '--apply', '--json', '--only', 'Vercell'], env(stub));
     expect(typo.exitCode).toBe(2);
     expect(JSON.parse(typo.stderr)).toMatchObject({
-      error: { code: 'INVALID_INPUT', message: 'No scanned provider matches Vercell.' },
+      error: {
+        code: 'INVALID_INPUT',
+        message: 'No scanned provider matches Vercell.',
+        path: 'only',
+      },
     });
     expect(stub.hits).toEqual([]);
+
+    const skipTypo = await runCli(
+      ['scan', root, '--apply', '--json', '--skip', 'Stripee'],
+      env(stub),
+    );
+    expect(skipTypo.exitCode).toBe(2);
+    expect(JSON.parse(skipTypo.stderr)).toMatchObject({
+      error: {
+        code: 'INVALID_INPUT',
+        message: 'No scanned provider matches Stripee.',
+        path: 'skip',
+      },
+    });
 
     const pathAfterFlag = await runCli(
       ['scan', '--apply', '--confirm', '--json', '--only', 'Resend', root],

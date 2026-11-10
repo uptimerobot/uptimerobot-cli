@@ -101,17 +101,16 @@ export function malformedOnly(only: readonly string[]): string | undefined {
 }
 
 /** The `--only` and `--skip` names that match no candidate: a typo would otherwise be a silent no-op. */
+/** The `--only` and `--skip` entries no scanned provider matches, per flag, so the error names the one to edit. */
 export function unknownSelections(
   candidates: readonly ThirdPartyCandidate[],
   selection: ApplySelection,
-): string[] {
+): { only: string[]; skip: string[] } {
   const known = new Set(candidates.map((candidate) => normalizeName(candidate.provider)));
-  return [
-    ...selection.only.map((entry) => ({ entry, name: parseOnly(entry).name })),
-    ...selection.skip.map((entry) => ({ entry, name: normalizeName(entry) })),
-  ]
-    .filter(({ name }) => !known.has(name))
-    .map(({ entry }) => entry);
+  return {
+    only: selection.only.filter((entry) => !known.has(parseOnly(entry).name)),
+    skip: selection.skip.filter((entry) => !known.has(normalizeName(entry))),
+  };
 }
 
 /** The ids a resolved row can stand for: its catalog row, or each of an ambiguous row's choices. */
