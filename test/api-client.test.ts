@@ -31,6 +31,56 @@ describe('API client', () => {
     });
   });
 
+  it('attributes a request to the calling command when one is configured', async () => {
+    let observedRequest: Request | undefined;
+    const fetchImplementation = vi.fn<typeof fetch>().mockImplementation(async (request) => {
+      observedRequest = request instanceof Request ? request : new Request(request);
+      return new Response('{}', {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      });
+    });
+    const client = createApiClient({
+      apiKey: 'u123-secret',
+      apiUrl: new URL('https://api.uptimerobot.com/v3'),
+      command: 'scan:3rd-party',
+      environment: 'local',
+      fetchImplementation,
+      mode: 'human',
+      version: '0.1.0',
+    });
+
+    await client.request(new URL('https://api.uptimerobot.com/v3/monitors'), { method: 'GET' });
+
+    expect(observedRequest?.headers.get('x-uptimerobot-command')).toBe('scan:3rd-party');
+  });
+
+  it('sends no command header when no command is configured', async () => {
+    let observedRequest: Request | undefined;
+    const fetchImplementation = vi.fn<typeof fetch>().mockImplementation(async (request) => {
+      observedRequest = request instanceof Request ? request : new Request(request);
+      return new Response('{}', {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      });
+    });
+    const client = createApiClient({
+      apiKey: 'u123-secret',
+      apiUrl: new URL('https://api.uptimerobot.com/v3'),
+      environment: 'local',
+      fetchImplementation,
+      mode: 'human',
+      version: '0.1.0',
+    });
+
+    await client.request(new URL('https://api.uptimerobot.com/v3/monitors'), { method: 'GET' });
+
+    expect({
+      command: observedRequest?.headers.get('x-uptimerobot-command'),
+      requested: observedRequest !== undefined,
+    }).toEqual({ command: null, requested: true });
+  });
+
   it('returns the response together with its parsed payload', async () => {
     const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify({ data: [{ id: 42 }] }), {

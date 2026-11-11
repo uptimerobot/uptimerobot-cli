@@ -55,17 +55,28 @@ describe('requestConfirmation', () => {
   it('accepts an explicit yes answer', async () => {
     const { stdin, stderrText } = fakeTerminal();
 
-    const answer = requestConfirmation('Run npx skills add uptimerobot/ai', 'human');
+    const answer = requestConfirmation('Run npx skills add uptimerobot/ai. Continue?', 'human');
     stdin.write('yes\n');
 
     await expect(answer).resolves.toBe(true);
     expect(stderrText()).toContain('Run npx skills add uptimerobot/ai. Continue? [y/N] ');
   });
 
+  it('asks exactly the question it is given, followed by [y/N]', async () => {
+    const { stdin, stderrText } = fakeTerminal();
+
+    const answer = requestConfirmation('Create an AWS monitor with these 2 components?', 'human');
+    stdin.write('y\n');
+
+    await expect(answer).resolves.toBe(true);
+    expect(stderrText()).toContain('Create an AWS monitor with these 2 components? [y/N] ');
+    expect(stderrText()).not.toContain('Continue?');
+  });
+
   it('declines any answer other than yes', async () => {
     const { stdin } = fakeTerminal();
 
-    const answer = requestConfirmation('Run npx skills add uptimerobot/ai', 'human');
+    const answer = requestConfirmation('Run npx skills add uptimerobot/ai. Continue?', 'human');
     stdin.write('n\n');
 
     await expect(answer).resolves.toBe(false);
@@ -74,9 +85,9 @@ describe('requestConfirmation', () => {
   it('does not prompt an agent', async () => {
     const { stderrText } = fakeTerminal();
 
-    await expect(requestConfirmation('Run npx skills add uptimerobot/ai', 'agent')).resolves.toBe(
-      false,
-    );
+    await expect(
+      requestConfirmation('Run npx skills add uptimerobot/ai. Continue?', 'agent'),
+    ).resolves.toBe(false);
     expect(stderrText()).toBe('');
   });
 });

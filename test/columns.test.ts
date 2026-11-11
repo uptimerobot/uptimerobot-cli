@@ -6,6 +6,7 @@ import {
   type ColumnSpec,
   columnsFor,
   parseColumnsFlag,
+  SCAN_THIRD_PARTY_COLUMNS,
 } from '../src/output/columns.js';
 import { formatOutput } from '../src/output/renderer.js';
 
@@ -28,6 +29,16 @@ const EXPECTED_COLLECTION_COMMAND_IDS = [
   'user:alert-contacts',
   'user:all-alert-contacts',
 ] as const;
+
+const getMockScanCandidate = (overrides: Record<string, unknown> = {}) => ({
+  id: 1001,
+  name: 'AWS Lambda (Oregon)',
+  parentName: 'AWS Lambda',
+  region: { code: 'us-west-2', name: 'Oregon' },
+  matchedBy: 'lambda',
+  tracked: false,
+  ...overrides,
+});
 
 describe('column registry', () => {
   afterEach(() => {
@@ -92,6 +103,43 @@ describe('column registry', () => {
         expect(spec.maxWidth, spec.key).toBeGreaterThanOrEqual(Math.max(2, heading.length));
       }
     }
+  });
+
+  it('renders scan candidates with ID, COMPONENT, REGION, MATCHED and TRACKED columns', () => {
+    vi.stubEnv('NO_COLOR', '1');
+    const candidates = [
+      getMockScanCandidate({ tracked: true }),
+      getMockScanCandidate({
+        id: 2001,
+        matchedBy: 'dynamodb',
+        name: 'Amazon DynamoDB (Oregon)',
+        parentName: 'Amazon DynamoDB',
+      }),
+    ];
+
+    const lines = formatOutput('table', candidates, { columns: SCAN_THIRD_PARTY_COLUMNS })
+      ?.split('\n')
+      .map((line) => line.trimEnd().split(/ {2,}/));
+
+    expect(lines).toEqual([
+      ['ID', 'COMPONENT', 'REGION', 'MATCHED', 'TRACKED'],
+      ['1001', 'AWS Lambda › AWS Lambda (Oregon)', 'us-west-2', 'lambda', 'yes'],
+      ['2001', 'Amazon DynamoDB › Amazon DynamoDB (Oregon)', 'us-west-2', 'dynamodb', 'no'],
+    ]);
+  });
+
+  it('renders a root scan candidate by its own name and a missing region as blank', () => {
+    const candidate = getMockScanCandidate({
+      id: 601,
+      matchedBy: 'workers',
+      name: 'Workers',
+      parentName: null,
+      region: null,
+    });
+
+    expect(formatOutput('plain', [candidate], { columns: SCAN_THIRD_PARTY_COLUMNS })).toBe(
+      '601\tWorkers\t\tworkers\tno',
+    );
   });
 
   it('returns undefined for commands without curated columns', () => {

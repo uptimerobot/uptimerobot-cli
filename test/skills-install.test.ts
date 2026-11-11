@@ -61,6 +61,7 @@ reader.question('Installer input: ', (answer) => {
       );
 
       expect(result.exitCode).toBe(0);
+      expect(result.output).toContain('Run npx skills add uptimerobot/ai. Continue? [y/N] ');
       expect(result.output).toContain('Installation cancelled.');
       expect(result.output).not.toContain('npx args:');
     },

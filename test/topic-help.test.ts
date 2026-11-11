@@ -39,6 +39,15 @@ describe('topic help', () => {
     expect(help).toContain('monitors stats response-time Get monitor response time statistics');
   });
 
+  it('lists the scan topic at the root and its 3rd-party command inside it', async () => {
+    const [root, scan] = await Promise.all([runCli(['--help']), runCli(['scan', '--help'])]);
+
+    expect(root.stdout.replace(/\s+/g, ' ')).toContain('scan Find things worth monitoring');
+    expect(scan.stdout.replace(/\s+/g, ' ')).toContain(
+      'scan 3rd-party Find the components of a provider your stack uses and monitor them',
+    );
+  });
+
   it('describes the third-party service topics instead of borrowing a subcommand summary', async () => {
     const [monitors, service, root] = await Promise.all([
       runCli(['monitors', '--help']),
