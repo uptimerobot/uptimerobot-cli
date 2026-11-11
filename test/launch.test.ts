@@ -219,12 +219,12 @@ describe('launchAgent', () => {
     await expect(promise).resolves.toBe(1);
   });
 
-  it('resolves non-zero when the child emits an error instead of starting', async () => {
+  it('resolves undefined when the child emits an error instead of starting', async () => {
     const child = new FakeChild();
     const promise = launchAgent({ args: [], command: 'claude' }, { spawn: () => child });
     child.fail(new Error('ENOENT'));
 
-    await expect(promise).resolves.toBe(1);
+    await expect(promise).resolves.toBeUndefined();
   });
 
   it('never throws when spawn fails synchronously', async () => {
@@ -237,6 +237,6 @@ describe('launchAgent', () => {
           },
         },
       ),
-    ).resolves.toBe(1);
+    ).resolves.toBeUndefined();
   });
 });

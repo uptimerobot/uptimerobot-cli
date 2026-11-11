@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import type { AgentTarget } from '../agent-targets.js';
 import type { CliInvocation } from './cli-invocation.js';
@@ -395,6 +395,10 @@ function locateBlock(content: Buffer): BlockLocation | undefined {
  *
  * The original bytes are held in memory for the whole operation and put back
  * if anything goes wrong, which covers the case a rename can still fail on.
+ *
+ * A symlinked AGENTS.md (commonly `AGENTS.md -> CLAUDE.md`) is written through:
+ * the rename lands on the link's target, so the link survives and the file
+ * the user actually edits gets the block.
  */
 async function writeAtomically(
   root: string,
@@ -403,15 +407,16 @@ async function writeAtomically(
   original: Buffer | undefined,
   fileSystem: PlantFileSystem,
 ): Promise<void> {
+  const target = await realpath(path).catch(() => path);
   const temporary = projectFilePath(
     root,
     `${AGENTS_FILE_NAME}.uptimerobot-${randomBytes(6).toString('hex')}.tmp`,
   );
   try {
     await fileSystem.writeFile(temporary, next);
-    await fileSystem.rename(temporary, path);
+    await fileSystem.rename(temporary, target);
   } catch (error) {
-    const restored = await restore(path, original, fileSystem);
+    const restored = await restore(target, original, fileSystem);
     // Best effort: a leftover temporary file is untidy, not dangerous, and
     // must not replace the real reason the write failed.
     await fileSystem.remove(temporary).catch(() => undefined);

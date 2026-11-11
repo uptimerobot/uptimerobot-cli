@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -154,6 +154,19 @@ describe('skills install against a project directory', () => {
       version: VERSION,
     });
   }
+
+  it('writes through a symlinked AGENTS.md and leaves the link in place', async () => {
+    const claudeFile = join(cwd, 'CLAUDE.md');
+    await writeFile(claudeFile, '# Project\n');
+    await symlink('CLAUDE.md', agentsFile);
+
+    await install();
+
+    expect((await lstat(agentsFile)).isSymbolicLink()).toBe(true);
+    const written = await readFile(claudeFile, 'utf8');
+    expect(written).toContain('# Project');
+    expect(written).toContain(BLOCK_BEGIN_PREFIX);
+  });
 
   it('creates AGENTS.md at the project root when none exists', async () => {
     const report = await install();

@@ -26,9 +26,9 @@
  */
 
 import { isIP, isIPv6 } from 'node:net';
-import { type ContainerScanLimits, scanContainers } from './containers.js';
+import { type ScanContainersOptions, scanContainers } from './containers.js';
 import type { ScanEvidence, ScanFinding } from './finding.js';
-import { compareStrings as compare } from './support.js';
+import { compareStrings as compare, hasUnsafeCharacters } from './support.js';
 import { type ScanRoutesOptions, isHealthPath, scanRoutes } from './routes.js';
 import { type ScanScheduledOptions, scanScheduled } from './scheduled.js';
 import {
@@ -202,7 +202,7 @@ export interface ScanFindings {
 }
 
 export interface ScanRepositoryOptions {
-  containers?: Partial<ContainerScanLimits>;
+  containers?: ScanContainersOptions;
   routes?: ScanRoutesOptions;
   scheduled?: ScanScheduledOptions;
   thirdParty?: ScanThirdPartyOptions;
@@ -221,7 +221,7 @@ export async function scanRepository(
     truncated = true;
   };
   const [containers, routes, scheduled, thirdParty] = await Promise.all([
-    scanContainers(repoRoot, options.containers ?? {}),
+    scanContainers(repoRoot, { ...options.containers, onTruncated }),
     scanRoutes(repoRoot, { ...options.routes, onTruncated }),
     scanScheduled(repoRoot, { ...options.scheduled, onTruncated }),
     scanThirdParty(repoRoot, { ...options.thirdParty, onTruncated }),
@@ -836,7 +836,7 @@ function mergeDuplicates<T extends ScanCandidate>(
 ): T[] {
   const merged = new Map<string, T>();
   for (const candidate of candidates) {
-    const key = keyOf(candidate).join(' ');
+    const key = keyOf(candidate).join('\u0000');
     const existing = merged.get(key);
     if (existing === undefined) {
       merged.set(key, candidate);
@@ -1076,9 +1076,27 @@ const UNRESOLVED_PREFIX_CAVEATS: ReadonlyMap<string, string> = new Map([
 ]);
 
 function heartbeatLine(heartbeat: HeartbeatCandidate): string {
-  const schedule = heartbeat.schedule === '' ? 'no schedule declared' : heartbeat.schedule;
-  const label = heartbeat.name === undefined ? '' : ` ${heartbeat.name}`;
+  const schedule = heartbeat.schedule === '' ? 'no schedule declared' : inline(heartbeat.schedule);
+  const label = heartbeat.name === undefined ? '' : ` ${inline(heartbeat.name)}`;
   return `- \`${schedule}\` — ${heartbeat.kind}${label} — ${citation(heartbeat.evidence)}${detailSuffix(heartbeat.detail)}`;
+}
+
+const MAX_INLINE_LENGTH = 200;
+
+/**
+ * One value, one line: a finding is copied from a file the repository
+ * controls into a document an agent is told to trust, so a newline, a
+ * backtick or a control character in it would let that file forge headings
+ * and instructions of its own. Backticks become quotes rather than vanishing,
+ * so a route that really contains one still reads as such.
+ */
+function inline(text: string): string {
+  const flat = text.replaceAll(/\s+/g, ' ').trim();
+  let result = '';
+  for (const character of flat) {
+    if (!hasUnsafeCharacters(character)) result += character === '`' ? "'" : character;
+  }
+  return result.length > MAX_INLINE_LENGTH ? `${result.slice(0, MAX_INLINE_LENGTH)}…` : result;
 }
 
 function candidateLine(candidate: ScanCandidate): string {
@@ -1086,7 +1104,7 @@ function candidateLine(candidate: ScanCandidate): string {
   // Shared with the rejected list, which never carries the mark, so the star
   // only ever appears among accepted candidates.
   const marker = candidate.health === true ? '★ ' : '';
-  return `${marker}\`${candidate.value}\` (${candidate.kind}) — ${citation(candidate.evidence)}${
+  return `${marker}\`${inline(candidate.value)}\` (${candidate.kind}) — ${citation(candidate.evidence)}${
     alsoAt === '' ? '' : `, also ${alsoAt}`
   }${detailSuffix(candidate.detail)}`;
 }
@@ -1099,6 +1117,6 @@ function detailSuffix(detail: Readonly<Record<string, string>> | undefined): str
   if (detail === undefined) return '';
   const entries = Object.entries(detail)
     .sort(([left], [right]) => compare(left, right))
-    .map(([key, value]) => `${key}=${value}`);
+    .map(([key, value]) => `${key}=${inline(value)}`);
   return entries.length === 0 ? '' : ` [${entries.join(', ')}]`;
 }

@@ -18,6 +18,7 @@ import { readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import { LineCounter, isMap, isNode, isScalar, isSeq, parseDocument } from 'yaml';
 import type { ScanFinding } from './finding.js';
+import { redactSecrets } from './redact.js';
 import { DEFAULT_MAX_FILE_BYTES, compareStrings as compareText } from './support.js';
 
 export type { ScanEvidence } from './finding.js';
@@ -87,14 +88,20 @@ interface SourceFile {
  * Reports every container or deployment endpoint the repository describes,
  * ordered by file, then line, then value, so repeated scans agree.
  */
+export interface ScanContainersOptions extends Partial<ContainerScanLimits> {
+  /** Called once when a limit stopped the walk before the tree was covered. */
+  onTruncated?: () => void;
+}
+
 export async function scanContainers(
   repoRoot: string,
-  limits: Partial<ContainerScanLimits> = {},
+  options: ScanContainersOptions = {},
 ): Promise<readonly ContainerFinding[]> {
+  const { onTruncated, ...limits } = options;
   const resolvedLimits = { ...DEFAULT_CONTAINER_SCAN_LIMITS, ...limits };
   const findings: ContainerFinding[] = [];
 
-  for (const source of await collectSources(repoRoot, resolvedLimits)) {
+  for (const source of await collectSources(repoRoot, resolvedLimits, onTruncated)) {
     const text = await readCapped(source.absolute, resolvedLimits.maxFileBytes);
     if (text === undefined) continue;
     findings.push(...scanSource(source, text));
@@ -131,6 +138,7 @@ function scanSource(source: SourceFile, text: string): readonly ContainerFinding
 async function collectSources(
   repoRoot: string,
   limits: ContainerScanLimits,
+  onTruncated?: () => void,
 ): Promise<readonly SourceFile[]> {
   const root = await realpath(repoRoot).catch(() => resolve(repoRoot));
   const sources: SourceFile[] = [];
@@ -143,7 +151,10 @@ async function collectSources(
     if (entries === undefined) continue;
 
     for (const entry of entries.sort((left, right) => compareText(left.name, right.name))) {
-      if (visited >= limits.maxEntries || sources.length >= limits.maxFiles) return sources;
+      if (visited >= limits.maxEntries || sources.length >= limits.maxFiles) {
+        onTruncated?.();
+        return sources;
+      }
       visited += 1;
 
       const absolute = join(current.path, entry.name);
@@ -531,14 +542,16 @@ function healthcheckFinding(
 ): ContainerFinding | undefined {
   const probe = probeUrl(command);
   if (probe === undefined) return undefined;
+  // The probe and the command are copied into a file at the repository root,
+  // so a credential in either would be the scan's own leak.
   return {
     detail: detailOf({
       ...extra,
-      command: truncate(command.replaceAll(/\s+/g, ' ').trim(), MAX_DETAIL_TEXT),
+      command: truncate(redactSecrets(command.replaceAll(/\s+/g, ' ').trim()), MAX_DETAIL_TEXT),
     }),
     evidence: { file, line },
     kind,
-    value: probe,
+    value: redactSecrets(probe),
   };
 }
 

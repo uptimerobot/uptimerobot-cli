@@ -501,3 +501,21 @@ describe('scanContainers — caps', () => {
     expect(readPaths).toEqual([]);
   });
 });
+
+describe('healthcheck findings never carry a credential', () => {
+  it('redacts userinfo and sensitive query parameters in the probe and the command', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        'FROM node\nHEALTHCHECK CMD curl -f "http://admin:hunter2@localhost:3000/health?token=abc123def"\n',
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).toBe('http://***@localhost:3000/health?token=***');
+    expect(finding?.detail?.command).toBe(
+      'CMD curl -f "http://***@localhost:3000/health?token=***"',
+    );
+    expect(JSON.stringify(finding)).not.toContain('hunter2');
+    expect(JSON.stringify(finding)).not.toContain('abc123def');
+  });
+});

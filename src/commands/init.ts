@@ -1,4 +1,4 @@
-import { access, lstat, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { access, lstat, readFile, rm, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Flags } from '@oclif/core';
@@ -361,8 +361,19 @@ Precedence:
       for (const line of scanSummaryLines(output, context)) this.log(line);
       this.log('');
       this.log(`Opening ${AGENT_TARGET_DEFINITIONS[target].label} on ${SEED_CONTEXT_FILE_NAME}.`);
-      process.exitCode = await launchAgent(plan);
-      return output;
+      const exitCode = await launchAgent(plan);
+      if (exitCode !== undefined) {
+        process.exitCode = exitCode;
+        return output;
+      }
+      // The binary was found but never started (bad shebang, a Windows .cmd
+      // shim, EACCES): the hint stands in for the session that did not open.
+      this.log('');
+      this.log(
+        `${AGENT_TARGET_DEFINITIONS[target].label} could not be started; use the prompt below instead.`,
+      );
+      for (const line of handoffTail(output)) this.log(line);
+      return { ...output, launched: false };
     }
 
     for (const line of handoffLines(output, context)) this.log(line);
@@ -543,6 +554,18 @@ Precedence:
    * a failure names which one it was.
    */
   private async writeMarkedFile(file: MarkedFile): Promise<MarkedFileOutput> {
+    // A repository can commit the path as a link to anywhere; following it
+    // would create or overwrite a file the user never pointed at.
+    if (await isSymbolicLink(file.path)) {
+      return this.fail(
+        {
+          code: file.writeCode,
+          message: `${file.path} is a symbolic link. Replace it with a regular file or remove it, then run the command again.`,
+          path: file.path,
+        },
+        1,
+      );
+    }
     const original = await readMarkedFile(file.path);
     if (original !== undefined && !original.startsWith(file.beginPrefix)) {
       return this.fail(
@@ -610,11 +633,15 @@ function describe(error: unknown): string {
  * whatever the skills setup asked for verbatim, then the handoff.
  */
 function handoffLines(output: InitOutput, context: SeedContext): readonly string[] {
-  const lines = [...scanSummaryLines(output, context)];
+  return [...scanSummaryLines(output, context), ...handoffTail(output)];
+}
+
+/** The handoff after the scan summary: installer instructions, then the prompt. */
+function handoffTail(output: InitOutput): readonly string[] {
   // An agent-installer report is the whole of what that path produces —
   // nothing was written, so these lines are the instructions themselves.
-  if (output.skills) lines.push('', ...output.skills.instructions);
-  return [...lines, '', ...output.nextSteps];
+  const instructions = output.skills ? ['', ...output.skills.instructions] : [];
+  return [...instructions, '', ...output.nextSteps];
 }
 
 /** The lines that open the handoff: what was scanned, and where each file went. */
@@ -770,18 +797,21 @@ async function readMarkedFile(path: string): Promise<string | undefined> {
 /**
  * Whether the seed file can be written: an existing path must be a regular
  * file with write access; a missing one needs a writable directory. A path
- * that exists as anything else (a directory, a socket, a symlink whose target
- * is gone) cannot be written.
+ * that exists as anything else (a directory, a socket, any symlink) cannot be
+ * written, matching the refusal in `writeMarkedFile`.
  */
 async function canWriteSeed(seedPath: string, directory: string): Promise<boolean> {
   try {
-    const existing = await stat(seedPath).catch(() => undefined);
+    const existing = await lstat(seedPath).catch(() => undefined);
     if (existing !== undefined && !existing.isFile()) return false;
-    if (existing === undefined && (await lstat(seedPath).catch(() => undefined)) !== undefined)
-      return false;
     await access(existing === undefined ? directory : seedPath, constants.W_OK);
     return true;
   } catch {
     return false;
   }
+}
+
+async function isSymbolicLink(path: string): Promise<boolean> {
+  const stats = await lstat(path).catch(() => undefined);
+  return stats?.isSymbolicLink() ?? false;
 }

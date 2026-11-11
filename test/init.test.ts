@@ -656,6 +656,27 @@ describe('init', () => {
     }
   });
 
+  it('prints the handoff when the agent binary is on PATH but cannot start', async () => {
+    keyring.set(STORED_CREDENTIAL, 'u123-stored');
+    const binDir = await mkdtemp(join(tmpdir(), 'ur-init-bin-'));
+    await writeFile(join(binDir, 'claude'), '#!/nonexistent/interpreter\n', { mode: 0o755 });
+    vi.stubEnv('PATH', binDir);
+    const restoreTerminal = stubTerminal();
+    try {
+      const { default: Init } = await import('../src/commands/init.js');
+
+      const output = await Init.run(['--target', 'claude-code'], { root: projectRoot });
+      const printed = logged.join('\n');
+
+      expect(output).toMatchObject({ launched: false });
+      expect(printed).toContain('Next: open Claude Code in this repository and ask it:');
+      expect(printed).toContain('could not be started');
+    } finally {
+      restoreTerminal();
+      await rm(binDir, { force: true, recursive: true });
+    }
+  });
+
   it('hands off with the prompt to give the agent and the tag to verify against', async () => {
     keyring.set(STORED_CREDENTIAL, 'u123-stored');
     const restoreTerminal = stubTerminal();
@@ -1243,6 +1264,39 @@ describe('init', () => {
       } finally {
         restoreTerminal();
       }
+    });
+
+    it('refuses to write the seed through a symlink into an existing directory', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      await mkdir(join(repository, 'elsewhere'));
+      await symlink(join('elsewhere', SEED_CONTEXT_FILE), join(repository, SEED_CONTEXT_FILE));
+      const api = stubApi();
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+
+        await expect(
+          Init.run(['--no-launch', '--no-agent'], { root: projectRoot }),
+        ).rejects.toMatchObject({ cliError: { code: 'SEED_CONTEXT_WRITE_FAILED' } });
+        expect(api.posts).toEqual([]);
+        expect(await readdir(join(repository, 'elsewhere'))).toEqual([]);
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('refuses to write the setup guide through a symlink', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      await mkdir(join(repository, 'elsewhere'));
+      await symlink(join('elsewhere', SETUP_GUIDE_FILE), join(repository, SETUP_GUIDE_FILE));
+      const { default: Init } = await import('../src/commands/init.js');
+
+      await expect(
+        Init.run(['--no-launch', '--no-agent', '--no-third-party'], { root: projectRoot }),
+      ).rejects.toMatchObject({ cliError: { code: 'SETUP_GUIDE_WRITE_FAILED' } });
+      expect(await readdir(join(repository, 'elsewhere'))).toEqual([]);
     });
 
     it('does not offer when the seed file belongs to someone else', async () => {
