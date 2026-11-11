@@ -163,6 +163,8 @@ export const COMMAND_COLUMNS = {
   ],
 } satisfies Record<CollectionCommandId, ColumnSet>;
 
+export const SCAN_THIRD_PARTY_COLUMNS: readonly ColumnSpec[] = [];
+
 export function columnsFor(commandId: string): ColumnSet | undefined {
   if (!Object.hasOwn(COMMAND_COLUMNS, commandId)) return undefined;
   return COMMAND_COLUMNS[commandId as CollectionCommandId];

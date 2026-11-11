@@ -4,6 +4,7 @@ import type { ExecutionEnvironment, InvocationMode } from '../lib/invocation.js'
 export interface ApiClientOptions {
   apiKey: string;
   apiUrl: URL;
+  command?: string;
   environment: ExecutionEnvironment;
   fetchImplementation?: typeof fetch;
   mode: InvocationMode;
