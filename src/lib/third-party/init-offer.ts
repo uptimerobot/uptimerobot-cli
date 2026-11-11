@@ -132,7 +132,12 @@ export async function offerThirdParty(options: {
   }
   if (run.confirmation === 'not-needed')
     for (const line of formatProposal(run.proposal)) io.log(line);
-  for (const line of formatSummary(run.proposal.proposal, run.results, run.confirmation))
+  for (const line of formatSummary(
+    run.proposal.proposal,
+    run.results,
+    run.confirmation,
+    invocation,
+  ))
     io.log(line);
   if (run.blocked !== undefined) io.log(plain(run.blocked.message));
   if (run.failure !== undefined) io.log(plain(run.failure.cliError.message));

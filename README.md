@@ -114,6 +114,8 @@ uptimerobot monitors delete 797054213 --confirm
 uptimerobot init
 ```
 
+Every command `init` prints or writes into the guide is templated: `uptimerobot` when the CLI is on PATH, `npx @uptimerobot/cli` otherwise, or whatever `UPTIMEROBOT_CLI_COMMAND` names (a workspace runner such as `pnpm --silent uptimerobot`). `UPTIMEROBOT_SKILLS_DIR` points Claude Code at a local checkout of the skills, passed as `--plugin-dir` when the agent is opened.
+
 The scan itself is pattern matching over the working tree. It reaches no network, runs nothing, and never reads `.env` values. Its output starts with an `<!-- uptimerobot:scan:begin ... -->` marker. A rerun rewrites the whole of `uptimerobot-scan.md` when that marker is there, your own edits to it included, and refuses to overwrite a file that does not start with it, so keep notes elsewhere.
 
 | Flag               | Effect                                                                                                                                         |
@@ -157,7 +159,7 @@ uptimerobot scan
 uptimerobot scan ../other-repo --json
 ```
 
-`uptimerobot skills install` only makes the skills reachable, using the same detection and the same `AGENTS.md` block. `uptimerobot skills install --uninstall` removes that block and leaves the rest of the file byte-identical.
+The `AGENTS.md` block comes from `uptimerobot init --target <agent>` (or `init` at an interactive terminal), and `uptimerobot init --clean` removes it and leaves the rest of the file byte-identical. `uptimerobot skills install` is separate: it confirms and runs `npx skills add uptimerobot/ai`, and plants nothing.
 
 ### Third-party providers: the scan and `scan --apply`
 

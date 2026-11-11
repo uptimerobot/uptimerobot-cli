@@ -242,7 +242,7 @@ export function renderSkillsBlock(invocation: CliInvocation, version: string): s
     `- Index: ${SKILLS_INDEX_URL}`,
     `- Source: ${SKILLS_REPOSITORY_URL}`,
     '',
-    `Managed by \`${formatInvocation(invocation, 'skills install')}\`. Edits inside this block are`,
+    `Managed by \`${formatInvocation(invocation, 'init')}\`. Edits inside this block are`,
     `overwritten; remove it with \`${formatInvocation(invocation, 'init --clean')}\`.`,
     '',
     BLOCK_END_MARKER,
