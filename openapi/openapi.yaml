@@ -1152,6 +1152,18 @@ paths:
                     udp:
                       payload: ping
                       packetLossThreshold: 50
+              UDP Monitor (hex payload):
+                value:
+                  friendlyName: My UDP monitor (hex payload)
+                  type: UDP
+                  url: 1.2.3.4
+                  port: 53
+                  interval: 60
+                  timeout: 30
+                  config:
+                    udp:
+                      payload: '0x33444333'
+                      packetLossThreshold: 50
               Visual Comparison Monitor:
                 value:
                   friendlyName: My Visual Comparison monitor
@@ -8070,7 +8082,12 @@ components:
       properties:
         payload:
           type: string
-          description: UDP payload to send
+          maxLength: 1000
+          description: >-
+            UDP payload to send, up to 1000 characters. A value of `0x` followed
+            by an even number of hex digits (case-insensitive) is sent as raw
+            bytes: `0x33444333` sends the 4 bytes 33 44 43 33. Any other value,
+            including hex digits without the `0x` prefix, is sent as text.
         packetLossThreshold:
           type: number
           description: Packet loss threshold percentage

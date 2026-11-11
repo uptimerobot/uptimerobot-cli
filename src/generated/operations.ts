@@ -4434,6 +4434,23 @@ export const operations = {
       },
       {
         "body": {
+          "friendlyName": "My UDP monitor (hex payload)",
+          "type": "UDP",
+          "url": "1.2.3.4",
+          "port": 53,
+          "interval": 60,
+          "timeout": 30,
+          "config": {
+            "udp": {
+              "payload": "0x33444333",
+              "packetLossThreshold": 50
+            }
+          }
+        },
+        "name": "UDP Monitor (hex payload)"
+      },
+      {
+        "body": {
           "friendlyName": "My Visual Comparison monitor",
           "type": "VISUAL_COMPARISON",
           "url": "https://example.com",
@@ -8528,6 +8545,23 @@ export const operations = {
           }
         },
         "name": "UDP Monitor"
+      },
+      {
+        "body": {
+          "friendlyName": "My UDP monitor (hex payload)",
+          "type": "UDP",
+          "url": "1.2.3.4",
+          "port": 53,
+          "interval": 60,
+          "timeout": 30,
+          "config": {
+            "udp": {
+              "payload": "0x33444333",
+              "packetLossThreshold": 50
+            }
+          }
+        },
+        "name": "UDP Monitor (hex payload)"
       }
     ],
     "requestBodyFields": [
@@ -8854,7 +8888,8 @@ export const operations = {
             "description": "UDP monitor configuration",
             "properties": {
               "payload": {
-                "description": "UDP payload to send",
+                "description": "UDP payload to send, up to 1000 characters. A value of `0x` followed by an even number of hex digits (case-insensitive) is sent as raw bytes: `0x33444333` sends the 4 bytes 33 44 43 33. Any other value, including hex digits without the `0x` prefix, is sent as text.",
+                "maxLength": 1000,
                 "type": "string"
               },
               "packetLossThreshold": {
@@ -8886,7 +8921,8 @@ export const operations = {
         "description": "UDP monitor configuration",
         "properties": {
           "payload": {
-            "description": "UDP payload to send",
+            "description": "UDP payload to send, up to 1000 characters. A value of `0x` followed by an even number of hex digits (case-insensitive) is sent as raw bytes: `0x33444333` sends the 4 bytes 33 44 43 33. Any other value, including hex digits without the `0x` prefix, is sent as text.",
+            "maxLength": 1000,
             "type": "string"
           },
           "packetLossThreshold": {
@@ -8903,7 +8939,8 @@ export const operations = {
         "flag": "config-udp-payload",
         "path": "config.udp.payload",
         "required": false,
-        "description": "UDP payload to send",
+        "description": "UDP payload to send, up to 1000 characters. A value of `0x` followed by an even number of hex digits (case-insensitive) is sent as raw bytes: `0x33444333` sends the 4 bytes 33 44 43 33. Any other value, including hex digits without the `0x` prefix, is sent as text.",
+        "maxLength": 1000,
         "type": "string"
       },
       {
@@ -10798,7 +10835,8 @@ export const operations = {
             "nullable": true,
             "properties": {
               "payload": {
-                "description": "UDP payload to send",
+                "description": "UDP payload to send, up to 1000 characters. A value of `0x` followed by an even number of hex digits (case-insensitive) is sent as raw bytes: `0x33444333` sends the 4 bytes 33 44 43 33. Any other value, including hex digits without the `0x` prefix, is sent as text.",
+                "maxLength": 1000,
                 "type": "string"
               },
               "packetLossThreshold": {
@@ -11364,7 +11402,8 @@ export const operations = {
         "nullable": true,
         "properties": {
           "payload": {
-            "description": "UDP payload to send",
+            "description": "UDP payload to send, up to 1000 characters. A value of `0x` followed by an even number of hex digits (case-insensitive) is sent as raw bytes: `0x33444333` sends the 4 bytes 33 44 43 33. Any other value, including hex digits without the `0x` prefix, is sent as text.",
+            "maxLength": 1000,
             "type": "string"
           },
           "packetLossThreshold": {
@@ -11381,7 +11420,8 @@ export const operations = {
         "flag": "config-udp-payload",
         "path": "config.udp.payload",
         "required": false,
-        "description": "UDP payload to send",
+        "description": "UDP payload to send, up to 1000 characters. A value of `0x` followed by an even number of hex digits (case-insensitive) is sent as raw bytes: `0x33444333` sends the 4 bytes 33 44 43 33. Any other value, including hex digits without the `0x` prefix, is sent as text.",
+        "maxLength": 1000,
         "type": "string"
       },
       {

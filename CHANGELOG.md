@@ -29,6 +29,17 @@ may change in minor releases.
   `--json` output gains a `thirdParty` field; `--no-third-party` skips the
   offer. The setup guide gains a third-party step between discovery and the
   endpoint proposal.
+
+### Changed
+
+- A confirmation prompt whose input ends before an answer (Ctrl-D, a closed
+  stdin) counts as a no instead of leaving the command waiting; Ctrl-C at the
+  prompt exits 130 instead of reading as a no.
+
+## [1.3.0] - 2026-11-10
+
+### Added
+
 - `incidents list --type` and `--cause` filter incidents by type (Downtime,
   SlowResponse, VisualChange) and by root cause group (Timeout, an HTTP status
   class 2xx to 5xx, DNS, AssertionFailed, InvalidJSON, ConfigError), from the
@@ -38,9 +49,12 @@ may change in minor releases.
 
 ### Changed
 
-- A confirmation prompt whose input ends before an answer (Ctrl-D, a closed
-  stdin) counts as a no instead of leaving the command waiting; Ctrl-C at the
-  prompt exits 130 instead of reading as a no.
+- `--config-udp-payload` on `monitors create udp` and `monitors update`
+  documents the hex form, from the updated public API contract: `0x` followed
+  by an even number of hex digits is sent as raw bytes, any other value as
+  text. The flag now has the API's 1000-character limit, so a longer payload is
+  rejected before the request is sent. `monitors create` and
+  `monitors create udp` gain a hex payload example.
 
 ## [1.2.0] - 2026-11-06
 
@@ -287,7 +301,8 @@ freeze; each entry is a change that would otherwise have needed a 2.0.
 - Redirects are followed manually and the origin is re-checked at every hop
   before credentials are attached; cross-origin redirects are refused.
 
-[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v0.3.0...v1.0.0
