@@ -177,6 +177,13 @@ const getMockGoogleCloudComponentResponses = (): Record<string, ComponentsRespon
     data: [getMockGroup(5000, 'Cloud Run', [CLOUD_RUN_IOWA, CLOUD_RUN_BELGIUM])],
     regionLike: false,
   },
+  iowa: {
+    data: [
+      getMockGroup(5000, 'Cloud Run', [CLOUD_RUN_IOWA]),
+      getMockGroup(5100, 'Cloud Storage', [CLOUD_STORAGE_IOWA]),
+    ],
+    regionLike: true,
+  },
 });
 
 const getMockAwsDetail = (): ProviderDetail => ({
@@ -655,6 +662,34 @@ describe('scan 3rd-party: finding the components of a described stack', () => {
         monitor: null,
         provider: { id: 344, name: 'Google Cloud' },
       },
+    });
+  });
+});
+
+describe('scan 3rd-party: a description that names a service after the provider and a region', () => {
+  it('finds that service in that region, not every service in the region', async () => {
+    const api = await startGoogleCloudApi();
+
+    const result = await scan(api, [
+      '--provider',
+      'Google Cloud',
+      '--describe',
+      'Cloud Run in Iowa',
+      '--dry-run',
+      '--json',
+    ]);
+
+    expect({
+      componentRequests: componentRequests(api).map(({ path, query }) => ({ path, query })),
+      exitCode: result.exitCode,
+      candidates: (parseJson(result.stdout) as { candidates: unknown }).candidates,
+    }).toEqual({
+      componentRequests: [
+        { path: '/v3/third-party-providers/344/components', query: { search: 'cloud run' } },
+        { path: '/v3/third-party-providers/344/components', query: { search: 'iowa' } },
+      ],
+      exitCode: 0,
+      candidates: [candidate(CLOUD_RUN_IOWA, 'Cloud Run', 'cloud run')],
     });
   });
 });
@@ -1450,6 +1485,14 @@ describe('third-party scan: turning a description into search words', () => {
 
   it('searches for the whole description as one phrase when it names the provider and everything else is a stop-word', () => {
     expect(searchTerms('cloud run', 'Google Cloud')).toEqual(['cloud run']);
+  });
+
+  it('keeps a service named like the provider and "run" as one phrase beside the other words', () => {
+    expect(searchTerms('Cloud Run in Iowa', 'Google Cloud')).toEqual(['cloud run', 'iowa']);
+  });
+
+  it('still drops "run" as a stop-word when it does not follow a word of the provider name', () => {
+    expect(searchTerms('we run lambda in Oregon', 'AWS')).toEqual(['lambda', 'oregon']);
   });
 
   it.each([

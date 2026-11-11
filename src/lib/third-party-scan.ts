@@ -30,6 +30,14 @@ export const searchWords = (description: string, providerName: string): string[]
   );
 };
 
+const serviceNamePhrases = (description: string, providerName: string): string[] => {
+  const providerWords = new Set(wordsOf(providerName));
+  const words = wordsOf(description);
+  return words.flatMap((word, index) =>
+    providerWords.has(word) && words[index + 1] === 'run' ? [`${word} run`] : [],
+  );
+};
+
 const phraseNamingProvider = (description: string, providerName: string): string[] => {
   const providerWords = new Set(wordsOf(providerName));
   const words = wordsOf(description);
@@ -39,8 +47,13 @@ const phraseNamingProvider = (description: string, providerName: string): string
 };
 
 export const searchTerms = (description: string, providerName: string): string[] => {
-  const words = searchWords(description, providerName);
-  return words.length > 0 ? words : phraseNamingProvider(description, providerName);
+  const terms = [
+    ...new Set([
+      ...serviceNamePhrases(description, providerName),
+      ...searchWords(description, providerName),
+    ]),
+  ];
+  return terms.length > 0 ? terms : phraseNamingProvider(description, providerName);
 };
 
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
