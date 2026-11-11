@@ -1,5 +1,16 @@
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
+import {
+  asMonitor,
+  type Leaf,
+  leavesIn,
+  narrowByRegions,
+  occursAsWords,
+  searchTerms,
+  searchWords,
+  taggedBy,
+  type WordResult,
+} from '../src/lib/third-party-scan.js';
 import { runCli } from './helpers/run-cli.js';
 import { runInteractiveCli } from './helpers/run-interactive-cli.js';
 
@@ -136,6 +147,34 @@ const getMockAwsComponentResponses = (): Record<string, ComponentsResponse> => (
   },
   s3: {
     data: [getMockGroup(3000, 'Amazon Simple Storage Service', [S3_OREGON, S3_IRELAND])],
+    regionLike: false,
+  },
+});
+
+const IOWA: Region = { code: 'us-central1', name: 'Iowa' };
+const BELGIUM: Region = { code: 'europe-west1', name: 'Belgium' };
+const CLOUD_RUN_IOWA = getMockLeaf({ id: 5001, name: 'Cloud Run (us-central1)', region: IOWA });
+const CLOUD_RUN_BELGIUM = getMockLeaf({
+  id: 5002,
+  name: 'Cloud Run (europe-west1)',
+  region: BELGIUM,
+});
+const CLOUD_STORAGE_IOWA = getMockLeaf({
+  id: 5101,
+  name: 'Cloud Storage (us-central1)',
+  region: IOWA,
+});
+
+const getMockGoogleCloudComponentResponses = (): Record<string, ComponentsResponse> => ({
+  cloud: {
+    data: [
+      getMockGroup(5000, 'Cloud Run', [CLOUD_RUN_IOWA, CLOUD_RUN_BELGIUM]),
+      getMockGroup(5100, 'Cloud Storage', [CLOUD_STORAGE_IOWA]),
+    ],
+    regionLike: false,
+  },
+  'cloud run': {
+    data: [getMockGroup(5000, 'Cloud Run', [CLOUD_RUN_IOWA, CLOUD_RUN_BELGIUM])],
     regionLike: false,
   },
 });
@@ -298,6 +337,13 @@ const startFakeApi = async (overrides: Partial<Scenario> = {}): Promise<FakeApi>
   servers.push(server);
   return { requests, url: `http://127.0.0.1:${address.port}` };
 };
+
+const startGoogleCloudApi = (): Promise<FakeApi> =>
+  startFakeApi({
+    componentResponses: getMockGoogleCloudComponentResponses(),
+    providerDetails: {},
+    providerSearchRows: [{ id: 344, name: 'Google Cloud' }],
+  });
 
 const cliEnv = (api: FakeApi): Record<string, string> => ({
   UPTIMEROBOT_AGENT: '0',
@@ -578,6 +624,39 @@ describe('scan 3rd-party: finding the components of a described stack', () => {
       writes: writesOf(api),
     }).toMatchObject({ error: { code: 'NOT_FOUND' }, exitCode: 1, writes: [] });
   });
+
+  it('searches the whole description once when it names the provider and every other word is a stop-word', async () => {
+    const api = await startGoogleCloudApi();
+
+    const result = await scan(api, [
+      '--provider',
+      'Google Cloud',
+      '--describe',
+      'cloud run',
+      '--dry-run',
+      '--json',
+    ]);
+
+    expect({
+      componentRequests: componentRequests(api).map(({ path, query }) => ({ path, query })),
+      exitCode: result.exitCode,
+      output: parseJson(result.stdout),
+    }).toEqual({
+      componentRequests: [
+        { path: '/v3/third-party-providers/344/components', query: { search: 'cloud run' } },
+      ],
+      exitCode: 0,
+      output: {
+        applied: false,
+        candidates: [
+          candidate(CLOUD_RUN_IOWA, 'Cloud Run', 'cloud run'),
+          candidate(CLOUD_RUN_BELGIUM, 'Cloud Run', 'cloud run'),
+        ],
+        monitor: null,
+        provider: { id: 344, name: 'Google Cloud' },
+      },
+    });
+  });
 });
 
 describe('scan 3rd-party: choosing the provider', () => {
@@ -797,6 +876,24 @@ describe('scan 3rd-party: asking what the user runs', () => {
       requests: api.requests,
     }).toEqual({ exitCode: 2, hint: true, requests: [] });
   });
+
+  it.each([
+    { description: 'Google Cloud', says: 'only the provider name' },
+    { description: 'x', says: 'a single character' },
+  ])(
+    'exits 2 with the question as a hint, and no components request, when the description is $says',
+    async ({ description }) => {
+      const api = await startGoogleCloudApi();
+
+      const result = await scan(api, ['--provider', 'Google Cloud', '--describe', description]);
+
+      expect({
+        componentRequests: componentRequests(api),
+        exitCode: result.exitCode,
+        hint: result.stderr.includes('What do you use on Google Cloud?'),
+      }).toEqual({ componentRequests: [], exitCode: 2, hint: true });
+    },
+  );
 
   it.runIf(process.platform === 'darwin' || process.platform === 'linux')(
     'asks once in a terminal and searches with the typed answer',
@@ -1266,5 +1363,223 @@ describe('scan 3rd-party: attribution and errors', () => {
       exitCode: 2,
       requests: [],
     });
+  });
+});
+
+const getMockScanLeaf = (overrides: Pick<Leaf, 'id' | 'name'> & Partial<Leaf>): Leaf => ({
+  parentName: null,
+  region: null,
+  ...overrides,
+});
+
+const getMockWordResult = (word: string, leaves: Leaf[], regionLike = false): WordResult => ({
+  leaves,
+  regionLike,
+  word,
+});
+
+const LAMBDA_OREGON_LEAF = getMockScanLeaf({
+  id: 1001,
+  name: 'AWS Lambda (Oregon)',
+  parentName: 'AWS Lambda',
+  region: OREGON,
+});
+const LAMBDA_IRELAND_LEAF = getMockScanLeaf({
+  id: 1002,
+  name: 'AWS Lambda (Ireland)',
+  parentName: 'AWS Lambda',
+  region: IRELAND,
+});
+const REPOSITORY_OREGON_LEAF = getMockScanLeaf({
+  id: 1003,
+  name: 'AWS Serverless Application Repository (Oregon)',
+  parentName: 'AWS Serverless Application Repository',
+  region: OREGON,
+});
+const DYNAMODB_OREGON_LEAF = getMockScanLeaf({
+  id: 2001,
+  name: 'Amazon DynamoDB (Oregon)',
+  parentName: 'Amazon DynamoDB',
+  region: OREGON,
+});
+const DYNAMODB_IRELAND_LEAF = getMockScanLeaf({
+  id: 2002,
+  name: 'Amazon DynamoDB (Ireland)',
+  parentName: 'Amazon DynamoDB',
+  region: IRELAND,
+});
+const S3_OREGON_LEAF = getMockScanLeaf({
+  id: 3001,
+  name: 'Amazon Simple Storage Service (Oregon)',
+  parentName: 'Amazon Simple Storage Service',
+  region: OREGON,
+});
+
+describe('third-party scan: turning a description into search words', () => {
+  it('drops the words of the provider name, ignoring case', () => {
+    expect(searchWords('Google CLOUD storage', 'Google Cloud')).toEqual(['storage']);
+  });
+
+  it('drops stop-words', () => {
+    expect(searchWords('we use lambda and dynamodb in the cloud', 'AWS')).toEqual([
+      'lambda',
+      'dynamodb',
+      'cloud',
+    ]);
+  });
+
+  it('drops tokens shorter than two characters', () => {
+    expect(searchWords('s3 x lambda 7', 'AWS')).toEqual(['s3', 'lambda']);
+  });
+
+  it('lowercases the words', () => {
+    expect(searchWords('Lambda DynamoDB', 'AWS')).toEqual(['lambda', 'dynamodb']);
+  });
+
+  it('lists each word once, in the order it first appears', () => {
+    expect(searchWords('lambda dynamodb Lambda LAMBDA', 'AWS')).toEqual(['lambda', 'dynamodb']);
+  });
+
+  it('searches for the words when any remain', () => {
+    expect(searchTerms('Lambda and DynamoDB in Oregon', 'AWS')).toEqual([
+      'lambda',
+      'dynamodb',
+      'oregon',
+    ]);
+  });
+
+  it('searches for the whole description as one phrase when it names the provider and everything else is a stop-word', () => {
+    expect(searchTerms('cloud run', 'Google Cloud')).toEqual(['cloud run']);
+  });
+
+  it.each([
+    { description: 'Google Cloud', says: 'only the provider name' },
+    { description: 'and the with', says: 'only stop-words' },
+    { description: 'x', says: 'one character' },
+  ])('has nothing to search for when the description is $says', ({ description }) => {
+    expect(searchTerms(description, 'Google Cloud')).toEqual([]);
+  });
+});
+
+describe('third-party scan: combining the results of several words', () => {
+  it('keeps every leaf the words found when none of them was a region', () => {
+    const results = [
+      getMockWordResult('lambda', [LAMBDA_OREGON_LEAF, LAMBDA_IRELAND_LEAF]),
+      getMockWordResult('dynamodb', [DYNAMODB_OREGON_LEAF]),
+    ];
+
+    expect(narrowByRegions(results)).toEqual([
+      { ...LAMBDA_OREGON_LEAF, matchedBy: 'lambda' },
+      { ...LAMBDA_IRELAND_LEAF, matchedBy: 'lambda' },
+      { ...DYNAMODB_OREGON_LEAF, matchedBy: 'dynamodb' },
+    ]);
+  });
+
+  it('keeps every leaf of the regions when every word was a region', () => {
+    const results = [
+      getMockWordResult('oregon', [LAMBDA_OREGON_LEAF, DYNAMODB_OREGON_LEAF], true),
+      getMockWordResult('ireland', [LAMBDA_IRELAND_LEAF], true),
+    ];
+
+    expect(narrowByRegions(results)).toEqual([
+      { ...LAMBDA_OREGON_LEAF, matchedBy: 'oregon' },
+      { ...DYNAMODB_OREGON_LEAF, matchedBy: 'oregon' },
+      { ...LAMBDA_IRELAND_LEAF, matchedBy: 'ireland' },
+    ]);
+  });
+
+  it('keeps a leaf found by a plain word only when a region word matched it too', () => {
+    const results = [
+      getMockWordResult('lambda', [LAMBDA_OREGON_LEAF, LAMBDA_IRELAND_LEAF]),
+      getMockWordResult('dynamodb', [DYNAMODB_OREGON_LEAF, DYNAMODB_IRELAND_LEAF]),
+      getMockWordResult('oregon', [LAMBDA_OREGON_LEAF, DYNAMODB_OREGON_LEAF, S3_OREGON_LEAF], true),
+    ];
+
+    expect(narrowByRegions(results)).toEqual([
+      { ...LAMBDA_OREGON_LEAF, matchedBy: 'lambda' },
+      { ...DYNAMODB_OREGON_LEAF, matchedBy: 'dynamodb' },
+    ]);
+  });
+
+  it('credits a leaf to the first word that matched it and lists it once', () => {
+    const results = [
+      getMockWordResult('lambda', [LAMBDA_OREGON_LEAF, LAMBDA_IRELAND_LEAF]),
+      getMockWordResult('serverless', [LAMBDA_IRELAND_LEAF, REPOSITORY_OREGON_LEAF]),
+    ];
+
+    expect(taggedBy(results)).toEqual([
+      { ...LAMBDA_OREGON_LEAF, matchedBy: 'lambda' },
+      { ...LAMBDA_IRELAND_LEAF, matchedBy: 'lambda' },
+      { ...REPOSITORY_OREGON_LEAF, matchedBy: 'serverless' },
+    ]);
+  });
+});
+
+describe('third-party scan: reading components from catalog rows', () => {
+  it('flattens the children of every row into leaves that carry their parent name and region', () => {
+    const rows = [
+      getMockGroup(1000, 'AWS Lambda', [LAMBDA_OREGON, LAMBDA_IRELAND]),
+      getMockGroup(2000, 'Amazon DynamoDB', [DYNAMODB_OREGON]),
+    ];
+
+    expect(leavesIn(rows)).toEqual([LAMBDA_OREGON_LEAF, LAMBDA_IRELAND_LEAF, DYNAMODB_OREGON_LEAF]);
+  });
+
+  it.each([
+    { row: asRootLeaf(CONSOLE_OREGON), shape: 'an empty children list' },
+    { row: CONSOLE_OREGON, shape: 'no children' },
+  ])('treats a row with $shape as a leaf of its own, without a parent', ({ row }) => {
+    expect(leavesIn([row])).toEqual([
+      getMockScanLeaf({ id: 4000, name: 'AWS Management Console (Oregon)', region: OREGON }),
+    ]);
+  });
+});
+
+describe('third-party scan: recognising the provider monitor', () => {
+  it.each([[null], [[]]])(
+    'scopes a monitor to all components when its trackedComponentIds is %j',
+    (trackedComponentIds) => {
+      const row = getMockThirdPartyMonitor({ id: 7, providerId: 248, trackedComponentIds });
+
+      expect(asMonitor(row, 248)).toEqual({ id: 7, scope: 'all', trackedComponentIds: [] });
+    },
+  );
+
+  it('scopes a monitor to a list when it tracks specific components', () => {
+    const row = getMockThirdPartyMonitor({
+      id: 7,
+      providerId: 248,
+      trackedComponentIds: [1001, 2001],
+    });
+
+    expect(asMonitor(row, 248)).toEqual({
+      id: 7,
+      scope: 'list',
+      trackedComponentIds: [1001, 2001],
+    });
+  });
+
+  it('ignores a third-party monitor of another provider', () => {
+    const row = getMockThirdPartyMonitor({ providerId: 99, trackedComponentIds: [1001] });
+
+    expect(asMonitor(row, 248)).toBeUndefined();
+  });
+
+  it('ignores a monitor of another type even when its config names the provider', () => {
+    const row = { ...getMockThirdPartyMonitor({ providerId: 248 }), type: 'HTTP' };
+
+    expect(asMonitor(row, 248)).toBeUndefined();
+  });
+});
+
+describe('third-party scan: finding a provider name in a description', () => {
+  it.each([
+    { name: 'Cloudflare', occurs: true, text: 'free workers on cloudflare' },
+    { name: 'Google Cloud', occurs: true, text: 'we run on GOOGLE CLOUD' },
+    { name: 'Cloudflare', occurs: false, text: 'free cloudflared tunnels' },
+    { name: 'AWS', occurs: false, text: 'jaws and claws' },
+    { name: 'S3', occurs: false, text: 'buckets3 and more' },
+  ])('reports $occurs when "$name" is looked for in "$text"', ({ name, occurs, text }) => {
+    expect(occursAsWords(name, text)).toBe(occurs);
   });
 });
