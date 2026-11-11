@@ -57,6 +57,7 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
         `uptimerobot-cli/${options.version} mode/${options.mode} environment/${options.environment}`,
       );
       headers.set('x-uptimerobot-client', 'cli');
+      if (options.command) headers.set('x-uptimerobot-command', options.command);
       headers.set('x-uptimerobot-execution-environment', options.environment);
       headers.set('x-uptimerobot-invocation-mode', options.mode);
 

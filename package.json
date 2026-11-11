@@ -135,6 +135,9 @@
           }
         }
       },
+      "scan": {
+        "description": "Find things worth monitoring"
+      },
       "skills": {
         "description": "Install UptimeRobot AI skills"
       },

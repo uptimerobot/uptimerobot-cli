@@ -10,6 +10,17 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `scan 3rd-party` finds the components of a third-party provider that match a
+  description of what you use (`--describe "Lambda and DynamoDB in Oregon"`,
+  with `--provider` or the provider named in the description) and creates a
+  monitor, or adds them to your monitor for that provider. `--dry-run` prints
+  the candidates and writes nothing, `--confirm` skips the prompt (a run
+  without a terminal needs it to apply), and `--json` prints
+  `{ applied, provider, monitor, candidates }`. Every request carries an
+  `x-uptimerobot-command: scan:3rd-party` header.
+
 ## [1.3.0] - 2026-11-10
 
 ### Added

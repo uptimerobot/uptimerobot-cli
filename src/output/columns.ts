@@ -163,7 +163,13 @@ export const COMMAND_COLUMNS = {
   ],
 } satisfies Record<CollectionCommandId, ColumnSet>;
 
-export const SCAN_THIRD_PARTY_COLUMNS: readonly ColumnSpec[] = [];
+export const SCAN_THIRD_PARTY_COLUMNS = [
+  { key: 'id' },
+  { format: componentPath, header: 'COMPONENT', key: 'name', maxWidth: 56 },
+  { format: regionCode, header: 'REGION', key: 'region' },
+  { header: 'MATCHED', key: 'matchedBy' },
+  { format: yesNo, header: 'TRACKED', key: 'tracked' },
+] satisfies readonly ColumnSpec[];
 
 export function columnsFor(commandId: string): ColumnSet | undefined {
   if (!Object.hasOwn(COMMAND_COLUMNS, commandId)) return undefined;
@@ -262,6 +268,20 @@ function joinNames(value: unknown): unknown {
     .map((item) => (isRecord(item) ? item.name : undefined))
     .filter((name): name is string => typeof name === 'string');
   return names.length > 0 ? names.join(', ') : undefined;
+}
+
+function componentPath(name: unknown, row: Record<string, unknown>): unknown {
+  return typeof row.parentName === 'string' ? `${row.parentName} › ${String(name)}` : name;
+}
+
+function regionCode(value: unknown): unknown {
+  return isRecord(value) ? firstString(value.code) : undefined;
+}
+
+function yesNo(value: unknown): unknown {
+  if (value === true) return 'yes';
+  if (value === false) return 'no';
+  return undefined;
 }
 
 function accessLevel(value: unknown): unknown {

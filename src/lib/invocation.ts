@@ -35,11 +35,14 @@ export function confirmationAvailable(mode: InvocationMode): boolean {
   return mode === 'human' && process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
 
-export async function requestConfirmation(summary: string, mode: InvocationMode): Promise<boolean> {
+export async function requestConfirmation(
+  question: string,
+  mode: InvocationMode,
+): Promise<boolean> {
   if (!confirmationAvailable(mode)) return false;
   const reader = createInterface({ input: process.stdin, output: process.stderr });
   try {
-    const answer = await reader.question(`${summary}. Continue? [y/N] `);
+    const answer = await reader.question(`${question} [y/N] `);
     return /^(y|yes)$/i.test(answer.trim());
   } finally {
     reader.close();
