@@ -36,6 +36,16 @@ may change in minor releases.
   stdin) counts as a no instead of leaving the command waiting; Ctrl-C at the
   prompt exits 130 instead of reading as a no.
 
+### Fixed
+
+- The scan maps the `sentry-ruby`, `sentry-rails` and `sentry-sidekiq` gems to
+  Sentry; before, only the npm and pip packages counted and a Rails app without
+  a JavaScript Sentry package reported no Sentry at all.
+- `uptimerobot init` no longer offers to create third-party services when
+  `uptimerobot-scan.md` is a symlink whose target directory is missing. Before,
+  the services were created and the seed write then failed with
+  `SEED_CONTEXT_WRITE_FAILED`, so the outcome was never recorded.
+
 ## [1.3.0] - 2026-11-10
 
 ### Added

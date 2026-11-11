@@ -221,7 +221,12 @@ export const VENDORS: readonly VendorEntry[] = [
   runtime('Clerk', [pkg('@clerk/*', ['npm']), host('api.clerk.com'), host('*.clerk.accounts.dev')]),
   runtime('Okta', [pkg('@okta/*', ['npm']), host('*.okta.com')]),
   // Observability and product analytics
-  runtime('Sentry', [pkg('@sentry/*', ['npm']), pkg('sentry-sdk', ['pip']), host('*.sentry.io')]),
+  runtime('Sentry', [
+    pkg('@sentry/*', ['npm']),
+    pkg('sentry-sdk', ['pip']),
+    pkg('sentry-*', ['gem']),
+    host('*.sentry.io'),
+  ]),
   runtime('New Relic', [pkg('newrelic', ['npm', 'pip']), host('*.newrelic.com')], 'new relic'),
   runtime('Segment', [
     pkg('@segment/*', ['npm']),

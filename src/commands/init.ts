@@ -1,4 +1,4 @@
-import { access, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { access, lstat, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Flags } from '@oclif/core';
@@ -770,12 +770,15 @@ async function readMarkedFile(path: string): Promise<string | undefined> {
 /**
  * Whether the seed file can be written: an existing path must be a regular
  * file with write access; a missing one needs a writable directory. A path
- * that exists as anything else (a directory, a socket) cannot be written.
+ * that exists as anything else (a directory, a socket, a symlink whose target
+ * is gone) cannot be written.
  */
 async function canWriteSeed(seedPath: string, directory: string): Promise<boolean> {
   try {
     const existing = await stat(seedPath).catch(() => undefined);
     if (existing !== undefined && !existing.isFile()) return false;
+    if (existing === undefined && (await lstat(seedPath).catch(() => undefined)) !== undefined)
+      return false;
     await access(existing === undefined ? directory : seedPath, constants.W_OK);
     return true;
   } catch {
