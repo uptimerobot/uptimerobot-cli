@@ -372,6 +372,22 @@ describe('matchManifest on Gemfile, composer.json and Cargo.toml', () => {
     );
   });
 
+  it('maps the sentry-ruby, sentry-rails and sentry-sidekiq gems to Sentry', () => {
+    const findings = matchManifest({
+      path: 'Gemfile',
+      contents: [
+        "gem 'sentry-ruby'",
+        "gem 'sentry-rails', '>= 5.19.0'",
+        "gem 'sentry-sidekiq'",
+        '',
+      ].join('\n'),
+    });
+    expect(
+      findings.filter((finding) => finding.outcome === 'vendor' && finding.value === 'Sentry'),
+    ).toHaveLength(3);
+    expect(byProvider(findings, 'Sentry')?.detail.class).toBe('runtime');
+  });
+
   it('classes a dev, test, lint, docs or ci requirements file as build-time, like every other dev section', () => {
     for (const path of ['requirements-dev.txt', 'requirements_test.txt', 'requirements.ci.txt']) {
       const findings = matchManifest({ path, contents: 'sentry-sdk==2.19.2\n' });

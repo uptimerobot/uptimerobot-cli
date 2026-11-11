@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1211,6 +1211,25 @@ describe('init', () => {
       keyring.set(STORED_CREDENTIAL, 'u123-stored');
       await writeManifest();
       await mkdir(join(repository, SEED_CONTEXT_FILE));
+      const api = stubApi();
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+
+        await expect(
+          Init.run(['--no-launch', '--no-agent'], { root: projectRoot }),
+        ).rejects.toMatchObject({ cliError: { code: 'SEED_CONTEXT_WRITE_FAILED' } });
+        expect(catalogCalls(api.paths)).toEqual([]);
+        expect(api.posts).toEqual([]);
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('does not offer when the seed path is a symlink into a missing directory', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      await symlink(join('missing-dir', SEED_CONTEXT_FILE), join(repository, SEED_CONTEXT_FILE));
       const api = stubApi();
       const restoreTerminal = stubTerminal();
       try {
