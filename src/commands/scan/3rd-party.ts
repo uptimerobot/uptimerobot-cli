@@ -1,17 +1,29 @@
 import { createInterface } from 'node:readline/promises';
 import { Flags } from '@oclif/core';
-import { type ApiClient, type ApiResult, createApiClient } from '../../api/client.js';
-import { exitCodeFor, normalizeApiError } from '../../api/errors.js';
-import { AuthenticationError, PRODUCTION_API_URL, resolveApiKey } from '../../lib/auth.js';
+import type { ApiClient, ApiResult } from '../../api/client.js';
+import { authenticatedClient, networkFailure, requireOk } from '../../lib/api-transport.js';
+import { PRODUCTION_API_URL } from '../../lib/auth.js';
 import { BaseCommand } from '../../lib/base-command.js';
 import {
   confirmationAvailable,
   detectInvocationMode,
   type InvocationMode,
-  isCI,
   requestConfirmation,
 } from '../../lib/invocation.js';
-import { isRecord } from '../../lib/objects.js';
+import {
+  asMonitor,
+  asProvider,
+  field,
+  type Found,
+  leavesIn,
+  type Monitor,
+  narrowByRegions,
+  occursAsWords,
+  type Provider,
+  rowsOf,
+  searchTerms,
+  type WordResult,
+} from '../../lib/third-party-scan.js';
 import { SCAN_THIRD_PARTY_COLUMNS } from '../../output/columns.js';
 import { formatOutput } from '../../output/renderer.js';
 import { type OutputFormat, resolveFormat } from '../../output/resolve-format.js';
@@ -20,107 +32,13 @@ const COMMAND = 'scan:3rd-party';
 const DASHBOARD_URL = 'https://dashboard.uptimerobot.com/3rd-party-services';
 const MAX_DESCRIPTION_LENGTH = 100;
 const MONITOR_PAGE_SIZE = '200';
-const STOP_WORDS = new Set(
-  'and or in on at the a an with for my our we use using run running'.split(' '),
-);
-const WORD_SEPARATOR = /[^\p{L}\p{N}-]+/u;
 
-type Region = { code: string; name: string };
-type Provider = { id: number; name: string };
-type Leaf = Provider & { parentName: string | null; region: Region | null };
-type Found = Leaf & { matchedBy: string };
 type Candidate = Found & { tracked: boolean };
-type Scope = 'all' | 'list';
-type Monitor = { id: number; scope: Scope; trackedComponentIds: readonly number[] };
 type Scan = { candidates: Candidate[]; monitor: Monitor | undefined; provider: Provider };
-type WordResult = { leaves: Leaf[]; regionLike: boolean; word: string };
 type Send = (method: 'GET' | 'PATCH' | 'POST', url: URL, body?: unknown) => Promise<ApiResult>;
 type Api = { apiUrl: URL; send: Send };
 
-const field = (value: unknown, key: string): unknown => (isRecord(value) ? value[key] : undefined);
-
 const clip = (text: string): string => text.trim().slice(0, MAX_DESCRIPTION_LENGTH);
-
-const wordsOf = (text: string): string[] =>
-  text
-    .toLowerCase()
-    .split(WORD_SEPARATOR)
-    .filter((word) => word.length > 0);
-
-const searchWords = (description: string, providerName: string): string[] => {
-  const providerWords = new Set(wordsOf(providerName));
-  return [...new Set(wordsOf(description))].filter(
-    (word) => word.length >= 2 && !providerWords.has(word) && !STOP_WORDS.has(word),
-  );
-};
-
-const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const occursAsWords = (name: string, text: string): boolean =>
-  new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, 'iu').test(text);
-
-const asProvider = (value: unknown): Provider | undefined => {
-  const id = field(value, 'id');
-  const name = field(value, 'name');
-  return typeof id === 'number' && typeof name === 'string' ? { id, name } : undefined;
-};
-
-const rowsOf = (payload: unknown): unknown[] => {
-  const data = field(payload, 'data');
-  return Array.isArray(data) ? data : [];
-};
-
-const asRegion = (value: unknown): Region | null => {
-  const code = field(value, 'code');
-  const name = field(value, 'name');
-  return typeof code === 'string' && typeof name === 'string' ? { code, name } : null;
-};
-
-const asLeaves = (row: unknown, parentName: string | null): Leaf[] => {
-  const named = asProvider(row);
-  return named ? [{ ...named, parentName, region: asRegion(field(row, 'region')) }] : [];
-};
-
-const leavesIn = (rows: readonly unknown[]): Leaf[] =>
-  rows.flatMap((row) => {
-    const children = field(row, 'children');
-    if (!Array.isArray(children) || children.length === 0) return asLeaves(row, null);
-    return children.flatMap((child) => asLeaves(child, asProvider(row)?.name ?? null));
-  });
-
-const uniqueById = (found: readonly Found[]): Found[] =>
-  found.filter((item, index) => found.findIndex((other) => other.id === item.id) === index);
-
-const taggedBy = (results: readonly WordResult[]): Found[] =>
-  uniqueById(
-    results.flatMap(({ leaves, word }) => leaves.map((leaf) => ({ ...leaf, matchedBy: word }))),
-  );
-
-const narrowByRegions = (results: readonly WordResult[]): Found[] => {
-  const regionResults = results.filter((result) => result.regionLike);
-  const plainResults = results.filter((result) => !result.regionLike);
-  if (plainResults.length === 0) return taggedBy(regionResults);
-  if (regionResults.length === 0) return taggedBy(plainResults);
-  const regionIds = new Set(taggedBy(regionResults).map((leaf) => leaf.id));
-  return taggedBy(plainResults).filter((leaf) => regionIds.has(leaf.id));
-};
-
-const asMonitor = (row: unknown, providerId: number): Monitor | undefined => {
-  const id = field(row, 'id');
-  const service = field(field(row, 'config'), 'thirdPartyService');
-  if (
-    typeof id !== 'number' ||
-    field(row, 'type') !== 'THIRD_PARTY_SERVICE' ||
-    field(service, 'providerId') !== providerId
-  ) {
-    return undefined;
-  }
-  const tracked = field(service, 'trackedComponentIds');
-  const trackedComponentIds = Array.isArray(tracked)
-    ? tracked.filter((componentId): componentId is number => typeof componentId === 'number')
-    : [];
-  return { id, scope: trackedComponentIds.length === 0 ? 'all' : 'list', trackedComponentIds };
-};
 
 const buildUrl = (apiUrl: URL, path: string, query: Record<string, string> = {}): URL => {
   const url = new URL(`${apiUrl.toString().replace(/\/$/, '')}${path}`);
@@ -141,6 +59,23 @@ const askDescription = async (question: string): Promise<string> => {
     reader.close();
   }
 };
+
+const sender =
+  (client: ApiClient): Send =>
+  async (method, url, body) => {
+    try {
+      return await client.request(url, {
+        body: body === undefined ? undefined : JSON.stringify(body),
+        headers: {
+          accept: 'application/json',
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        method,
+      });
+    } catch (error) {
+      throw networkFailure(error);
+    }
+  };
 
 export default class ScanThirdParty extends BaseCommand {
   static override description =
@@ -257,56 +192,18 @@ export default class ScanThirdParty extends BaseCommand {
 
   private async connect(input: { apiKey: string | undefined; mode: InvocationMode }): Promise<Api> {
     const apiUrl = new URL(process.env.UPTIMEROBOT_DEV_API_URL ?? PRODUCTION_API_URL);
-    let apiKey: string;
-    try {
-      apiKey = await resolveApiKey(input.apiKey, apiUrl.toString());
-    } catch (error) {
-      if (error instanceof AuthenticationError) {
-        return this.fail({ code: error.code, message: error.message }, error.exitCode);
-      }
-      throw error;
-    }
-    const client = createApiClient({
-      apiKey,
+    const client = await authenticatedClient({
+      apiKey: input.apiKey,
       apiUrl,
       command: COMMAND,
-      environment: isCI() ? 'ci' : 'local',
       mode: input.mode,
       version: this.config.pjson.version,
     });
-    return { apiUrl, send: this.sender(client) };
-  }
-
-  private sender(client: ApiClient): Send {
-    return async (method, url, body) => {
-      try {
-        return await client.request(url, {
-          body: body === undefined ? undefined : JSON.stringify(body),
-          headers: {
-            accept: 'application/json',
-            ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-          },
-          method,
-        });
-      } catch (error) {
-        return this.fail(
-          {
-            code: 'NETWORK_ERROR',
-            message: error instanceof Error ? error.message : String(error),
-          },
-          1,
-        );
-      }
-    };
-  }
-
-  private ok({ payload, response }: ApiResult): unknown {
-    if (response.ok) return payload;
-    return this.fail(normalizeApiError(response.status, payload), exitCodeFor(response.status));
+    return { apiUrl, send: sender(client) };
   }
 
   private async read(api: Api, path: string, query?: Record<string, string>): Promise<unknown> {
-    return this.ok(await api.send('GET', buildUrl(api.apiUrl, path, query)));
+    return requireOk(await api.send('GET', buildUrl(api.apiUrl, path, query)));
   }
 
   private async findProvider(
@@ -331,7 +228,7 @@ export default class ScanThirdParty extends BaseCommand {
   private async providerById(api: Api, id: string): Promise<Provider> {
     const result = await api.send('GET', buildUrl(api.apiUrl, `/third-party-providers/${id}`));
     if (result.response.status === 404) return this.notFound(`No provider with id ${id}.`);
-    return asProvider(this.ok(result)) ?? this.notFound(`No provider with id ${id}.`);
+    return asProvider(requireOk(result)) ?? this.notFound(`No provider with id ${id}.`);
   }
 
   private async providerNamedIn(api: Api, description: string): Promise<Provider> {
@@ -351,7 +248,7 @@ export default class ScanThirdParty extends BaseCommand {
 
   private async findMonitor(api: Api, providerId: number): Promise<Monitor | undefined> {
     const searchPage = async (url: URL): Promise<Monitor | undefined> => {
-      const page = this.ok(await api.send('GET', url));
+      const page = requireOk(await api.send('GET', url));
       const found = rowsOf(page)
         .flatMap((row) => asMonitor(row, providerId) ?? [])
         .at(0);
@@ -387,10 +284,12 @@ export default class ScanThirdParty extends BaseCommand {
       (await fetchWord(word)).leaves.map((leaf) => ({ ...leaf, matchedBy }));
 
     if (search !== undefined) return everyLeaf(search, search);
-    const words = searchWords(description ?? '', provider.name);
-    if (words.length > 0) {
-      const results: WordResult[] = [];
-      for (const word of words) results.push(await fetchWord(word));
+    const terms = searchTerms(description ?? '', provider.name);
+    if (terms.length > 0) {
+      const results = await terms.reduce(
+        async (previous, term) => [...(await previous), await fetchWord(term)],
+        Promise.resolve<WordResult[]>([]),
+      );
       return narrowByRegions(results);
     }
     if (region !== undefined) return everyLeaf('', region);
@@ -466,7 +365,7 @@ export default class ScanThirdParty extends BaseCommand {
     const { monitor, provider } = scan;
     const ids = scan.candidates.map((candidate) => candidate.id);
     if (!monitor) {
-      const created = this.ok(
+      const created = requireOk(
         await api.send('POST', buildUrl(api.apiUrl, '/monitors'), {
           config: { thirdPartyService: { providerId: provider.id, trackedComponentIds: ids } },
           type: 'THIRD_PARTY_SERVICE',
@@ -481,7 +380,7 @@ export default class ScanThirdParty extends BaseCommand {
     }
     const trackedComponentIds =
       monitor.scope === 'list' ? [...new Set([...monitor.trackedComponentIds, ...ids])] : ids;
-    this.ok(
+    requireOk(
       await api.send('PATCH', buildUrl(api.apiUrl, `/monitors/${monitor.id}`), {
         config: { thirdPartyService: { trackedComponentIds } },
       }),
