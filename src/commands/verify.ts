@@ -19,6 +19,7 @@ import { buildUrl } from '../lib/request.js';
 import type { ColumnSpec } from '../output/columns.js';
 import { formatOutput } from '../output/renderer.js';
 import { resolveFormat } from '../output/resolve-format.js';
+import { redactSecrets } from '../lib/scan/redact.js';
 
 /**
  * Reads the API for monitors an agent setup left behind.
@@ -261,14 +262,22 @@ function parseTags(value: string): readonly string[] {
 }
 
 function verifiedMonitor(item: unknown): VerifiedMonitor {
-  const row = isPlainRecord(item) ? item : {};
+  if (!isPlainRecord(item)) {
+    throw new ApiFailure(
+      { code: 'INVALID_RESPONSE', message: 'The list returned an entry that is not a monitor.' },
+      1,
+    );
+  }
+  const row = item;
+  const target = text(row.url);
   return {
     createdAt: text(row.createDateTime),
     id: identifier(row.id),
     name: text(row.friendlyName),
     status: text(row.status),
     tags: tagNames(row.tags),
-    target: text(row.url),
+    // A target can carry `user:pass@`, a `?token=` or a heartbeat push token.
+    target: target === null ? null : redactSecrets(target),
     type: text(row.type),
   };
 }

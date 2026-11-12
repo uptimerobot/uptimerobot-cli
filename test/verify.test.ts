@@ -364,6 +364,54 @@ describe('verify', () => {
     expect(requests).toEqual([]);
   });
 
+  it('redacts credentials and tokens carried in a monitor target', async () => {
+    vi.stubEnv('UPTIMEROBOT_API_KEY', 'u123-secret');
+    stubApi([
+      {
+        data: [
+          monitor({ url: 'https://admin:hunter2@example.com/health?token=abc12345' }),
+          monitor({
+            id: 2,
+            type: 'HEARTBEAT',
+            url: 'https://heartbeat.example/9f8e7d6c5b4a39281706f5e4d3c2b1a0',
+          }),
+        ],
+      },
+    ]);
+    const { default: Verify } = await import('../src/commands/verify.js');
+
+    await Verify.run(['--json'], { root: projectRoot });
+    const printed = logged.join('\n');
+
+    expect(printed).not.toContain('hunter2');
+    expect(printed).not.toContain('abc12345');
+    expect(printed).not.toContain('9f8e7d6c5b4a39281706f5e4d3c2b1a0');
+    expect(printed).toContain('https://***@example.com/health?token=***');
+  });
+
+  it('refuses a page whose entries are not monitors instead of counting them', async () => {
+    vi.stubEnv('UPTIMEROBOT_API_KEY', 'u123-secret');
+    stubApi([{ data: [null] }]);
+    const { default: Verify } = await import('../src/commands/verify.js');
+
+    await expect(Verify.run(['--json'], { root: projectRoot })).rejects.toMatchObject({
+      cliError: { code: 'INVALID_RESPONSE' },
+      oclif: { exit: 1 },
+    });
+  });
+
+  it('strips terminal control characters from a monitor name in the table', async () => {
+    vi.stubEnv('UPTIMEROBOT_API_KEY', 'u123-secret');
+    stubApi([{ data: [monitor({ friendlyName: 'checkout\u001b[31m-api' })] }]);
+    const { default: Verify } = await import('../src/commands/verify.js');
+
+    vi.stubEnv('UPTIMEROBOT_OUTPUT', 'table');
+    await Verify.run([], { root: projectRoot });
+
+    expect(logged.join('\n')).not.toContain('\u001b');
+    expect(logged.join('\n')).toContain('checkout[31m-api');
+  });
+
   it('routes a missing credential through the error envelope without calling the API', async () => {
     // Production URL, so the credential store is consulted and finds nothing.
     vi.stubEnv('UPTIMEROBOT_DEV_API_URL', undefined);

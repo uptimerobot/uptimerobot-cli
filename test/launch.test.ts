@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LaunchChildProcess, LaunchSpawn } from '../src/lib/agent-setup/launch.js';
-import { launchAgent, planLaunch, resolveAgentBinary } from '../src/lib/agent-setup/launch.js';
+import {
+  isLaunchableBinary,
+  launchAgent,
+  planLaunch,
+  resolveAgentBinary,
+} from '../src/lib/agent-setup/launch.js';
 
 const PROMPT =
   'Read uptimerobot-setup.md and uptimerobot-scan.md, then set up UptimeRobot monitoring for this repository by following the setup guide.';
@@ -182,6 +187,15 @@ describe('resolveAgentBinary', () => {
         resolveAgentBinary('claude', { env: { PATH: directory } }),
       ).resolves.toBeUndefined();
     });
+  });
+});
+
+describe('isLaunchableBinary', () => {
+  it('refuses a Windows .cmd or .bat shim, which spawn cannot start without a shell', () => {
+    expect(isLaunchableBinary('C:\\Users\\me\\AppData\\Roaming\\npm\\claude.CMD')).toBe(false);
+    expect(isLaunchableBinary('C:\\tools\\claude.bat')).toBe(false);
+    expect(isLaunchableBinary('/usr/local/bin/claude')).toBe(true);
+    expect(isLaunchableBinary('C:\\tools\\claude.exe')).toBe(true);
   });
 });
 

@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Args, Flags } from '@oclif/core';
 import { resolveCliInvocation } from '../lib/agent-setup/cli-invocation.js';
@@ -28,6 +28,7 @@ import {
   formatProposal,
   formatSummary,
   malformedOnly,
+  parseOnly,
   runApply,
   unknownSelections,
   unresolvedError,
@@ -146,6 +147,20 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
             expected: 'a provider the scan found',
             message: `No scanned provider matches ${unknown.join(', ')}.`,
             path: unknownByFlag.only.length > 0 ? 'only' : 'skip',
+          },
+          2,
+        );
+      }
+      const overlap = selection.only
+        .map((entry) => parseOnly(entry).name)
+        .filter((name) => selection.skip.some((skip) => skip.trim().toLowerCase() === name));
+      if (overlap.length > 0) {
+        return this.fail(
+          {
+            code: 'INVALID_INPUT',
+            expected: 'a provider in only one of --only and --skip',
+            message: `--only and --skip both name ${overlap.join(', ')}.`,
+            path: 'skip',
           },
           2,
         );
@@ -270,9 +285,9 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
    */
   private async resolveRepoRoot(path: string): Promise<string> {
     const repoRoot = resolve(path);
+    let isDirectory = false;
     try {
-      const entry = await stat(repoRoot);
-      if (entry.isDirectory()) return repoRoot;
+      isDirectory = (await stat(repoRoot)).isDirectory();
     } catch {
       return this.fail(
         {
@@ -284,14 +299,41 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
         2,
       );
     }
+    if (!isDirectory) {
+      return this.fail(
+        {
+          code: 'INVALID_INPUT',
+          expected: 'a path to a directory',
+          message: `${repoRoot} is not a directory.`,
+          path: 'path',
+        },
+        2,
+      );
+    }
+    // The scanners answer an unreadable directory with an empty result too,
+    // so the root is listed once here and an access error is reported.
+    const unreadable = await readdir(repoRoot).then(
+      () => undefined,
+      (error: unknown) => errorCode(error),
+    );
+    if (unreadable === undefined) return repoRoot;
     return this.fail(
       {
         code: 'INVALID_INPUT',
-        expected: 'a path to a directory',
-        message: `${repoRoot} is not a directory.`,
+        expected: 'a readable directory',
+        message: `${repoRoot} cannot be read: ${unreadable}.`,
         path: 'path',
       },
       2,
     );
   }
+}
+
+function errorCode(error: unknown): string {
+  return typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof error.code === 'string'
+    ? error.code
+    : 'unreadable';
 }

@@ -124,6 +124,8 @@ The scan itself is pattern matching over the working tree. It reaches no network
 | `--target <name>`  | Agent to set up: `claude-code`, `codex`, `cursor`, `opencode`, or `gemini`                                                                     |
 | `--no-agent`       | Scan, offer third-party services, write the seed context; skip agent setup                                                                     |
 | `--no-third-party` | Skip `init`'s own offer to create third-party services; the setup guide it writes still tells the agent to propose them through `scan --apply` |
+| `--no-launch`      | Write the files and print the handoff prompt instead of opening the agent                                                                      |
+| `--max-monitors`   | Cap the agent at this many monitors per run; written into the setup guide (default 50)                                                         |
 | `--clean`          | Remove what a previous run planted, then exit                                                                                                  |
 | `--yes`            | Never prompt; run non-interactively                                                                                                            |
 | `--json`           | Structured JSON, which also implies `--yes`                                                                                                    |
@@ -132,7 +134,7 @@ The scan itself is pattern matching over the working tree. It reaches no network
 
 Only Claude Code has a confirmed first-party install path today — `git clone https://github.com/uptimerobot/ai.git` followed by `claude --plugin-dir ./ai`, which loads the plugin for that session only, since the marketplace listing has not shipped. Codex, Cursor, Gemini, and OpenCode instead get a marked, idempotent UptimeRobot section written to `AGENTS.md` at the project root. Nothing is written to your home directory or to any global agent configuration.
 
-Then open the agent in the repository and ask it to read `uptimerobot-scan.md`. It proposes monitors and heartbeats from that file, asks before creating anything, tags what it creates `agent-setup`, and writes `uptimerobot-report.md`. That report is the agent's account of its own work; `uptimerobot verify` is the API's:
+At an interactive terminal `init` opens Claude Code on the scan itself; with `--no-launch`, or for another agent, open the agent in the repository and ask it to read `uptimerobot-setup.md` and then `uptimerobot-scan.md`. The setup guide carries the guardrails (confirm before creating, the monitor cap, never read `.env` values) and the scan carries the candidates. It proposes monitors and heartbeats from that file, asks before creating anything, tags what it creates `agent-setup`, and writes `uptimerobot-report.md`. That report is the agent's account of its own work; `uptimerobot verify` is the API's:
 
 ```sh
 uptimerobot verify

@@ -504,6 +504,26 @@ describe('uptimerobot scan --apply', () => {
     expect(stub.hits).toEqual([]);
   });
 
+  it('rejects a provider named by both --only and --skip', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(
+      ['scan', root, '--apply', '--json', '--only', 'Stripe=801', '--skip', 'stripe'],
+      env(stub),
+    );
+
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      error: {
+        code: 'INVALID_INPUT',
+        message: '--only and --skip both name stripe.',
+        path: 'skip',
+      },
+    });
+    expect(stub.hits).toEqual([]);
+  });
+
   it('rejects an --only or --skip name the scan did not find, and keeps the path an argument', async () => {
     const stub = await startStub();
     const root = await writeRepository(REPOSITORY);

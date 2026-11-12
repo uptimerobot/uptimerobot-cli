@@ -5,7 +5,12 @@ import { Flags } from '@oclif/core';
 import type { CliInvocation } from '../lib/agent-setup/cli-invocation.js';
 import { formatInvocation, resolveCliInvocation } from '../lib/agent-setup/cli-invocation.js';
 import type { LaunchPlan } from '../lib/agent-setup/launch.js';
-import { launchAgent, planLaunch, resolveAgentBinary } from '../lib/agent-setup/launch.js';
+import {
+  isLaunchableBinary,
+  launchAgent,
+  planLaunch,
+  resolveAgentBinary,
+} from '../lib/agent-setup/launch.js';
 import type { SkillsInstallReport } from '../lib/agent-setup/plant.js';
 import { SkillsInstallError, installSkills, uninstallSkills } from '../lib/agent-setup/plant.js';
 import { AGENT_TARGET_DEFINITIONS } from '../lib/agent-setup/registry.js';
@@ -238,6 +243,11 @@ Precedence:
       process.stdin.isTTY === true &&
       process.stdout.isTTY === true;
 
+    // Resolved once and threaded through everything that emits a command, so
+    // the seed context, the planted block, the hint, the verification command
+    // and the target-choice error cannot disagree about whether this machine
+    // has the binary.
+    const invocation = await resolveCliInvocation();
     let target: AgentTarget | undefined = flags.target;
     if (target === undefined && flags['no-agent'] !== true) {
       const candidates = await detectAgentTargets();
@@ -264,17 +274,13 @@ Precedence:
             code: 'TARGET_REQUIRED',
             details: { candidates },
             expected: `one of: ${AGENT_TARGETS.join(', ')}`,
-            message: chooseTargetMessage(candidates),
+            message: chooseTargetMessage(candidates, invocation),
           },
           2,
         );
       }
     }
 
-    // Resolved once and threaded through everything that emits a command, so
-    // the seed context, the planted block, the hint and the verification
-    // command cannot disagree about whether this machine has the binary.
-    const invocation = await resolveCliInvocation();
     // Deterministic and offline. It exists to bound the agent's search rather
     // than to answer the question itself, which is why the file it writes
     // keeps the rejections too.
@@ -325,7 +331,8 @@ Precedence:
     // and CI all leave `interactive` false and keep to the printed hint.
     const binary =
       plan !== null && interactive ? await resolveAgentBinary(plan.command) : undefined;
-    const willLaunch = plan !== null && interactive && binary !== undefined;
+    const willLaunch =
+      plan !== null && interactive && binary !== undefined && isLaunchableBinary(binary);
 
     const output: InitOutput = {
       invocation: invocation.command,
@@ -377,12 +384,14 @@ Precedence:
     }
 
     for (const line of handoffLines(output, context)) this.log(line);
-    if (plan !== null && interactive && binary === undefined && target !== undefined) {
-      // A launch was wanted but the command is missing, so the hint stands and
-      // one line explains why nothing opened.
+    if (plan !== null && interactive && target !== undefined && !willLaunch) {
+      // A launch was wanted but nothing could open, so the hint stands and
+      // one line explains why.
       this.log('');
       this.log(
-        `\`${plan.command}\` is not on PATH, so ${AGENT_TARGET_DEFINITIONS[target].label} was not opened; run the command above once it is installed.`,
+        binary === undefined
+          ? `\`${plan.command}\` is not on PATH, so ${AGENT_TARGET_DEFINITIONS[target].label} was not opened; run the command above once it is installed.`
+          : `\`${binary}\` is a Windows shim that cannot be opened from here, so ${AGENT_TARGET_DEFINITIONS[target].label} was not opened; run the command above yourself.`,
       );
     }
     return output;
@@ -737,7 +746,10 @@ function agentChoices(candidates: readonly AgentTarget[]): readonly SelectionCho
  * own: the caller needs the list of things they are choosing between, spelled
  * as the flags that pick them, plus the way out if they want no agent at all.
  */
-function chooseTargetMessage(candidates: readonly AgentTarget[]): string {
+function chooseTargetMessage(
+  candidates: readonly AgentTarget[],
+  invocation: CliInvocation,
+): string {
   const opening =
     candidates.length === 0
       ? 'No coding agent was detected.'
@@ -745,11 +757,11 @@ function chooseTargetMessage(candidates: readonly AgentTarget[]): string {
   return [
     `${opening} Choose one:`,
     '',
-    ...AGENT_TARGETS.map((agent) => `  uptimerobot init --target ${agent}`),
+    ...AGENT_TARGETS.map((agent) => `  ${formatInvocation(invocation, `init --target ${agent}`)}`),
     '',
     'Or skip agent setup entirely and write the files only:',
     '',
-    '  uptimerobot init --no-agent',
+    `  ${formatInvocation(invocation, 'init --no-agent')}`,
   ].join('\n');
 }
 
