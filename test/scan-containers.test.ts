@@ -545,3 +545,18 @@ describe('a credential the clip cuts in half never leaks', () => {
     expect(finding?.value).toBe('http://***');
   });
 });
+
+describe('the probe is read from the redacted command', () => {
+  it('never exposes a password prefix when a comma in it would end the probe early', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        'FROM node\nHEALTHCHECK CMD curl -f http://admin:hunter,2@localhost:3000/health\n',
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).not.toContain('hunter');
+    expect(finding?.value).toBe('http://***@localhost:3000/health');
+    expect(JSON.stringify(finding)).not.toContain('hunter');
+  });
+});

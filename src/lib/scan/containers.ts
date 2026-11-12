@@ -542,21 +542,19 @@ function healthcheckFinding(
   command: string,
   extra: Readonly<Record<string, string | undefined>>,
 ): ContainerFinding | undefined {
-  const probe = probeUrl(command);
-  if (probe === undefined) return undefined;
   // The probe and the command are copied into a file at the repository root,
-  // so a credential in either would be the scan's own leak. Both are clipped
-  // before redaction: the URL pattern backtracks on a long path, and nothing
-  // past the clip is ever shown.
-  const flat = command.replaceAll(/\s+/g, ' ').trim();
+  // so a credential in either would be the scan's own leak. The command is
+  // clipped and redacted first, and the probe is read out of that text: a
+  // password with a comma or a quote in it would otherwise end the probe
+  // early, leaving a prefix of it with no `@` for the URL pattern to find.
+  const redacted = redactClipped(command.replaceAll(/\s+/g, ' ').trim(), MAX_REDACTION_TEXT);
+  const probe = probeUrl(redacted);
+  if (probe === undefined) return undefined;
   return {
-    detail: detailOf({
-      ...extra,
-      command: truncate(redactClipped(flat, MAX_REDACTION_TEXT), MAX_DETAIL_TEXT),
-    }),
+    detail: detailOf({ ...extra, command: truncate(redacted, MAX_DETAIL_TEXT) }),
     evidence: { file, line },
     kind,
-    value: redactClipped(probe, MAX_REDACTION_TEXT),
+    value: probe,
   };
 }
 
