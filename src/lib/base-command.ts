@@ -9,6 +9,8 @@ import {
 } from './cli-errors.js';
 import { isUnknownCommandMessage, withConfiguredCommandId } from './command-id.js';
 
+const TERMINAL_CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
+
 export abstract class BaseCommand extends Command {
   protected override async catch(error: Error & { exitCode?: number }): Promise<never> {
     // The other boundary that turns an error into output. `help <unknown topic>`
@@ -25,9 +27,12 @@ export abstract class BaseCommand extends Command {
       throw error;
     }
 
+    // The human line is the one place an API message reaches a terminal raw;
+    // the JSON envelope is left as is for the machine reading it. Line breaks
+    // stay: the CLI's own messages lay out commands one per line.
     this.logToStderr(
       failure && !machineOutput
-        ? `${error.cliError.message}${error.cliError.code ? ` (${error.cliError.code})` : ''}`
+        ? `${error.cliError.message.replaceAll(TERMINAL_CONTROL, '')}${error.cliError.code ? ` (${error.cliError.code})` : ''}`
         : JSON.stringify(errorEnvelope(error)),
     );
     process.exitCode = exitCodeForError(error);

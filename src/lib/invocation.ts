@@ -1,5 +1,6 @@
 import { emitKeypressEvents } from 'node:readline';
 import { createInterface } from 'node:readline/promises';
+import { select } from '@inquirer/prompts';
 
 export type ExecutionEnvironment = 'ci' | 'local';
 export type InvocationMode = 'agent' | 'human';
@@ -37,12 +38,77 @@ export function confirmationAvailable(mode: InvocationMode): boolean {
 
 export async function requestConfirmation(summary: string, mode: InvocationMode): Promise<boolean> {
   if (!confirmationAvailable(mode)) return false;
+  // An input that already ended will never emit the close the race below
+  // waits on; it is the same no, decided before the question is printed.
+  if (process.stdin.readableEnded) return false;
   const reader = createInterface({ input: process.stdin, output: process.stderr });
+  // readline swallows Ctrl-C in raw mode and would close as a plain no; the
+  // command must stop instead, as it does at the agent-selection prompt.
+  reader.once('SIGINT', () => {
+    reader.close();
+    process.stderr.write('\n');
+    process.exit(130);
+  });
   try {
-    const answer = await reader.question(`${summary}. Continue? [y/N] `);
+    // An input that ends before an answer (Ctrl-D, a closed stdin) is a no,
+    // not a hang: the question would otherwise never settle.
+    const answer = await Promise.race([
+      reader.question(`${summary}. Continue? [y/N] `),
+      new Promise<string>((resolve) => reader.once('close', () => resolve(''))),
+    ]);
     return /^(y|yes)$/i.test(answer.trim());
   } finally {
     reader.close();
+  }
+}
+
+/** One entry in a {@link promptSelection} list. */
+export interface SelectionChoice<T extends string> {
+  /** What the user reads. */
+  name: string;
+  /** What the caller gets back. */
+  value: T;
+  /** Shown under the list while the entry is highlighted. */
+  description?: string;
+}
+
+/**
+ * Asks the user to pick from a list, with arrow-key navigation.
+ *
+ * Returns undefined rather than throwing in the two cases a caller has to
+ * handle anyway: no interactive terminal, and the user backing out with Escape
+ * or Ctrl-C. A caller that gets undefined should say what it needs and exit,
+ * exactly as it would have without a prompt at all.
+ *
+ * Rendered on stderr, like every other prompt here, so a redirected stdout
+ * still receives only the command's real output.
+ */
+export async function promptSelection<T extends string>(
+  message: string,
+  choices: readonly SelectionChoice<T>[],
+  options: { default?: T; mode?: InvocationMode } = {},
+): Promise<T | undefined> {
+  if (!confirmationAvailable(options.mode ?? 'human')) return undefined;
+  try {
+    return await select(
+      {
+        choices: [...choices],
+        message,
+        ...(options.default === undefined ? {} : { default: options.default }),
+      },
+      { output: process.stderr },
+    );
+  } catch (error) {
+    // Ctrl-C and Escape are answers, not failures: the caller falls back to
+    // telling the user how to choose non-interactively.
+    //
+    // Matched on the name rather than the class, because the class lives in
+    // `@inquirer/core` — a transitive dependency of `@inquirer/prompts`, not
+    // one this package declares. Importing it to get an `instanceof` would
+    // mean depending on something we never asked for, and it would break the
+    // day the prompts package bumps its own dependency.
+    if (error instanceof Error && error.name === 'ExitPromptError') return undefined;
+    throw error;
   }
 }
 

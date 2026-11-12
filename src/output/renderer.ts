@@ -178,8 +178,9 @@ function truncate(value: string, maxWidth: number): string {
   return truncateToWidth(value, maxWidth);
 }
 
+/** One row, one line, and nothing that could drive the terminal (ESC, BEL, …). */
 function singleLine(value: string): string {
-  return value.replace(/[\t\r\n]+/g, ' ');
+  return value.replace(/[\t\r\n]+/g, ' ').replace(/\p{Cc}/gu, '');
 }
 
 function formatValue(value: unknown, nullValue: string): string {
