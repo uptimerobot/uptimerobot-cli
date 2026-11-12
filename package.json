@@ -62,8 +62,8 @@
   "dependencies": {
     "@napi-rs/keyring": "1.3.0",
     "@oclif/core": "4.11.14",
-    "ky": "2.0.2",
-    "yaml": "2.9.0"
+    "ky": "2.2.0",
+    "yaml": "2.9.1"
   },
   "devDependencies": {
     "@types/node": "26.1.1",
