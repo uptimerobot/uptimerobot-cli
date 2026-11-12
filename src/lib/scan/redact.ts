@@ -30,7 +30,7 @@ const CUT_CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:[^\s]*$/i;
 /** Short and long option names that carry a credential without saying so in their name. */
 const CREDENTIAL_FLAGS = new Set(['p', 'u', 'user', 'pass', 'passwd', 'pw', 'login', 'auth']);
 /** `-phunter2`, `-uadmin:x!`: the value glued to a one-letter credential flag, punctuation and all. */
-const ATTACHED_CREDENTIAL = /(^|\s)(-[pu])\S+/g;
+const ATTACHED_CREDENTIAL = /(^|\s)(-[pu])(?:"(?:\\.|[^"\\])*"|'[^']*'|\\.|[^\s"'`\\])+/g;
 /** `?token=` and `&api_key=` in a URL, where no whitespace or quote precedes the name. */
 const QUERY_PARAMETER = /([?&])([A-Za-z][\w.-]*)=([^&\s"'`#]*)/g;
 const CREDENTIAL_HEADER =

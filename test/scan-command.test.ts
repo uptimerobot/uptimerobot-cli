@@ -255,8 +255,9 @@ describe('uptimerobot scan', () => {
     expect(printed()).toBe('');
   });
 
-  // Windows chmod touches only the write bit, so the directory stays listable.
-  it.skipIf(process.platform === 'win32')(
+  // Windows chmod touches only the write bit, and chmod cannot deny root
+  // anything, so the directory stays listable in both cases.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
     'fails when the directory exists but cannot be listed',
     async () => {
       const root = await makeRepository();

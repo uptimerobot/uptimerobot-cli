@@ -87,5 +87,7 @@ describe('redactSecrets, round three', () => {
   it('masks an attached credential value whatever punctuation it holds', () => {
     expect(redactSecrets('mysqldump -phunter2! app')).toBe('mysqldump -p*** app');
     expect(redactSecrets('curl -uadmin:hunter2 http://h/')).toBe('curl -u*** http://h/');
+    expect(redactSecrets('tool --password -p"alpha hunter2" run')).toBe('tool --password *** run');
+    expect(redactSecrets(`tool -p'a b'c run`)).toBe('tool -p*** run');
   });
 });
