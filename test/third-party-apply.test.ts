@@ -250,7 +250,7 @@ describe('rendering', () => {
       'confirmed',
     );
     expect(unknown.slice(0, 2)).toEqual([
-      'Outcome unknown, the API may have created it, re-run scan --apply to check: Stripe (gone).',
+      'Outcome unknown, the API may have created it, re-run `uptimerobot scan --apply` to check: Stripe (gone).',
       'Not attempted: Resend.',
     ]);
     expect(unknown).toContain('  uptimerobot monitors create third-party-service --provider-id 77');
@@ -266,5 +266,42 @@ describe('rendering', () => {
       '  uptimerobot monitors create third-party-service --provider-id 801',
     );
     expect(formatSummary([], [], 'not-needed')[0]).toBe('Nothing to create.');
+  });
+});
+
+describe('formatSummary templates its commands through the invocation', () => {
+  it('names the npx invocation in the by-hand create and the re-run hint', () => {
+    const stripe: ResolvedCandidate = {
+      ...candidate('Stripe'),
+      status: 'create',
+      catalog: { id: 801, name: 'Stripe', state: 'operational', statusPageUrl: 'https://s/' },
+      regionDefaulted: false,
+    };
+    const resend: ResolvedCandidate = {
+      ...stripe,
+      ...candidate('Resend'),
+      catalog: { ...stripe.catalog, id: 77, name: 'Resend' },
+    };
+    const vercel: ResolvedCandidate = {
+      ...stripe,
+      ...candidate('Vercel'),
+      catalog: { ...stripe.catalog, id: 861, name: 'Vercel' },
+    };
+    const proposal = [stripe, resend, vercel];
+    const results = [
+      { provider: 'Stripe', status: 'created' as const, monitorId: 5000 },
+      { provider: 'Resend', status: 'unknown' as const, error: { code: 'HTTP_502', message: 'x' } },
+      { provider: 'Vercel', status: 'failed' as const, error: { code: 'HTTP_400', message: 'y' } },
+    ];
+    const invocation = { command: 'npx @uptimerobot/cli', source: 'npx' } as const;
+
+    const lines = formatSummary(proposal, results, 'confirmed', invocation);
+
+    expect(lines).toContain(
+      '  npx @uptimerobot/cli monitors create third-party-service --provider-id 861',
+    );
+    expect(lines.join('\n')).toContain('re-run `npx @uptimerobot/cli scan --apply`');
+    expect(lines.join('\n')).not.toContain('`uptimerobot init`');
+    expect(lines.join('\n')).toContain('`npx @uptimerobot/cli init`');
   });
 });

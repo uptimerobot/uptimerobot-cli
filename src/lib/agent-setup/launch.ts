@@ -136,19 +136,23 @@ export interface LaunchAgentOptions {
  * Spawns the plan with inherited stdio, so the user lands in the agent's own
  * session, and resolves with its exit code once it closes.
  *
- * Never rejects: a synchronous spawn failure, a spawn `error` event and an exit
- * by signal all resolve to a non-zero code, which is what lets `init` treat a
- * failed launch as "fall back to the hint" rather than a crash.
+ * Never rejects. A session that ran resolves with its exit code (an exit by
+ * signal counts as 1). A session that never started, whether spawn threw or
+ * emitted `error`, resolves with `undefined`, which is what lets `init` tell
+ * "the agent failed" from "nothing opened, print the hint instead".
  */
-export function launchAgent(plan: LaunchPlan, options: LaunchAgentOptions = {}): Promise<number> {
+export function launchAgent(
+  plan: LaunchPlan,
+  options: LaunchAgentOptions = {},
+): Promise<number | undefined> {
   const spawnProcess = options.spawn ?? defaultSpawn;
   return new Promise((resolve) => {
     try {
       const child = spawnProcess(plan.command, plan.args, { stdio: 'inherit' });
-      child.once('error', () => resolve(1));
+      child.once('error', () => resolve(undefined));
       child.once('close', (code) => resolve(code ?? 1));
     } catch {
-      resolve(1);
+      resolve(undefined);
     }
   });
 }

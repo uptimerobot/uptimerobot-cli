@@ -1,8 +1,8 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LineCounter, isMap, isScalar, isSeq, parseDocument } from 'yaml';
-import { isSensitiveFieldName } from '../sensitive-fields.js';
 import type { ScanFinding } from './finding.js';
+import { redactClipped } from './redact.js';
 import {
   DEFAULT_MAX_CANDIDATE_FILES,
   DEFAULT_MAX_FILE_BYTES,
@@ -157,6 +157,7 @@ async function collectFiles(
 ): Promise<{ files: readonly string[]; truncated: boolean }> {
   const files: string[] = [];
   let entryBudget = limits.maxFiles * ENTRIES_PER_CANDIDATE;
+  let cut = false;
 
   const walk = async (directory: string, depth: number): Promise<void> => {
     let entries;
@@ -166,7 +167,10 @@ async function collectFiles(
       return;
     }
     for (const entry of [...entries].sort((left, right) => compare(left.name, right.name))) {
-      if (files.length >= limits.maxFiles || entryBudget <= 0) return;
+      if (files.length >= limits.maxFiles || entryBudget <= 0) {
+        cut = true;
+        return;
+      }
       entryBudget -= 1;
       if (entry.isSymbolicLink()) continue;
       const absolute = join(directory, entry.name);
@@ -188,7 +192,7 @@ async function collectFiles(
   };
 
   await walk(repoRoot, 0);
-  return { files, truncated: files.length >= limits.maxFiles || entryBudget <= 0 };
+  return { files, truncated: cut };
 }
 
 /**
@@ -819,59 +823,11 @@ function scanWorkflow(path: string, text: string): readonly ScheduledFinding[] {
         line: offset === undefined ? 1 : lineCounter.linePos(offset).line,
       },
       kind: 'github-actions',
-      value: cron.value,
+      value: truncate(collapseWhitespace(cron.value)),
     });
   }
 
   return findings;
-}
-
-// ---------------------------------------------------------------------------
-// Redaction
-// ---------------------------------------------------------------------------
-
-/** Credential shapes recognisable on sight, regardless of the flag carrying them. */
-const SECRET_LITERALS: readonly RegExp[] = [
-  /\b[sr]k_(?:live|test)_[A-Za-z0-9]{8,}/g,
-  /\bgh[pousr]_[A-Za-z0-9]{16,}/g,
-  /\bgithub_pat_[A-Za-z0-9_]{20,}/g,
-  /\bxox[abprs]-[A-Za-z0-9-]{8,}/g,
-  /\bAKIA[0-9A-Z]{12,}/g,
-  /\bAIza[A-Za-z0-9_-]{20,}/g,
-  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g,
-  /-----BEGIN[^-\n]*PRIVATE KEY-----/g,
-];
-const CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]*@/gi;
-const ASSIGNMENT = /(^|[\s"'`])(-{0,2}[A-Za-z][\w.-]*)=("[^"]*"|'[^']*'|`[^`]*`|[^\s"'`]*)/g;
-const FLAG_WITH_VALUE = /(^|\s)(--?[A-Za-z][\w.-]*)(\s+)("[^"]*"|'[^']*'|[^\s"'`]+)/g;
-const CREDENTIAL_HEADER =
-  /((?:authorization|proxy-authorization|x-api-key|cookie)\s*:\s*)[^"'`\n]*/gi;
-/** Long opaque blobs with both letters and digits — API keys, ping URLs, tokens. */
-const OPAQUE_TOKEN = /(^|[\s=:"'`])([A-Za-z0-9+_-]{32,}={0,2})(?=$|[\s"'`])/g;
-
-/**
- * Keeps the shape of a command while dropping anything that looks like a
- * credential. A heartbeat proposal only needs to say which job it belongs to,
- * so over-redacting a long opaque argument costs nothing and under-redacting
- * would copy a secret into the CLI's output.
- */
-function redactSecrets(value: string): string {
-  let result = value.replace(CREDENTIALED_URL, '$1***@');
-  result = result.replace(ASSIGNMENT, (match, prefix: string, name: string) =>
-    isSensitiveFieldName(stripLeadingDashes(name)) ? `${prefix}${name}=***` : match,
-  );
-  result = result.replace(FLAG_WITH_VALUE, (match, prefix: string, flag: string, gap: string) =>
-    isSensitiveFieldName(stripLeadingDashes(flag)) ? `${prefix}${flag}${gap}***` : match,
-  );
-  result = result.replace(CREDENTIAL_HEADER, '$1***');
-  for (const pattern of SECRET_LITERALS) result = result.replace(pattern, '***');
-  return result.replace(OPAQUE_TOKEN, (match, prefix: string, token: string) =>
-    /[A-Za-z]/.test(token) && /\d/.test(token) ? `${prefix}***` : match,
-  );
-}
-
-function stripLeadingDashes(value: string): string {
-  return value.replace(/^-+/, '');
 }
 
 // ---------------------------------------------------------------------------
@@ -891,8 +847,7 @@ function buildDetail(
   const detail: Record<string, string> = {};
   for (const [key, value] of Object.entries(parts)) {
     if (value === undefined) continue;
-    const clipped = collapseWhitespace(value).slice(0, MAX_REDACTION_LENGTH);
-    const cleaned = truncate(redactSecrets(clipped));
+    const cleaned = truncate(redactClipped(collapseWhitespace(value), MAX_REDACTION_LENGTH));
     if (cleaned !== '') detail[key] = cleaned;
   }
   return Object.keys(detail).length === 0 ? undefined : detail;

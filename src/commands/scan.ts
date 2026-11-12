@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Args, Flags } from '@oclif/core';
+import { resolveCliInvocation } from '../lib/agent-setup/cli-invocation.js';
 import { ApiFailure } from '../api/errors.js';
 import {
   type ApiAccess,
@@ -237,7 +238,13 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
     if (machineOutput) this.log(JSON.stringify(buildApplyOutput(context, run)));
     else {
       this.log('');
-      for (const line of formatSummary(run.proposal.proposal, run.results, run.confirmation)) {
+      const invocation = await resolveCliInvocation();
+      for (const line of formatSummary(
+        run.proposal.proposal,
+        run.results,
+        run.confirmation,
+        invocation,
+      )) {
         this.log(line);
       }
     }

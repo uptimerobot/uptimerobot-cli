@@ -18,6 +18,7 @@ import { readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import { LineCounter, isMap, isNode, isScalar, isSeq, parseDocument } from 'yaml';
 import type { ScanFinding } from './finding.js';
+import { redactClipped } from './redact.js';
 import { DEFAULT_MAX_FILE_BYTES, compareStrings as compareText } from './support.js';
 
 export type { ScanEvidence } from './finding.js';
@@ -63,6 +64,8 @@ const SKIPPED_DIRECTORIES = new Set(['__pycache__', 'build', 'dist', 'node_modul
 
 /** Longest raw command echoed back through `detail`. */
 const MAX_DETAIL_TEXT = 200;
+/** Longest text handed to redaction; well past the visible clip so a straddling credential is still caught. */
+const MAX_REDACTION_TEXT = 2000;
 
 const DOTENV_PATTERN = /^\.env(\..*)?$|\.env$/i;
 const COMPOSE_PATTERN = /^(docker-)?compose(\..+)?\.ya?ml$/i;
@@ -87,14 +90,20 @@ interface SourceFile {
  * Reports every container or deployment endpoint the repository describes,
  * ordered by file, then line, then value, so repeated scans agree.
  */
+export interface ScanContainersOptions extends Partial<ContainerScanLimits> {
+  /** Called once when a limit stopped the walk before the tree was covered. */
+  onTruncated?: () => void;
+}
+
 export async function scanContainers(
   repoRoot: string,
-  limits: Partial<ContainerScanLimits> = {},
+  options: ScanContainersOptions = {},
 ): Promise<readonly ContainerFinding[]> {
+  const { onTruncated, ...limits } = options;
   const resolvedLimits = { ...DEFAULT_CONTAINER_SCAN_LIMITS, ...limits };
   const findings: ContainerFinding[] = [];
 
-  for (const source of await collectSources(repoRoot, resolvedLimits)) {
+  for (const source of await collectSources(repoRoot, resolvedLimits, onTruncated)) {
     const text = await readCapped(source.absolute, resolvedLimits.maxFileBytes);
     if (text === undefined) continue;
     findings.push(...scanSource(source, text));
@@ -131,6 +140,7 @@ function scanSource(source: SourceFile, text: string): readonly ContainerFinding
 async function collectSources(
   repoRoot: string,
   limits: ContainerScanLimits,
+  onTruncated?: () => void,
 ): Promise<readonly SourceFile[]> {
   const root = await realpath(repoRoot).catch(() => resolve(repoRoot));
   const sources: SourceFile[] = [];
@@ -143,7 +153,10 @@ async function collectSources(
     if (entries === undefined) continue;
 
     for (const entry of entries.sort((left, right) => compareText(left.name, right.name))) {
-      if (visited >= limits.maxEntries || sources.length >= limits.maxFiles) return sources;
+      if (visited >= limits.maxEntries || sources.length >= limits.maxFiles) {
+        onTruncated?.();
+        return sources;
+      }
       visited += 1;
 
       const absolute = join(current.path, entry.name);
@@ -529,13 +542,16 @@ function healthcheckFinding(
   command: string,
   extra: Readonly<Record<string, string | undefined>>,
 ): ContainerFinding | undefined {
-  const probe = probeUrl(command);
+  // The probe and the command are copied into a file at the repository root,
+  // so a credential in either would be the scan's own leak. The command is
+  // clipped and redacted first, and the probe is read out of that text: a
+  // password with a comma or a quote in it would otherwise end the probe
+  // early, leaving a prefix of it with no `@` for the URL pattern to find.
+  const redacted = redactClipped(command.replaceAll(/\s+/g, ' ').trim(), MAX_REDACTION_TEXT);
+  const probe = probeUrl(redacted);
   if (probe === undefined) return undefined;
   return {
-    detail: detailOf({
-      ...extra,
-      command: truncate(command.replaceAll(/\s+/g, ' ').trim(), MAX_DETAIL_TEXT),
-    }),
+    detail: detailOf({ ...extra, command: truncate(redacted, MAX_DETAIL_TEXT) }),
     evidence: { file, line },
     kind,
     value: probe,

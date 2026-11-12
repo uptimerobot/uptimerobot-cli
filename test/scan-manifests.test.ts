@@ -652,6 +652,8 @@ describe('matchManifest on Gemfile, composer.json and Cargo.toml', () => {
   });
 
   describe('stays linear on hostile input', () => {
+    // Generous on purpose: a cold JIT or a busy CI runner spends tens of
+    // milliseconds here, a quadratic regression on these inputs spends seconds.
     const under = (ms: number, run: () => unknown) => {
       const started = performance.now();
       run();
@@ -659,26 +661,26 @@ describe('matchManifest on Gemfile, composer.json and Cargo.toml', () => {
     };
 
     it('an unclosed header with thousands of spaces', () => {
-      under(200, () =>
+      under(2000, () =>
         matchManifest({ path: 'Cargo.toml', contents: `[${' '.repeat(4000)}aaaa\n` }),
       );
     });
 
     it('a line of eighty thousand spaces', () => {
-      under(200, () =>
+      under(2000, () =>
         matchManifest({ path: 'pyproject.toml', contents: `${' '.repeat(80_000)}\n[project]\n` }),
       );
     });
 
     it('a forty thousand item array and an unterminated one', () => {
       const items = Array.from({ length: 40_000 }, (_, i) => `  "pkg${i}",`).join('\n');
-      under(1000, () =>
+      under(5000, () =>
         matchManifest({
           path: 'pyproject.toml',
           contents: `[project]\ndependencies = [\n${items}\n]\n`,
         }),
       );
-      under(1000, () =>
+      under(5000, () =>
         matchManifest({ path: 'pyproject.toml', contents: `[project]\nx = [\n${items}\n` }),
       );
     });
@@ -687,7 +689,7 @@ describe('matchManifest on Gemfile, composer.json and Cargo.toml', () => {
       const entries = Array.from({ length: 20_000 }, (_, i) => `    "pkg\\\\${i}": "1"`).join(
         ',\n',
       );
-      under(1000, () =>
+      under(5000, () =>
         matchManifest({
           path: 'package.json',
           contents: `{\n  "dependencies": {\n${entries}\n  }\n}\n`,

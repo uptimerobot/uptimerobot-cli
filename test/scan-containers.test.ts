@@ -501,3 +501,62 @@ describe('scanContainers — caps', () => {
     expect(readPaths).toEqual([]);
   });
 });
+
+describe('healthcheck findings never carry a credential', () => {
+  it('bounds the probe and the command of an oversize healthcheck before redacting', async () => {
+    const path = 'a'.repeat(60_000);
+    const root = await temporaryRepo({
+      Dockerfile: `FROM node\nHEALTHCHECK CMD curl -f http://localhost:3000/${path}\n`,
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value.length).toBeLessThanOrEqual(2001);
+    expect(finding?.detail?.command?.length).toBeLessThanOrEqual(200);
+  });
+
+  it('redacts userinfo and sensitive query parameters in the probe and the command', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        'FROM node\nHEALTHCHECK CMD curl -f "http://admin:hunter2@localhost:3000/health?token=abc123def"\n',
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).toBe('http://***@localhost:3000/health?token=***');
+    expect(finding?.detail?.command).toBe(
+      'CMD curl -f "http://***@localhost:3000/health?token=***"',
+    );
+    expect(JSON.stringify(finding)).not.toContain('hunter2');
+    expect(JSON.stringify(finding)).not.toContain('abc123def');
+  });
+});
+
+describe('a credential the clip cuts in half never leaks', () => {
+  it('masks a userinfo whose password runs past the redaction window', async () => {
+    const password = 'p'.repeat(3000);
+    const root = await temporaryRepo({
+      Dockerfile: `FROM node\nHEALTHCHECK CMD curl -f http://admin:${password}@localhost:3000/health\n`,
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(JSON.stringify(finding)).not.toContain('ppp');
+    expect(finding?.value).toBe('http://***');
+  });
+});
+
+describe('the probe is read from the redacted command', () => {
+  it('never exposes a password prefix when a comma in it would end the probe early', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        'FROM node\nHEALTHCHECK CMD curl -f http://admin:hunter,2@localhost:3000/health\n',
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).not.toContain('hunter');
+    expect(finding?.value).toBe('http://***@localhost:3000/health');
+    expect(JSON.stringify(finding)).not.toContain('hunter');
+  });
+});

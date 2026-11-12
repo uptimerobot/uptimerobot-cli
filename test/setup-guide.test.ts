@@ -245,3 +245,21 @@ describe('renderSetupGuide', () => {
     expect(guide).toContain('the monitor is silent');
   });
 });
+
+describe('the guide states only what the launch guarantees', () => {
+  it('does not claim the session runs under --permission-mode acceptEdits', () => {
+    const guide = renderSetupGuide(ON_PATH);
+
+    expect(guide).not.toContain('runs under `--permission-mode acceptEdits`');
+    expect(prose(guide)).toContain('an explicit yes from the user in the conversation is');
+  });
+
+  it('tells the agent to repeat --include-build-time on the confirm call', () => {
+    const guide = renderSetupGuide(ON_PATH);
+    const confirm = guide.indexOf('scan --apply --confirm --json --agent');
+    const mention = guide.indexOf('--include-build-time', confirm);
+
+    expect(confirm).toBeGreaterThan(-1);
+    expect(mention).toBeGreaterThan(confirm);
+  });
+});

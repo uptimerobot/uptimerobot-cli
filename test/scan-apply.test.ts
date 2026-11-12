@@ -807,6 +807,9 @@ describe('uptimerobot scan --apply', () => {
     const result = await runCli(['scan', root, '--apply', '--confirm'], {
       UPTIMEROBOT_AGENT: '0',
       UPTIMEROBOT_API_KEY: 'u123-secret',
+      // Pins the hint lines, which otherwise depend on whether the machine
+      // running the tests has the CLI on PATH.
+      UPTIMEROBOT_CLI_COMMAND: 'uptimerobot',
       UPTIMEROBOT_DEV_API_URL: stub.url,
       UPTIMEROBOT_OUTPUT: 'table',
     });

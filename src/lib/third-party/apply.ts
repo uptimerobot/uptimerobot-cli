@@ -12,6 +12,7 @@
  * `runApply` is the whole flow without the printing, so `init` can offer the
  * same proposal.
  */
+import { type CliInvocation, formatInvocation } from '../agent-setup/cli-invocation.js';
 import { requestJson } from '../../api/client.js';
 import { ApiFailure } from '../../api/errors.js';
 import { operations } from '../../generated/operations.js';
@@ -432,7 +433,12 @@ export function formatProposal(proposal: Proposal): string[] {
 }
 
 /** The hand-run equivalent of one create, spelled from the generated command id. */
-export const CREATE_COMMAND = `uptimerobot ${CREATE.commandId.replaceAll(':', ' ')} --provider-id`;
+const CREATE_SUBCOMMAND = `${CREATE.commandId.replaceAll(':', ' ')} --provider-id`;
+export const CREATE_COMMAND = `uptimerobot ${CREATE_SUBCOMMAND}`;
+
+/** What `formatSummary` templates against when a caller has not resolved one. */
+const BARE_INVOCATION: CliInvocation = { command: 'uptimerobot', source: 'override' };
+export const APPLY_COMMAND = 'scan --apply';
 
 const LEFTOVER_LABELS: readonly [ResolvedCandidate['status'], string][] = [
   ['already-tracked', 'Already tracked before this run'],
@@ -452,6 +458,7 @@ function outcomeLines(
   proposal: readonly ResolvedCandidate[],
   results: readonly CreateResult[],
   confirmation: Confirmation,
+  invocation: CliInvocation,
 ): string[] {
   const lines: string[] = [];
   if (confirmation === 'required' || confirmation === 'declined' || confirmation === 'blocked')
@@ -470,7 +477,7 @@ function outcomeLines(
   if (created !== '') lines.push(`Created: ${created}.`);
   if (unknown !== '')
     lines.push(
-      `Outcome unknown, the API may have created it, re-run scan --apply to check: ${unknown}.`,
+      `Outcome unknown, the API may have created it, re-run \`${formatInvocation(invocation, APPLY_COMMAND)}\` to check: ${unknown}.`,
     );
   if (failed !== '') lines.push(`Not created: ${failed}.`);
   return lines;
@@ -500,13 +507,14 @@ function leftoverLines(
 function manualCommands(
   proposal: readonly ResolvedCandidate[],
   results: readonly CreateResult[],
+  invocation: CliInvocation,
 ): string[] {
   const settled = new Set(
     results.filter((item) => item.status !== 'failed').map((item) => item.provider),
   );
   return proposal.flatMap((row) =>
     (row.status === 'create' && !settled.has(row.provider)) || row.status === 'over-allowance'
-      ? [`  ${CREATE_COMMAND} ${row.catalog.id}`]
+      ? [`  ${formatInvocation(invocation, CREATE_SUBCOMMAND)} ${row.catalog.id}`]
       : [],
   );
 }
@@ -516,18 +524,17 @@ export function formatSummary(
   proposal: readonly ResolvedCandidate[],
   results: readonly CreateResult[],
   confirmation: Confirmation,
+  invocation: CliInvocation = BARE_INVOCATION,
 ): string[] {
-  const commands = confirmation === 'blocked' ? [] : manualCommands(proposal, results);
+  const commands = confirmation === 'blocked' ? [] : manualCommands(proposal, results, invocation);
   return [
-    ...outcomeLines(proposal, results, confirmation),
+    ...outcomeLines(proposal, results, confirmation, invocation),
     ...leftoverLines(proposal, results, confirmation),
     ...(commands.length > 0 ? ['', 'To repeat a create by hand:', ...commands] : []),
     '',
-    'Endpoints and heartbeats need a base URL and go through `uptimerobot init`.',
+    `Endpoints and heartbeats need a base URL and go through \`${formatInvocation(invocation, 'init')}\`.`,
   ];
 }
-
-export const APPLY_COMMAND = 'scan --apply';
 
 export function confirmationRequiredError(confirmation: 'required' | 'declined'): CliError {
   return {

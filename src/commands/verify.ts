@@ -1,9 +1,14 @@
 import { Flags } from '@oclif/core';
-import { createApiClient, requestJson } from '../api/client.js';
+import { requestJson } from '../api/client.js';
 import { ApiFailure } from '../api/errors.js';
 import { formatInvocation, resolveCliInvocation } from '../lib/agent-setup/cli-invocation.js';
 import { AGENT_SETUP_TAG } from '../lib/agent-setup/tag.js';
-import { AuthenticationError, resolveApiKey } from '../lib/auth.js';
+import {
+  type ApiAccess,
+  AuthenticationError,
+  InvalidApiUrlError,
+  resolveApiAccess,
+} from '../lib/auth.js';
 import { BaseCommand } from '../lib/base-command.js';
 import { operations } from '../generated/operations.js';
 import type { InvocationMode } from '../lib/invocation.js';
@@ -132,18 +137,24 @@ Finding no monitors is a result, not a failure: the command exits 0 whether the 
       );
     }
 
-    const apiUrl = new URL(process.env.UPTIMEROBOT_DEV_API_URL ?? MONITORS_LIST.defaultApiUrl);
-    let apiKey: string;
+    // The same resolver init and scan use, so a malformed override is the
+    // same INVALID_INPUT envelope here instead of an unstructured crash.
+    let access: ApiAccess;
     try {
-      apiKey = await resolveApiKey(flags['api-key'], apiUrl.toString());
+      access = await resolveApiAccess({
+        explicitApiKey: flags['api-key'],
+        mode,
+        version: this.config.pjson.version,
+      });
     } catch (error) {
       if (error instanceof AuthenticationError) {
         return this.fail({ code: error.code, message: error.message }, error.exitCode);
       }
+      if (error instanceof InvalidApiUrlError) return this.fail(error.cliError, error.exitCode);
       throw error;
     }
 
-    const { monitors, paging } = await this.collectMonitors(tags, apiUrl, apiKey, mode);
+    const { monitors, paging } = await this.collectMonitors(tags, access);
     const output: VerifyOutput = {
       count: monitors.length,
       coverage: { basis: 'tags', note: COVERAGE_NOTE },
@@ -175,17 +186,8 @@ Finding no monitors is a result, not a failure: the command exits 0 whether the 
    */
   private async collectMonitors(
     tags: readonly string[],
-    apiUrl: URL,
-    apiKey: string,
-    mode: InvocationMode,
+    { client, apiUrl }: ApiAccess,
   ): Promise<{ monitors: VerifiedMonitor[]; paging: PageResult }> {
-    const client = createApiClient({
-      apiKey,
-      apiUrl,
-      environment: isCI() ? 'ci' : 'local',
-      mode,
-      version: this.config.pjson.version,
-    });
     const monitors: VerifiedMonitor[] = [];
     try {
       const paging = await pageThrough({

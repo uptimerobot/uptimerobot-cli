@@ -352,6 +352,18 @@ describe('verify', () => {
     expect(requests).toEqual([]);
   });
 
+  it('rejects a malformed UPTIMEROBOT_DEV_API_URL through the error envelope, like init and scan', async () => {
+    vi.stubEnv('UPTIMEROBOT_DEV_API_URL', 'not a url');
+    const { requests } = stubApi([{ data: [] }]);
+    const { default: Verify } = await import('../src/commands/verify.js');
+
+    await expect(Verify.run(['--json'], { root: projectRoot })).rejects.toMatchObject({
+      cliError: { code: 'INVALID_INPUT', path: 'UPTIMEROBOT_DEV_API_URL' },
+      oclif: { exit: 2 },
+    });
+    expect(requests).toEqual([]);
+  });
+
   it('routes a missing credential through the error envelope without calling the API', async () => {
     // Production URL, so the credential store is consulted and finds nothing.
     vi.stubEnv('UPTIMEROBOT_DEV_API_URL', undefined);
