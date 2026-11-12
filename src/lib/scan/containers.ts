@@ -668,10 +668,12 @@ function detailOf(
 ): Record<string, string> | undefined {
   const detail: Record<string, string> = {};
   // Every detail is repository text bound for the seed file: a rewrite
-  // destination carries credentials as readily as a healthcheck command.
+  // destination carries credentials as readily as a healthcheck command. It
+  // is redacted here but not clipped: the host rules read a destination whole,
+  // and the rendering layer clips what it prints.
   for (const [key, value] of Object.entries(entries)) {
     if (value !== undefined && value.length > 0)
-      detail[key] = truncate(redactClipped(value, MAX_REDACTION_TEXT), MAX_DETAIL_TEXT);
+      detail[key] = redactClipped(value, MAX_REDACTION_TEXT);
   }
   return Object.keys(detail).length > 0 ? detail : undefined;
 }

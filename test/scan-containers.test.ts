@@ -602,3 +602,17 @@ describe('round two: redaction and truncation', () => {
     expect(truncated).toBe(false);
   });
 });
+
+describe('a destination keeps its host for classification', () => {
+  it('redacts but does not clip a long rewrite destination', async () => {
+    const label = 'a'.repeat(63);
+    const destination = `https://${label}.${label}.${label}.internal/`;
+    const root = await temporaryRepo({
+      'vercel.json': JSON.stringify({ rewrites: [{ source: '/api/:path*', destination }] }),
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.detail?.destination).toBe(destination);
+  });
+});

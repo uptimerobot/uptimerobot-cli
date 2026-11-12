@@ -255,24 +255,28 @@ describe('uptimerobot scan', () => {
     expect(printed()).toBe('');
   });
 
-  it('fails when the directory exists but cannot be listed', async () => {
-    const root = await makeRepository();
-    const sealed = join(root, 'sealed');
-    await mkdir(sealed);
-    await chmod(sealed, 0o000);
-    try {
-      await expect(Scan.run([sealed, '--json'], { root: projectRoot })).rejects.toMatchObject({
-        cliError: {
-          code: 'INVALID_INPUT',
-          message: `${sealed} cannot be read: EACCES.`,
-          path: 'path',
-        },
-        oclif: { exit: 2 },
-      });
-    } finally {
-      await chmod(sealed, 0o755);
-    }
-  });
+  // Windows chmod touches only the write bit, so the directory stays listable.
+  it.skipIf(process.platform === 'win32')(
+    'fails when the directory exists but cannot be listed',
+    async () => {
+      const root = await makeRepository();
+      const sealed = join(root, 'sealed');
+      await mkdir(sealed);
+      await chmod(sealed, 0o000);
+      try {
+        await expect(Scan.run([sealed, '--json'], { root: projectRoot })).rejects.toMatchObject({
+          cliError: {
+            code: 'INVALID_INPUT',
+            message: `${sealed} cannot be read: EACCES.`,
+            path: 'path',
+          },
+          oclif: { exit: 2 },
+        });
+      } finally {
+        await chmod(sealed, 0o755);
+      }
+    },
+  );
 
   it('fails when the path is a file rather than a directory', async () => {
     const root = await makeRepository();

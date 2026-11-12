@@ -75,3 +75,17 @@ describe('redactSecrets, round two', () => {
     expect(clipped).not.toContain('sss');
   });
 });
+
+describe('redactSecrets, round three', () => {
+  it('masks a credentialed URL whose username is empty, in full and when clipped', () => {
+    expect(redactSecrets('https://:hunter2@example.com/health')).toBe(
+      'https://***@example.com/health',
+    );
+    expect(redactClipped(`https://:${'h'.repeat(3000)}@x/`, 2000)).not.toContain('hhh');
+  });
+
+  it('masks an attached credential value whatever punctuation it holds', () => {
+    expect(redactSecrets('mysqldump -phunter2! app')).toBe('mysqldump -p*** app');
+    expect(redactSecrets('curl -uadmin:hunter2 http://h/')).toBe('curl -u*** http://h/');
+  });
+});

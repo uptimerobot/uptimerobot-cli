@@ -16,7 +16,7 @@ const SECRET_LITERALS: readonly RegExp[] = [
   /-----BEGIN[^-\n]*PRIVATE KEY-----/g,
 ];
 /** `scheme://user:pass@`, consumed up to the LAST `@` before whitespace: a password may hold `@` or `/`. */
-const CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s]*@/gi;
+const CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:[^\s]*@/gi;
 const ASSIGNMENT = /(^|[\s"'`])(-{0,2}[A-Za-z][\w.-]*)=("[^"]*"|'[^']*'|`[^`]*`|[^\s"'`]*)/g;
 /** Every flag, matched without its value so `-q --password x` still visits `--password`. */
 const FLAG = /(^|\s)(--?[A-Za-z][\w.-]*)(?=\s|$)/g;
@@ -26,11 +26,11 @@ const FLAG = /(^|\s)(--?[A-Za-z][\w.-]*)(?=\s|$)/g;
  */
 const FLAG_VALUE = /\s+(?:"(?:\\.|[^"\\])*"|'[^']*'|\\.|[^\s"'`\\])+/y;
 /** A `scheme://user:pass` with no `@` reached yet, as the clip leaves it. */
-const CUT_CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s]*$/i;
+const CUT_CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:[^\s]*$/i;
 /** Short and long option names that carry a credential without saying so in their name. */
 const CREDENTIAL_FLAGS = new Set(['p', 'u', 'user', 'pass', 'passwd', 'pw', 'login', 'auth']);
-/** `-phunter2`, `-uroot`: the value glued to a one-letter credential flag. */
-const ATTACHED_CREDENTIAL = /^-[pu]\S/;
+/** `-phunter2`, `-uadmin:x!`: the value glued to a one-letter credential flag, punctuation and all. */
+const ATTACHED_CREDENTIAL = /(^|\s)(-[pu])\S+/g;
 /** `?token=` and `&api_key=` in a URL, where no whitespace or quote precedes the name. */
 const QUERY_PARAMETER = /([?&])([A-Za-z][\w.-]*)=([^&\s"'`#]*)/g;
 const CREDENTIAL_HEADER =
@@ -82,18 +82,14 @@ export function redactClipped(value: string, limit: number): string {
  * by another. Flags are found one at a time so a valueless `-q` never
  * swallows the sensitive flag after it.
  */
-function redactFlagValues(value: string): string {
+function redactFlagValues(input: string): string {
+  const value = input.replace(ATTACHED_CREDENTIAL, '$1$2***');
   let result = '';
   let cursor = 0;
   for (const match of value.matchAll(FLAG)) {
     const flag = match[2]!;
     const start = (match.index ?? 0) + match[1]!.length;
     if (start < cursor) continue;
-    if (ATTACHED_CREDENTIAL.test(flag)) {
-      result += `${value.slice(cursor, start)}${flag.slice(0, 2)}***`;
-      cursor = start + flag.length;
-      continue;
-    }
     if (!isCredentialFlag(flag)) continue;
     FLAG_VALUE.lastIndex = start + flag.length;
     const argument = FLAG_VALUE.exec(value);
