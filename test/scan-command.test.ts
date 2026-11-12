@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -253,6 +253,25 @@ describe('uptimerobot scan', () => {
       oclif: { exit: 2 },
     });
     expect(printed()).toBe('');
+  });
+
+  it('fails when the directory exists but cannot be listed', async () => {
+    const root = await makeRepository();
+    const sealed = join(root, 'sealed');
+    await mkdir(sealed);
+    await chmod(sealed, 0o000);
+    try {
+      await expect(Scan.run([sealed, '--json'], { root: projectRoot })).rejects.toMatchObject({
+        cliError: {
+          code: 'INVALID_INPUT',
+          message: `${sealed} cannot be read: EACCES.`,
+          path: 'path',
+        },
+        oclif: { exit: 2 },
+      });
+    } finally {
+      await chmod(sealed, 0o755);
+    }
   });
 
   it('fails when the path is a file rather than a directory', async () => {

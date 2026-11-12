@@ -263,3 +263,12 @@ describe('the guide states only what the launch guarantees', () => {
     expect(mention).toBeGreaterThan(confirm);
   });
 });
+
+describe('every create example attaches the alert contact', () => {
+  it('passes --assigned-alert-contacts in the HTTP, KEYWORD and HEARTBEAT examples', () => {
+    const guide = renderSetupGuide(ON_PATH);
+    const occurrences = guide.split('--assigned-alert-contacts "$CONTACT_ID"').length - 1;
+
+    expect(occurrences).toBe(3);
+  });
+});

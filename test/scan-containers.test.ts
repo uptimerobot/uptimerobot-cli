@@ -560,3 +560,45 @@ describe('the probe is read from the redacted command', () => {
     expect(JSON.stringify(finding)).not.toContain('hunter');
   });
 });
+
+describe('round two: redaction and truncation', () => {
+  it('redacts Vercel and Netlify destinations like healthcheck commands', async () => {
+    const root = await temporaryRepo({
+      'vercel.json': JSON.stringify({
+        rewrites: [
+          { source: '/api/:path*', destination: 'https://api.vendor.com/:path*?api_key=abc123def' },
+        ],
+      }),
+      'netlify.toml': [
+        '[[redirects]]',
+        '  from = "/old"',
+        '  to = "https://admin:hunter2@x.example/"',
+        '  status = 301',
+        '',
+      ].join('\n'),
+    });
+
+    const findings = await scanContainers(root);
+    const text = JSON.stringify(findings);
+
+    expect(text).not.toContain('abc123def');
+    expect(text).not.toContain('hunter2');
+    expect(text).toContain('api_key=***');
+    expect(text).toContain('https://***@x.example/');
+  });
+
+  it('reports no truncation when the budget is full and the next entry is not a candidate', async () => {
+    const compose = 'services:\n  web:\n    ports:\n      - "80:80"\n';
+    const root = await temporaryRepo({ 'a/docker-compose.yml': compose, 'b/README.md': 'hi' });
+    let truncated = false;
+
+    await scanContainers(root, {
+      maxFiles: 1,
+      onTruncated: () => {
+        truncated = true;
+      },
+    });
+
+    expect(truncated).toBe(false);
+  });
+});

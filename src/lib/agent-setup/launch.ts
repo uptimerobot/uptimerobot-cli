@@ -127,6 +127,15 @@ export type LaunchSpawn = (
   options: { stdio: 'inherit' },
 ) => LaunchChildProcess;
 
+/**
+ * Whether a resolved binary can be opened by `spawn` without a shell. A Windows
+ * `.cmd` or `.bat` shim (what npm installs) cannot: Node refuses to run it, so
+ * `init` keeps to the printed hint rather than announcing a launch that fails.
+ */
+export function isLaunchableBinary(path: string): boolean {
+  return !/\.(?:cmd|bat)$/i.test(path);
+}
+
 export interface LaunchAgentOptions {
   /** Injected in tests so the planned command is asserted, never run. */
   spawn?: LaunchSpawn;

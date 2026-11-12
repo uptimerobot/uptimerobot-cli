@@ -706,6 +706,21 @@ describe('init', () => {
     }
   });
 
+  it('names the resolved invocation in the TARGET_REQUIRED message', async () => {
+    keyring.set(STORED_CREDENTIAL, 'u123-stored');
+    vi.stubEnv('UPTIMEROBOT_CLI_COMMAND', undefined);
+    vi.stubEnv('PATH', '');
+    vi.stubEnv('Path', '');
+    const { default: Init } = await import('../src/commands/init.js');
+
+    await expect(Init.run(['--yes'], { root: projectRoot })).rejects.toMatchObject({
+      cliError: {
+        code: 'TARGET_REQUIRED',
+        message: expect.stringContaining('npx @uptimerobot/cli init --target claude-code'),
+      },
+    });
+  });
+
   it('templates every emitted command through the resolved invocation', async () => {
     keyring.set(STORED_CREDENTIAL, 'u123-stored');
     vi.stubEnv('UPTIMEROBOT_CLI_COMMAND', undefined);

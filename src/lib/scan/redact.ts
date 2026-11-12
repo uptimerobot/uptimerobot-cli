@@ -15,23 +15,30 @@ const SECRET_LITERALS: readonly RegExp[] = [
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g,
   /-----BEGIN[^-\n]*PRIVATE KEY-----/g,
 ];
-const CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]*@/gi;
+/** `scheme://user:pass@`, consumed up to the LAST `@` before whitespace: a password may hold `@` or `/`. */
+const CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s]*@/gi;
 const ASSIGNMENT = /(^|[\s"'`])(-{0,2}[A-Za-z][\w.-]*)=("[^"]*"|'[^']*'|`[^`]*`|[^\s"'`]*)/g;
 /** Every flag, matched without its value so `-q --password x` still visits `--password`. */
-const FLAG = /(^|\s)(--?[A-Za-z][\w.-]*)(?=\s)/g;
+const FLAG = /(^|\s)(--?[A-Za-z][\w.-]*)(?=\s|$)/g;
 /**
  * The argument after a flag: quoted fragments (with `\"` escapes inside
  * double quotes), escaped characters and bare characters up to the next space.
  */
 const FLAG_VALUE = /\s+(?:"(?:\\.|[^"\\])*"|'[^']*'|\\.|[^\s"'`\\])+/y;
 /** A `scheme://user:pass` with no `@` reached yet, as the clip leaves it. */
-const CUT_CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*$/i;
+const CUT_CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s]*$/i;
+/** Short and long option names that carry a credential without saying so in their name. */
+const CREDENTIAL_FLAGS = new Set(['p', 'u', 'user', 'pass', 'passwd', 'pw', 'login', 'auth']);
+/** `-phunter2`, `-uroot`: the value glued to a one-letter credential flag. */
+const ATTACHED_CREDENTIAL = /^-[pu]\S/;
 /** `?token=` and `&api_key=` in a URL, where no whitespace or quote precedes the name. */
 const QUERY_PARAMETER = /([?&])([A-Za-z][\w.-]*)=([^&\s"'`#]*)/g;
 const CREDENTIAL_HEADER =
   /((?:authorization|proxy-authorization|x-api-key|cookie)\s*:\s*)[^"'`\n]*/gi;
 /** Long opaque blobs with both letters and digits — API keys, ping URLs, tokens. */
 const OPAQUE_TOKEN = /(^|[\s=:"'`])([A-Za-z0-9+_-]{32,}={0,2})(?=$|[\s"'`])/g;
+/** A long opaque path segment: a heartbeat push token or a signed-URL key. */
+const OPAQUE_PATH_SEGMENT = /\/([A-Za-z0-9_-]{24,})(?=$|[/?#\s"'`])/g;
 
 /**
  * Keeps the shape of a command while dropping anything that looks like a
@@ -50,8 +57,11 @@ export function redactSecrets(value: string): string {
   );
   result = result.replace(CREDENTIAL_HEADER, '$1***');
   for (const pattern of SECRET_LITERALS) result = result.replace(pattern, '***');
-  return result.replace(OPAQUE_TOKEN, (match, prefix: string, token: string) =>
+  result = result.replace(OPAQUE_TOKEN, (match, prefix: string, token: string) =>
     /[A-Za-z]/.test(token) && /\d/.test(token) ? `${prefix}***` : match,
+  );
+  return result.replace(OPAQUE_PATH_SEGMENT, (match, segment: string) =>
+    /[A-Za-z]/.test(segment) && /\d/.test(segment) ? '/***' : match,
   );
 }
 
@@ -77,8 +87,14 @@ function redactFlagValues(value: string): string {
   let cursor = 0;
   for (const match of value.matchAll(FLAG)) {
     const flag = match[2]!;
-    if (!isSensitiveFieldName(stripLeadingDashes(flag))) continue;
     const start = (match.index ?? 0) + match[1]!.length;
+    if (start < cursor) continue;
+    if (ATTACHED_CREDENTIAL.test(flag)) {
+      result += `${value.slice(cursor, start)}${flag.slice(0, 2)}***`;
+      cursor = start + flag.length;
+      continue;
+    }
+    if (!isCredentialFlag(flag)) continue;
     FLAG_VALUE.lastIndex = start + flag.length;
     const argument = FLAG_VALUE.exec(value);
     if (argument === null || argument.index < cursor) continue;
@@ -87,6 +103,11 @@ function redactFlagValues(value: string): string {
     cursor = FLAG_VALUE.lastIndex;
   }
   return result + value.slice(cursor);
+}
+
+function isCredentialFlag(flag: string): boolean {
+  const name = stripLeadingDashes(flag);
+  return CREDENTIAL_FLAGS.has(name.toLowerCase()) || isSensitiveFieldName(name);
 }
 
 function stripLeadingDashes(value: string): string {

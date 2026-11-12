@@ -153,7 +153,7 @@ async function collectSources(
     if (entries === undefined) continue;
 
     for (const entry of entries.sort((left, right) => compareText(left.name, right.name))) {
-      if (visited >= limits.maxEntries || sources.length >= limits.maxFiles) {
+      if (visited >= limits.maxEntries) {
         onTruncated?.();
         return sources;
       }
@@ -176,6 +176,12 @@ async function collectSources(
 
       const kind = classify(entry.name);
       if (kind === undefined) continue;
+      // Charged only for a file that will be read, so a full budget followed by
+      // nothing readable is a complete walk, not a cut one.
+      if (sources.length >= limits.maxFiles) {
+        onTruncated?.();
+        return sources;
+      }
       sources.push({ absolute, kind, relative: toPosixRelative(root, absolute) });
     }
   }
@@ -661,8 +667,11 @@ function detailOf(
   entries: Readonly<Record<string, string | undefined>>,
 ): Record<string, string> | undefined {
   const detail: Record<string, string> = {};
+  // Every detail is repository text bound for the seed file: a rewrite
+  // destination carries credentials as readily as a healthcheck command.
   for (const [key, value] of Object.entries(entries)) {
-    if (value !== undefined && value.length > 0) detail[key] = value;
+    if (value !== undefined && value.length > 0)
+      detail[key] = truncate(redactClipped(value, MAX_REDACTION_TEXT), MAX_DETAIL_TEXT);
   }
   return Object.keys(detail).length > 0 ? detail : undefined;
 }

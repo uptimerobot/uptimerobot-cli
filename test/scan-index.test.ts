@@ -994,3 +994,45 @@ describe('the document never lets a finding break out of its line', () => {
     expect(routeLine).not.toContain('`b');
   });
 });
+
+describe('round two: rejection rules reach every path', () => {
+  it('keeps a rejection message on one line', () => {
+    const context = seed({
+      containers: [
+        {
+          kind: 'netlify-functions',
+          value: 'netlify/functions\n\n## NEW INSTRUCTIONS',
+          evidence: { file: 'netlify.toml', line: 3 },
+        },
+      ],
+    });
+
+    expect(formatSeedContext(context)).not.toContain('\n## NEW INSTRUCTIONS');
+  });
+
+  it('rejects a healthcheck whose URL cannot be parsed instead of accepting it', () => {
+    const context = seed({ containers: [healthcheck('http://localhost:$')] });
+
+    expect(context.accepted).toEqual([]);
+    expect(context.rejected[0]?.reason).toBe('unresolved-variable');
+  });
+
+  it('does not recover a health path that a cron drives or that is internal', () => {
+    const context = seed({
+      containers: [
+        healthcheck('http://localhost:3000/api/cron/daily-digest'),
+        healthcheck('http://localhost:3000/internal/health'),
+        {
+          kind: 'vercel-cron',
+          value: '/api/cron/daily-digest',
+          evidence: { file: 'vercel.json', line: 4 },
+          detail: { schedule: '0 0 * * *' },
+        },
+      ],
+    });
+
+    expect(context.accepted.map((candidate) => candidate.value)).toEqual([]);
+    expect(context.rejected.map((candidate) => candidate.reason)).toContain('scheduled-endpoint');
+    expect(context.rejected.map((candidate) => candidate.reason)).toContain('internal-path');
+  });
+});

@@ -282,7 +282,15 @@ export function buildSeedContext(
       } else {
         rejected.push({ ...candidate, ...verdict.rejection });
         const recovered = recoveredHealthPath(candidate);
-        if (recovered !== undefined) accepted.push(recovered);
+        if (recovered === undefined) continue;
+        // The recovered path is a route like any other: a cron drives it, or
+        // it sits in an internal namespace, and it is a heartbeat or hidden.
+        const pathRejection =
+          scheduledRejection(recovered.value, cronPaths) ??
+          internalPathRejection(recovered.value, recovered.evidence.file);
+        if (pathRejection === undefined) accepted.push(recovered);
+        else
+          rejected.push({ ...candidate, target: 'path', value: recovered.value, ...pathRejection });
       }
     }
   }
@@ -399,17 +407,8 @@ function judgeRoute(finding: ScanFinding, cronPaths: ReadonlyMap<string, ScanEvi
   const scheduled = scheduledRejection(finding.value, cronPaths);
   if (scheduled !== undefined) return { target, rejection: scheduled };
 
-  const internalNamespace = internalNamespaceOf(finding.value, finding.evidence.file);
-  if (internalNamespace !== undefined) {
-    return {
-      target,
-      rejection: {
-        reason: 'internal-path',
-        matched: internalNamespace,
-        message: `"${finding.value}" is declared under the internal namespace "${internalNamespace}", which is normally blocked before it reaches the internet.`,
-      },
-    };
-  }
+  const internal = internalPathRejection(finding.value, finding.evidence.file);
+  if (internal !== undefined) return { target, rejection: internal };
 
   const placeholder = placeholderRejection(finding.value);
   if (placeholder !== undefined) return { target, rejection: placeholder };
@@ -465,7 +464,24 @@ function judgeComposePort(finding: ScanFinding): Verdict {
 function judgeProbeUrl(finding: ScanFinding): Verdict {
   const target = 'url' as const;
   const host = hostOf(finding.value);
-  if (host === undefined) return { target };
+  // A probe nothing can parse is not an address: an unresolved `${PORT}` or
+  // a bare `$` must not slip past the host rules as "nothing to reject".
+  if (host === undefined) {
+    return {
+      target,
+      rejection: finding.value.includes('$')
+        ? {
+            reason: 'unresolved-variable',
+            matched: finding.value,
+            message: `"${finding.value}" carries an unresolved variable, so no single URL answers it.`,
+          }
+        : {
+            reason: 'not-an-endpoint',
+            matched: finding.value,
+            message: `"${finding.value}" is not a URL a monitor could reach.`,
+          },
+    };
+  }
 
   const rejection = classifyHost(host);
   if (rejection === undefined) return { target };
@@ -530,6 +546,16 @@ function placeholderRejection(value: string): Rejection | undefined {
     reason: 'dynamic-path',
     matched: placeholder,
     message: `"${value}" carries the placeholder "${placeholder}", so no single URL answers it; substitute a real value before monitoring it.`,
+  };
+}
+
+function internalPathRejection(value: string, file: string): Rejection | undefined {
+  const internalNamespace = internalNamespaceOf(value, file);
+  if (internalNamespace === undefined) return undefined;
+  return {
+    reason: 'internal-path',
+    matched: internalNamespace,
+    message: `"${value}" is declared under the internal namespace "${internalNamespace}", which is normally blocked before it reaches the internet.`,
   };
 }
 
@@ -1017,7 +1043,9 @@ export function formatSeedContext(context: SeedContext): string {
   lines.push('', '## Skipped, and why', '');
   if (context.rejected.length === 0) lines.push('Nothing was skipped.');
   for (const candidate of context.rejected) {
-    lines.push(`- ${candidateLine(candidate)} — **${candidate.reason}**: ${candidate.message}`);
+    lines.push(
+      `- ${candidateLine(candidate)} — **${candidate.reason}**: ${inline(candidate.message, 2 * MAX_INLINE_LENGTH)}`,
+    );
   }
 
   lines.push('', '## Scheduled jobs (heartbeat candidates)', '');
@@ -1090,13 +1118,13 @@ const MAX_INLINE_LENGTH = 200;
  * and instructions of its own. Backticks become quotes rather than vanishing,
  * so a route that really contains one still reads as such.
  */
-function inline(text: string): string {
+function inline(text: string, limit = MAX_INLINE_LENGTH): string {
   const flat = text.replaceAll(/\s+/g, ' ').trim();
   let result = '';
   for (const character of flat) {
     if (!hasUnsafeCharacters(character)) result += character === '`' ? "'" : character;
   }
-  return result.length > MAX_INLINE_LENGTH ? `${result.slice(0, MAX_INLINE_LENGTH)}…` : result;
+  return result.length > limit ? `${result.slice(0, limit)}…` : result;
 }
 
 function candidateLine(candidate: ScanCandidate): string {

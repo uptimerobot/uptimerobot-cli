@@ -114,7 +114,7 @@ export async function scanScheduled(
     if (kind === undefined) continue;
     const text = await readTextFile(absolute, limits.maxFileBytes);
     if (text === undefined) continue;
-    findings.push(...scanFile(kind, path, text));
+    findings.push(...scanFile(kind, path, text).map(boundValue));
   }
 
   return findings.sort(
@@ -124,6 +124,11 @@ export async function scanScheduled(
       compare(left.value, right.value) ||
       compare(left.kind, right.kind),
   );
+}
+
+/** A schedule is repository text bound for the seed file, so it is one line and at most 200 characters. */
+function boundValue(finding: ScheduledFinding): ScheduledFinding {
+  return { ...finding, value: truncate(collapseWhitespace(finding.value)) };
 }
 
 function scanFile(kind: FileKind, path: string, text: string): readonly ScheduledFinding[] {
@@ -167,7 +172,7 @@ async function collectFiles(
       return;
     }
     for (const entry of [...entries].sort((left, right) => compare(left.name, right.name))) {
-      if (files.length >= limits.maxFiles || entryBudget <= 0) {
+      if (entryBudget <= 0) {
         cut = true;
         return;
       }
@@ -187,6 +192,10 @@ async function collectFiles(
       // Only a file something can classify is worth the budget. Charging every
       // file let a tree of assets exhaust it before the walk reached a crontab.
       if (classifyFile(repoRelativePath(repoRoot, absolute)) === undefined) continue;
+      if (files.length >= limits.maxFiles) {
+        cut = true;
+        return;
+      }
       files.push(absolute);
     }
   };
@@ -574,6 +583,7 @@ const BULLMQ_JOB_NAME = /\badd\s*\(\s*(['"`])([^'"`\n]*)\1/g;
 
 function scanSourcePatterns(path: string, text: string): readonly ScheduledFinding[] {
   const findings: ScheduledFinding[] = [];
+  const lineOf = lineLocator(text);
 
   for (const { kind, pattern, read } of SOURCE_PATTERNS) {
     for (const match of text.matchAll(pattern)) {
@@ -583,7 +593,7 @@ function scanSourcePatterns(path: string, text: string): readonly ScheduledFindi
         detail: buildDetail({
           name: parsed.name ?? (kind === 'bullmq' ? bullmqJobName(text, match.index) : undefined),
         }),
-        evidence: { file: path, line: lineAt(text, match.index) },
+        evidence: { file: path, line: lineOf(match.index) },
         kind,
         value: parsed.value,
       });
@@ -637,13 +647,14 @@ function scanNestSchedule(path: string, text: string): readonly ScheduledFinding
   if (!text.includes('@nestjs/schedule')) return [];
 
   const findings: ScheduledFinding[] = [];
+  const lineOf = lineLocator(text);
   for (const match of text.matchAll(NEST_SCHEDULE_DECORATOR)) {
     const value = nestScheduleValue(match[1] ?? '', match[2] ?? '');
     if (value === undefined || isCommentedOut(text, match.index)) continue;
     const rest = text.slice(match.index + match[0].length);
     findings.push({
       detail: buildDetail({ name: NEST_METHOD_NAME.exec(rest)?.[1] }),
-      evidence: { file: path, line: lineAt(text, match.index) },
+      evidence: { file: path, line: lineOf(match.index) },
       kind: 'nestjs-schedule',
       value,
     });
@@ -743,6 +754,7 @@ function scanCeleryBeatSchedule(path: string, text: string): readonly ScheduledF
 /** `app.add_periodic_task(crontab(hour=7), send_report.s(), name='weekly report')`. */
 function scanCeleryPeriodicTasks(path: string, text: string): readonly ScheduledFinding[] {
   const findings: ScheduledFinding[] = [];
+  const lineOf = lineLocator(text);
   for (const match of text.matchAll(CELERY_PERIODIC_CALL)) {
     const open = match.index + match[0].length - 1;
     const args = readCallArguments(text, open) ?? [];
@@ -753,7 +765,7 @@ function scanCeleryPeriodicTasks(path: string, text: string): readonly Scheduled
         name: keywordArgument(args, 'name'),
         task: args[1],
       }),
-      evidence: { file: path, line: lineAt(text, match.index) },
+      evidence: { file: path, line: lineOf(match.index) },
       kind: 'celery-beat',
       value: schedule,
     });
@@ -891,12 +903,25 @@ function readCallArguments(text: string, open: number): readonly string[] | unde
   return undefined;
 }
 
-function lineAt(text: string, index: number): number {
-  let line = 1;
-  for (let cursor = 0; cursor < index && cursor < text.length; cursor++) {
-    if (text[cursor] === '\n') line++;
+/**
+ * Line numbers for one text, indexed once: a file with thousands of matches
+ * would otherwise be rescanned from the top for every one of them.
+ */
+function lineLocator(text: string): (index: number) => number {
+  const starts = [0];
+  for (let cursor = 0; cursor < text.length; cursor++) {
+    if (text[cursor] === '\n') starts.push(cursor + 1);
   }
-  return line;
+  return (index) => {
+    let low = 0;
+    let high = starts.length - 1;
+    while (low < high) {
+      const middle = (low + high + 1) >> 1;
+      if (starts[middle]! <= index) low = middle;
+      else high = middle - 1;
+    }
+    return low + 1;
+  };
 }
 
 function countCharacter(value: string, character: string): number {
