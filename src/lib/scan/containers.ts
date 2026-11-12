@@ -18,7 +18,7 @@ import { readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import { LineCounter, isMap, isNode, isScalar, isSeq, parseDocument } from 'yaml';
 import type { ScanFinding } from './finding.js';
-import { redactSecrets } from './redact.js';
+import { redactClipped } from './redact.js';
 import { DEFAULT_MAX_FILE_BYTES, compareStrings as compareText } from './support.js';
 
 export type { ScanEvidence } from './finding.js';
@@ -548,12 +548,15 @@ function healthcheckFinding(
   // so a credential in either would be the scan's own leak. Both are clipped
   // before redaction: the URL pattern backtracks on a long path, and nothing
   // past the clip is ever shown.
-  const flat = command.replaceAll(/\s+/g, ' ').trim().slice(0, MAX_REDACTION_TEXT);
+  const flat = command.replaceAll(/\s+/g, ' ').trim();
   return {
-    detail: detailOf({ ...extra, command: truncate(redactSecrets(flat), MAX_DETAIL_TEXT) }),
+    detail: detailOf({
+      ...extra,
+      command: truncate(redactClipped(flat, MAX_REDACTION_TEXT), MAX_DETAIL_TEXT),
+    }),
     evidence: { file, line },
     kind,
-    value: redactSecrets(probe.slice(0, MAX_REDACTION_TEXT)),
+    value: redactClipped(probe, MAX_REDACTION_TEXT),
   };
 }
 

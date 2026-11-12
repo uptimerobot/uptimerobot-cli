@@ -2,7 +2,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LineCounter, isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import type { ScanFinding } from './finding.js';
-import { redactSecrets } from './redact.js';
+import { redactClipped } from './redact.js';
 import {
   DEFAULT_MAX_CANDIDATE_FILES,
   DEFAULT_MAX_FILE_BYTES,
@@ -847,8 +847,7 @@ function buildDetail(
   const detail: Record<string, string> = {};
   for (const [key, value] of Object.entries(parts)) {
     if (value === undefined) continue;
-    const clipped = collapseWhitespace(value).slice(0, MAX_REDACTION_LENGTH);
-    const cleaned = truncate(redactSecrets(clipped));
+    const cleaned = truncate(redactClipped(collapseWhitespace(value), MAX_REDACTION_LENGTH));
     if (cleaned !== '') detail[key] = cleaned;
   }
   return Object.keys(detail).length === 0 ? undefined : detail;

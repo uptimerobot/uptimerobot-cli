@@ -17,9 +17,12 @@ const SECRET_LITERALS: readonly RegExp[] = [
 ];
 const CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]*@/gi;
 const ASSIGNMENT = /(^|[\s"'`])(-{0,2}[A-Za-z][\w.-]*)=("[^"]*"|'[^']*'|`[^`]*`|[^\s"'`]*)/g;
-/** A flag and its value; a following flag is never a value, or `-q --password x` would hide `x`. */
-const FLAG_WITH_VALUE =
-  /(^|\s)(--?[A-Za-z][\w.-]*)(\s+)("[^"]*"|'[^']*'|(?!--?[A-Za-z])[^\s"'`]+)/g;
+/** Every flag, matched without its value so `-q --password x` still visits `--password`. */
+const FLAG = /(^|\s)(--?[A-Za-z][\w.-]*)(?=\s)/g;
+/** The argument after a flag: quoted fragments and bare characters up to the next space. */
+const FLAG_VALUE = /\s+(?:"[^"]*"|'[^']*'|[^\s"'`])+/y;
+/** A `scheme://user:pass` with no `@` reached yet, as the clip leaves it. */
+const CUT_CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*$/i;
 /** `?token=` and `&api_key=` in a URL, where no whitespace or quote precedes the name. */
 const QUERY_PARAMETER = /([?&])([A-Za-z][\w.-]*)=([^&\s"'`#]*)/g;
 const CREDENTIAL_HEADER =
@@ -38,9 +41,7 @@ export function redactSecrets(value: string): string {
   result = result.replace(ASSIGNMENT, (match, prefix: string, name: string) =>
     isSensitiveFieldName(stripLeadingDashes(name)) ? `${prefix}${name}=***` : match,
   );
-  result = result.replace(FLAG_WITH_VALUE, (match, prefix: string, flag: string, gap: string) =>
-    isSensitiveFieldName(stripLeadingDashes(flag)) ? `${prefix}${flag}${gap}***` : match,
-  );
+  result = redactFlagValues(result);
   result = result.replace(QUERY_PARAMETER, (match, prefix: string, name: string) =>
     isSensitiveFieldName(name) ? `${prefix}${name}=***` : match,
   );
@@ -49,6 +50,40 @@ export function redactSecrets(value: string): string {
   return result.replace(OPAQUE_TOKEN, (match, prefix: string, token: string) =>
     /[A-Za-z]/.test(token) && /\d/.test(token) ? `${prefix}***` : match,
   );
+}
+
+/**
+ * Clips to `limit` and then redacts, for text a repository can make
+ * arbitrarily long. A credential the clip cut in half has no `@` or closing
+ * quote left for the patterns to find, so a trailing `scheme://user:pass`
+ * is masked outright: nothing past the clip is shown anyway.
+ */
+export function redactClipped(value: string, limit: number): string {
+  if (value.length <= limit) return redactSecrets(value);
+  return redactSecrets(value.slice(0, limit).replace(CUT_CREDENTIALED_URL, '$1***'));
+}
+
+/**
+ * Masks the argument after every sensitive flag, whatever it looks like:
+ * `--password -hunter2` is a dash-led value, not a valueless flag followed
+ * by another. Flags are found one at a time so a valueless `-q` never
+ * swallows the sensitive flag after it.
+ */
+function redactFlagValues(value: string): string {
+  let result = '';
+  let cursor = 0;
+  for (const match of value.matchAll(FLAG)) {
+    const flag = match[2]!;
+    if (!isSensitiveFieldName(stripLeadingDashes(flag))) continue;
+    const start = (match.index ?? 0) + match[1]!.length;
+    FLAG_VALUE.lastIndex = start + flag.length;
+    const argument = FLAG_VALUE.exec(value);
+    if (argument === null || argument.index < cursor) continue;
+    const gap = argument[0].match(/^\s+/)![0];
+    result += `${value.slice(cursor, start)}${flag}${gap}***`;
+    cursor = FLAG_VALUE.lastIndex;
+  }
+  return result + value.slice(cursor);
 }
 
 function stripLeadingDashes(value: string): string {

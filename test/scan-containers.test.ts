@@ -531,3 +531,17 @@ describe('healthcheck findings never carry a credential', () => {
     expect(JSON.stringify(finding)).not.toContain('abc123def');
   });
 });
+
+describe('a credential the clip cuts in half never leaks', () => {
+  it('masks a userinfo whose password runs past the redaction window', async () => {
+    const password = 'p'.repeat(3000);
+    const root = await temporaryRepo({
+      Dockerfile: `FROM node\nHEALTHCHECK CMD curl -f http://admin:${password}@localhost:3000/health\n`,
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(JSON.stringify(finding)).not.toContain('ppp');
+    expect(finding?.value).toBe('http://***');
+  });
+});
