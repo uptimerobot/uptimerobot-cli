@@ -17,10 +17,10 @@ may change in minor releases.
   plants a managed block in `AGENTS.md` for the detected or chosen agent
   (`--target`), and opens the agent on the scan. Flags: `--target`,
   `--no-agent`, `--no-launch`, `--no-third-party`, `--max-monitors`, `--yes`,
-  `--clean`, `--json`. New error codes `TARGET_REQUIRED`,
-  `SEED_CONTEXT_EXISTS`, `SEED_CONTEXT_WRITE_FAILED`, `SETUP_GUIDE_EXISTS`,
-  `SETUP_GUIDE_WRITE_FAILED`, `AGENTS_BLOCK_DAMAGED` and `AGENTS_WRITE_FAILED`
-  (all exit 1).
+  `--clean`, `--json`. New error codes `TARGET_REQUIRED` (exit 2) and, each
+  exit 1, `SEED_CONTEXT_EXISTS`, `SEED_CONTEXT_WRITE_FAILED`,
+  `SETUP_GUIDE_EXISTS`, `SETUP_GUIDE_WRITE_FAILED`, `AGENTS_BLOCK_DAMAGED` and
+  `AGENTS_WRITE_FAILED`.
 - `uptimerobot scan [path]` reports the endpoints, scheduled jobs and
   container health probes a repository declares, as a Markdown seed context
   or with `--json`. It reads files only: no network, no credential store.

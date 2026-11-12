@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
-import { join, relative, resolve } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import type { AgentTarget } from '../agent-targets.js';
 import type { CliInvocation } from './cli-invocation.js';
 import { formatInvocation } from './cli-invocation.js';
@@ -398,7 +398,8 @@ function locateBlock(content: Buffer): BlockLocation | undefined {
  *
  * A symlinked AGENTS.md (commonly `AGENTS.md -> CLAUDE.md`) is written through:
  * the rename lands on the link's target, so the link survives and the file
- * the user actually edits gets the block.
+ * the user actually edits gets the block. A link leaving the project is
+ * refused: a committed link must not let a repository pick the file.
  */
 async function writeAtomically(
   root: string,
@@ -407,7 +408,16 @@ async function writeAtomically(
   original: Buffer | undefined,
   fileSystem: PlantFileSystem,
 ): Promise<void> {
-  const target = await realpath(path).catch(() => path);
+  const resolved = await realpath(path).catch(() => undefined);
+  const target = resolved ?? path;
+  const canonicalRoot = await realpath(root).catch(() => root);
+  if (resolved !== undefined && !resolved.startsWith(canonicalRoot + sep)) {
+    throw new SkillsInstallError(
+      'AGENTS_WRITE_FAILED',
+      `${path} is a symbolic link to ${target}, outside the project. Replace it with a regular file or a link inside the project, then run the command again.`,
+      path,
+    );
+  }
   const temporary = projectFilePath(
     root,
     `${AGENTS_FILE_NAME}.uptimerobot-${randomBytes(6).toString('hex')}.tmp`,

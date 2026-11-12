@@ -1,4 +1,4 @@
-import { access, lstat, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, lstat, open, readFile, rm } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Flags } from '@oclif/core';
@@ -580,7 +580,7 @@ Precedence:
     if (original === file.rendered) return { outcome: 'unchanged', path: file.path };
 
     try {
-      await writeFile(file.path, file.rendered);
+      await writeRegularFile(file.path, file.rendered, original !== undefined);
     } catch (error) {
       return this.fail(
         {
@@ -808,6 +808,25 @@ async function canWriteSeed(seedPath: string, directory: string): Promise<boolea
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Writes without following a link, so a symlink swapped in after the check
+ * above cannot redirect the write: a new file is created exclusively, an
+ * existing one is opened with O_NOFOLLOW where the platform has it.
+ */
+async function writeRegularFile(path: string, content: string, exists: boolean): Promise<void> {
+  const noFollow = constants.O_NOFOLLOW ?? 0;
+  const flags = exists
+    ? constants.O_WRONLY | constants.O_TRUNC | noFollow
+    : constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL;
+  const handle = await open(path, flags, 0o644);
+  try {
+    if (!(await handle.stat()).isFile()) throw new Error('not a regular file');
+    await handle.writeFile(content);
+  } finally {
+    await handle.close();
   }
 }
 

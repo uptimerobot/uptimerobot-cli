@@ -503,6 +503,18 @@ describe('scanContainers — caps', () => {
 });
 
 describe('healthcheck findings never carry a credential', () => {
+  it('bounds the probe and the command of an oversize healthcheck before redacting', async () => {
+    const path = 'a'.repeat(60_000);
+    const root = await temporaryRepo({
+      Dockerfile: `FROM node\nHEALTHCHECK CMD curl -f http://localhost:3000/${path}\n`,
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value.length).toBeLessThanOrEqual(2001);
+    expect(finding?.detail?.command?.length).toBeLessThanOrEqual(200);
+  });
+
   it('redacts userinfo and sensitive query parameters in the probe and the command', async () => {
     const root = await temporaryRepo({
       Dockerfile:

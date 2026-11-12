@@ -64,6 +64,8 @@ const SKIPPED_DIRECTORIES = new Set(['__pycache__', 'build', 'dist', 'node_modul
 
 /** Longest raw command echoed back through `detail`. */
 const MAX_DETAIL_TEXT = 200;
+/** Longest text handed to redaction; well past the visible clip so a straddling credential is still caught. */
+const MAX_REDACTION_TEXT = 2000;
 
 const DOTENV_PATTERN = /^\.env(\..*)?$|\.env$/i;
 const COMPOSE_PATTERN = /^(docker-)?compose(\..+)?\.ya?ml$/i;
@@ -543,15 +545,15 @@ function healthcheckFinding(
   const probe = probeUrl(command);
   if (probe === undefined) return undefined;
   // The probe and the command are copied into a file at the repository root,
-  // so a credential in either would be the scan's own leak.
+  // so a credential in either would be the scan's own leak. Both are clipped
+  // before redaction: the URL pattern backtracks on a long path, and nothing
+  // past the clip is ever shown.
+  const flat = command.replaceAll(/\s+/g, ' ').trim().slice(0, MAX_REDACTION_TEXT);
   return {
-    detail: detailOf({
-      ...extra,
-      command: truncate(redactSecrets(command.replaceAll(/\s+/g, ' ').trim()), MAX_DETAIL_TEXT),
-    }),
+    detail: detailOf({ ...extra, command: truncate(redactSecrets(flat), MAX_DETAIL_TEXT) }),
     evidence: { file, line },
     kind,
-    value: redactSecrets(probe),
+    value: redactSecrets(probe.slice(0, MAX_REDACTION_TEXT)),
   };
 }
 

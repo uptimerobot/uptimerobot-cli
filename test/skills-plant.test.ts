@@ -168,6 +168,20 @@ describe('skills install against a project directory', () => {
     expect(written).toContain(BLOCK_BEGIN_PREFIX);
   });
 
+  it('refuses a symlinked AGENTS.md whose target lies outside the project', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'uptimerobot-cli-outside-'));
+    const external = join(outside, 'notes.md');
+    await writeFile(external, '# Elsewhere\n');
+    await symlink(external, agentsFile);
+    try {
+      await expect(install()).rejects.toMatchObject({ code: 'AGENTS_WRITE_FAILED' });
+      expect(await readFile(external, 'utf8')).toBe('# Elsewhere\n');
+      expect((await lstat(agentsFile)).isSymbolicLink()).toBe(true);
+    } finally {
+      await rm(outside, { force: true, recursive: true });
+    }
+  });
+
   it('creates AGENTS.md at the project root when none exists', async () => {
     const report = await install();
 

@@ -17,7 +17,9 @@ const SECRET_LITERALS: readonly RegExp[] = [
 ];
 const CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]*@/gi;
 const ASSIGNMENT = /(^|[\s"'`])(-{0,2}[A-Za-z][\w.-]*)=("[^"]*"|'[^']*'|`[^`]*`|[^\s"'`]*)/g;
-const FLAG_WITH_VALUE = /(^|\s)(--?[A-Za-z][\w.-]*)(\s+)("[^"]*"|'[^']*'|[^\s"'`]+)/g;
+/** A flag and its value; a following flag is never a value, or `-q --password x` would hide `x`. */
+const FLAG_WITH_VALUE =
+  /(^|\s)(--?[A-Za-z][\w.-]*)(\s+)("[^"]*"|'[^']*'|(?!--?[A-Za-z])[^\s"'`]+)/g;
 /** `?token=` and `&api_key=` in a URL, where no whitespace or quote precedes the name. */
 const QUERY_PARAMETER = /([?&])([A-Za-z][\w.-]*)=([^&\s"'`#]*)/g;
 const CREDENTIAL_HEADER =
