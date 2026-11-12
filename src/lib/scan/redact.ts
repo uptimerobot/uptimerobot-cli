@@ -19,8 +19,11 @@ const CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]*@/gi;
 const ASSIGNMENT = /(^|[\s"'`])(-{0,2}[A-Za-z][\w.-]*)=("[^"]*"|'[^']*'|`[^`]*`|[^\s"'`]*)/g;
 /** Every flag, matched without its value so `-q --password x` still visits `--password`. */
 const FLAG = /(^|\s)(--?[A-Za-z][\w.-]*)(?=\s)/g;
-/** The argument after a flag: quoted fragments and bare characters up to the next space. */
-const FLAG_VALUE = /\s+(?:"[^"]*"|'[^']*'|[^\s"'`])+/y;
+/**
+ * The argument after a flag: quoted fragments (with `\"` escapes inside
+ * double quotes), escaped characters and bare characters up to the next space.
+ */
+const FLAG_VALUE = /\s+(?:"(?:\\.|[^"\\])*"|'[^']*'|\\.|[^\s"'`\\])+/y;
 /** A `scheme://user:pass` with no `@` reached yet, as the clip leaves it. */
 const CUT_CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*$/i;
 /** `?token=` and `&api_key=` in a URL, where no whitespace or quote precedes the name. */

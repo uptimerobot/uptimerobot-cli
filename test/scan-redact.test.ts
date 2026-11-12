@@ -20,6 +20,15 @@ describe('redactSecrets', () => {
     );
     expect(redactSecrets(`curl --token 'abc'"d e"f http://h/`)).toBe('curl --token *** http://h/');
   });
+
+  it('redacts a quoted value whose quote is escaped inside it', () => {
+    expect(redactSecrets('wget --password "alpha\\"hunter2" http://localhost:3000/health')).toBe(
+      'wget --password *** http://localhost:3000/health',
+    );
+    expect(redactSecrets('wget --password al\\ pha http://h/')).toBe(
+      'wget --password *** http://h/',
+    );
+  });
 });
 
 describe('redactClipped', () => {
