@@ -295,6 +295,11 @@ Precedence:
       seedBeginPrefix: SEED_BEGIN_PREFIX,
       seedWritable: await canWriteSeed(seedPath, root),
     });
+    // The guide is checked before anything is created on the account, as the
+    // seed file was through the offer decision: a foreign guide found after the
+    // offer would end the run with monitors made and no guide to use them.
+    const setupGuideFile = this.setupGuideFile(root, invocation, flags['max-monitors']);
+    if (decision === 'offer') await this.ownedMarkedFile(setupGuideFile);
     const thirdParty =
       decision === 'offer'
         ? await offerThirdParty({ context, access, mode, invocation, io: this })
@@ -306,7 +311,7 @@ Precedence:
     // Written next to the scan and on the same terms, so the two halves of the
     // handoff always arrive together. Unconditional, like the scan: a --no-agent
     // run still leaves the guide for whichever agent the user opens later.
-    const setupGuide = await this.writeSetupGuide(root, invocation, flags['max-monitors']);
+    const setupGuide = await this.writeMarkedFile(setupGuideFile);
 
     // A resolved target means agent setup was asked for; --no-agent leaves it
     // undefined, and that is the only difference between the two paths.
@@ -543,18 +548,14 @@ Precedence:
   }
 
   /** The guide, written on the same terms as the scan and next to it. */
-  private writeSetupGuide(
-    root: string,
-    invocation: CliInvocation,
-    maxMonitors: number,
-  ): Promise<MarkedFileOutput> {
-    return this.writeMarkedFile({
+  private setupGuideFile(root: string, invocation: CliInvocation, maxMonitors: number): MarkedFile {
+    return {
       beginPrefix: SETUP_BEGIN_PREFIX,
       existsCode: 'SETUP_GUIDE_EXISTS',
       path: join(root, SETUP_GUIDE_FILE_NAME),
       rendered: this.renderSetupGuideFile(invocation, maxMonitors),
       writeCode: 'SETUP_GUIDE_WRITE_FAILED',
-    });
+    };
   }
 
   /**
@@ -563,6 +564,30 @@ Precedence:
    * a failure names which one it was.
    */
   private async writeMarkedFile(file: MarkedFile): Promise<MarkedFileOutput> {
+    const original = await this.ownedMarkedFile(file);
+    if (original === file.rendered) return { outcome: 'unchanged', path: file.path };
+
+    try {
+      await writeRegularFile(file.path, file.rendered, original !== undefined);
+    } catch (error) {
+      return this.fail(
+        {
+          code: file.writeCode,
+          message: `Could not write ${file.path}: ${describe(error)}`,
+          path: file.path,
+        },
+        1,
+      );
+    }
+    return { outcome: original === undefined ? 'created' : 'updated', path: file.path };
+  }
+
+  /**
+   * The checks a marked file must pass before it is written, run early enough
+   * that a refusal costs nothing: a link is never followed, and a file without
+   * our marker is never clobbered. Returns the current contents, if any.
+   */
+  private async ownedMarkedFile(file: MarkedFile): Promise<string | undefined> {
     // A repository can commit the path as a link to anywhere; following it
     // would create or overwrite a file the user never pointed at.
     if (await isSymbolicLink(file.path)) {
@@ -586,21 +611,7 @@ Precedence:
         1,
       );
     }
-    if (original === file.rendered) return { outcome: 'unchanged', path: file.path };
-
-    try {
-      await writeRegularFile(file.path, file.rendered, original !== undefined);
-    } catch (error) {
-      return this.fail(
-        {
-          code: file.writeCode,
-          message: `Could not write ${file.path}: ${describe(error)}`,
-          path: file.path,
-        },
-        1,
-      );
-    }
-    return { outcome: original === undefined ? 'created' : 'updated', path: file.path };
+    return original;
   }
 
   /**

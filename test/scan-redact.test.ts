@@ -91,3 +91,25 @@ describe('redactSecrets, round three', () => {
     expect(redactSecrets(`tool -p'a b'c run`)).toBe('tool -p*** run');
   });
 });
+
+describe('redactSecrets, round four', () => {
+  it('masks the whole assignment value, quoted fragments and escapes included', () => {
+    expect(redactSecrets(`TOKEN='abc'"d e"f curl http://h/`)).toBe('TOKEN=*** curl http://h/');
+    expect(redactSecrets('API_KEY="al\\"pha" run')).toBe('API_KEY=*** run');
+  });
+
+  it('masks the equals form of a credential flag like its separated form', () => {
+    expect(redactSecrets('curl --user=admin:hunter2 http://h/')).toBe('curl --user=*** http://h/');
+    expect(redactSecrets('tool --pass=x --pw=y --login=z --auth=w')).toBe(
+      'tool --pass=*** --pw=*** --login=*** --auth=***',
+    );
+    expect(redactSecrets('USER=root id')).toBe('USER=root id');
+  });
+
+  it('masks a quoted credential whose closing quote the clip removed', () => {
+    const clipped = redactClipped(`tool --password "${'p'.repeat(3000)}"`, 2000);
+    expect(clipped).not.toContain('ppp');
+    expect(clipped).toContain('tool --password ***');
+    expect(redactClipped(`echo "${'a'.repeat(3000)}"`, 2000)).toContain('aaa');
+  });
+});

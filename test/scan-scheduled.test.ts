@@ -836,3 +836,20 @@ describe('scanScheduled — round two', () => {
     for (const finding of findings) expect(finding.value.length).toBeLessThanOrEqual(201);
   });
 });
+
+describe('scanScheduled — depth limit', () => {
+  it('reports a scan the depth limit cut short as truncated', async () => {
+    const root = await makeRepo({ 'a/b/crontab': '0 3 * * * node deep.js\n' });
+    let truncated = false;
+
+    const findings = await scanScheduled(root, {
+      maxDepth: 1,
+      onTruncated: () => {
+        truncated = true;
+      },
+    });
+
+    expect(findings).toEqual([]);
+    expect(truncated).toBe(true);
+  });
+});

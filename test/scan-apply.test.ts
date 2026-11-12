@@ -849,34 +849,72 @@ describe('uptimerobot scan --apply', () => {
     expect(result.stdout).toContain('uptimerobot init');
   });
 
-  it('asks a human once and creates on yes, creates nothing on no', async () => {
+  it.runIf(process.platform === 'darwin' || process.platform === 'linux')(
+    'asks a human once and creates on yes, creates nothing on no',
+    async () => {
+      const stub = await startStub();
+      const root = await writeRepository(REPOSITORY);
+      // The suite itself may run inside an agent; the override makes this a human run.
+      const interactiveEnv = {
+        UPTIMEROBOT_AGENT: '0',
+        UPTIMEROBOT_API_KEY: 'u123-secret',
+        UPTIMEROBOT_DEV_API_URL: stub.url,
+      };
+
+      const declined = await runInteractiveCli(
+        ['scan', root, '--apply'],
+        [{ waitFor: 'Create 3 third-party services. Continue? [y/N]', input: 'n\n' }],
+        interactiveEnv,
+      );
+      expect(declined.exitCode).toBe(2);
+      expect(declined.output).toContain('Nothing was created.');
+      expect(declined.output).toContain('the confirmation was declined');
+      expect(posts(stub)).toEqual([]);
+
+      const accepted = await runInteractiveCli(
+        ['scan', root, '--apply'],
+        [{ waitFor: 'Create 3 third-party services. Continue? [y/N]', input: 'y\n' }],
+        interactiveEnv,
+      );
+      expect(accepted.exitCode).toBe(0);
+      expect(accepted.output.split('| Provider | Evidence |')).toHaveLength(2);
+      expect(accepted.output).toContain('Created: Resend (monitor 5000)');
+      expect(posts(stub)).toHaveLength(3);
+    },
+    30_000,
+  );
+});
+
+describe('uptimerobot scan --apply reports a cut-short scan', () => {
+  const DEEP = { ...REPOSITORY, 'a/b/c/d/e/f/g/h/i/Dockerfile': 'FROM x\nEXPOSE 80\n' };
+
+  it('carries the truncation flag in --json output', async () => {
     const stub = await startStub();
-    const root = await writeRepository(REPOSITORY);
-    // The suite itself may run inside an agent; the override makes this a human run.
-    const interactiveEnv = {
-      UPTIMEROBOT_AGENT: '0',
-      UPTIMEROBOT_API_KEY: 'u123-secret',
-      UPTIMEROBOT_DEV_API_URL: stub.url,
-    };
+    const root = await writeRepository(DEEP);
 
-    const declined = await runInteractiveCli(
-      ['scan', root, '--apply'],
-      [{ waitFor: 'Create 3 third-party services. Continue? [y/N]', input: 'n\n' }],
-      interactiveEnv,
-    );
-    expect(declined.exitCode).toBe(2);
-    expect(declined.output).toContain('Nothing was created.');
-    expect(declined.output).toContain('the confirmation was declined');
-    expect(posts(stub)).toEqual([]);
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
 
-    const accepted = await runInteractiveCli(
-      ['scan', root, '--apply'],
-      [{ waitFor: 'Create 3 third-party services. Continue? [y/N]', input: 'y\n' }],
-      interactiveEnv,
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ truncated: true });
+    const complete = await runCli(
+      ['scan', await writeRepository(REPOSITORY), '--apply', '--confirm', '--json'],
+      env(stub),
     );
-    expect(accepted.exitCode).toBe(0);
-    expect(accepted.output.split('| Provider | Evidence |')).toHaveLength(2);
-    expect(accepted.output).toContain('Created: Resend (monitor 5000)');
-    expect(posts(stub)).toHaveLength(3);
-  }, 30_000);
+    expect(JSON.parse(complete.stdout)).toMatchObject({ truncated: false });
+  });
+
+  it('warns in readable output, even when there is nothing to create', async () => {
+    const stub = await startStub({ catalog: {} });
+    const root = await writeRepository(DEEP);
+
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm'],
+      env(stub, { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+
+    expect(result.stdout).toContain('Nothing to create.');
+    expect(result.stdout).toContain(
+      'The scan stopped early, so this proposal may be missing providers.',
+    );
+  });
 });

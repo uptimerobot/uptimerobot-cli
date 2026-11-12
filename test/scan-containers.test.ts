@@ -616,3 +616,60 @@ describe('a destination keeps its host for classification', () => {
     expect(finding?.detail?.destination).toBe(destination);
   });
 });
+
+describe('scanContainers — round three', () => {
+  it('keeps a bracketed IPv6 authority in a healthcheck probe', async () => {
+    const root = await temporaryRepo({
+      Dockerfile: 'FROM x\nHEALTHCHECK CMD curl http://[::1]:8080/health\n',
+      'app/Dockerfile': 'FROM x\nHEALTHCHECK CMD curl http://host:8080/health\n',
+    });
+
+    const findings = await scanContainers(root);
+
+    expect(findingsIn(findings, 'Dockerfile')[0]?.value).toBe('http://[::1]:8080/health');
+    expect(findingsIn(findings, 'app/Dockerfile')[0]?.value).toBe('http://host:8080/health');
+  });
+
+  it('reports a scan the depth limit cut short as truncated', async () => {
+    const root = await temporaryRepo({ 'a/b/Dockerfile': 'FROM x\nEXPOSE 80\n' });
+    let truncated = false;
+
+    const findings = await scanContainers(root, {
+      maxDepth: 1,
+      onTruncated: () => {
+        truncated = true;
+      },
+    });
+
+    expect(findings).toEqual([]);
+    expect(truncated).toBe(true);
+  });
+
+  it('never reads a dotenv file through a symlink named like a Dockerfile', async () => {
+    const root = await temporaryRepo({ '.env': 'EXPOSE 80\n' });
+    await symlink(join(root, '.env'), join(root, 'Dockerfile'));
+
+    const findings = await scanContainers(root);
+
+    expect(findings).toEqual([]);
+    expect(readPaths.some((path) => path.endsWith('.env'))).toBe(false);
+  });
+
+  it('keeps a credential with a space inside one exec-array argument out of the command', async () => {
+    const root = await temporaryRepo({
+      'docker-compose.yml': [
+        'services:',
+        '  api:',
+        '    healthcheck:',
+        '      test: ["CMD", "curl", "-u", "admin:alpha hunter2", "http://localhost:3000/health"]',
+        '',
+      ].join('\n'),
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).toBe('http://localhost:3000/health');
+    expect(finding?.detail?.command).not.toContain('hunter2');
+    expect(finding?.detail?.command).not.toContain('alpha');
+  });
+});

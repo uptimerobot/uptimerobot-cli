@@ -17,7 +17,9 @@ const SECRET_LITERALS: readonly RegExp[] = [
 ];
 /** `scheme://user:pass@`, consumed up to the LAST `@` before whitespace: a password may hold `@` or `/`. */
 const CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:[^\s]*@/gi;
-const ASSIGNMENT = /(^|[\s"'`])(-{0,2}[A-Za-z][\w.-]*)=("[^"]*"|'[^']*'|`[^`]*`|[^\s"'`]*)/g;
+/** `NAME=value`: the value is the whole shell word, quoted fragments and escapes included. */
+const ASSIGNMENT =
+  /(^|[\s"'`])(-{0,2}[A-Za-z][\w.-]*)=((?:"(?:\\.|[^"\\])*"|'[^']*'|`[^`]*`|\\.|[^\s"'`\\])*)/g;
 /** Every flag, matched without its value so `-q --password x` still visits `--password`. */
 const FLAG = /(^|\s)(--?[A-Za-z][\w.-]*)(?=\s|$)/g;
 /**
@@ -49,7 +51,7 @@ const OPAQUE_PATH_SEGMENT = /\/([A-Za-z0-9_-]{24,})(?=$|[/?#\s"'`])/g;
 export function redactSecrets(value: string): string {
   let result = value.replace(CREDENTIALED_URL, '$1***@');
   result = result.replace(ASSIGNMENT, (match, prefix: string, name: string) =>
-    isSensitiveFieldName(stripLeadingDashes(name)) ? `${prefix}${name}=***` : match,
+    isCredentialAssignment(name) ? `${prefix}${name}=***` : match,
   );
   result = redactFlagValues(result);
   result = result.replace(QUERY_PARAMETER, (match, prefix: string, name: string) =>
@@ -73,7 +75,27 @@ export function redactSecrets(value: string): string {
  */
 export function redactClipped(value: string, limit: number): string {
   if (value.length <= limit) return redactSecrets(value);
-  return redactSecrets(value.slice(0, limit).replace(CUT_CREDENTIALED_URL, '$1***'));
+  return redactSecrets(
+    closeOpenQuote(value.slice(0, limit)).replace(CUT_CREDENTIALED_URL, '$1***'),
+  );
+}
+
+/**
+ * A clip can land inside a quoted argument, leaving it with no closing quote for
+ * the flag patterns to find. Closing it restores the word, and the mask falls
+ * on whatever the quote held.
+ */
+function closeOpenQuote(text: string): string {
+  let open: string | undefined;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index]!;
+    if (open === undefined) {
+      if (character === '\\') index += 1;
+      else if (character === '"' || character === "'" || character === '`') open = character;
+    } else if (character === '\\' && open === '"') index += 1;
+    else if (character === open) open = undefined;
+  }
+  return open === undefined ? text : text + open;
 }
 
 /**
@@ -99,6 +121,11 @@ function redactFlagValues(input: string): string {
     cursor = FLAG_VALUE.lastIndex;
   }
   return result + value.slice(cursor);
+}
+
+/** `--user=x` masks like `--user x`; a bare `USER=x` is an environment variable, not a flag. */
+function isCredentialAssignment(name: string): boolean {
+  return name.startsWith('-') ? isCredentialFlag(name) : isSensitiveFieldName(name);
 }
 
 function isCredentialFlag(flag: string): boolean {

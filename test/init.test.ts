@@ -1332,5 +1332,26 @@ describe('init', () => {
         restoreTerminal();
       }
     });
+
+    it('refuses a foreign setup guide before any service is created', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      await writeFile(join(repository, SETUP_GUIDE_FILE), '# my own guide\n');
+      const api = stubApi();
+      const { requestConfirmation } = await import('../src/lib/invocation.js');
+      vi.mocked(requestConfirmation).mockResolvedValue(true);
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+        await expect(
+          Init.run(['--no-launch', '--no-agent'], { root: projectRoot }),
+        ).rejects.toMatchObject({ cliError: { code: 'SETUP_GUIDE_EXISTS' } });
+        expect(catalogCalls(api.paths)).toEqual([]);
+        expect(api.posts).toEqual([]);
+        expect(vi.mocked(requestConfirmation)).not.toHaveBeenCalled();
+      } finally {
+        restoreTerminal();
+      }
+    });
   });
 });
