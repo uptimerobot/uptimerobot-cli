@@ -1,6 +1,4 @@
 import { Args, Command, Flags } from '@oclif/core';
-import { createApiClient } from '../api/client.js';
-import { exitCodeFor, normalizeApiError } from '../api/errors.js';
 import { bulkFailure, bulkFailureError, bulkFailureExitCode } from '../output/bulk-failure.js';
 import { columnsFor, parseColumnsFlag } from '../output/columns.js';
 import { normalizeResult } from '../output/normalize-result.js';
@@ -11,7 +9,7 @@ import { resolveFormat } from '../output/resolve-format.js';
 import { parseInput } from '../runtime/parse-input.js';
 import type { OperationInput } from '../runtime/types.js';
 import { InputValidationError, validateInput } from '../runtime/validate-input.js';
-import { AuthenticationError, resolveApiKey } from './auth.js';
+import { authenticatedClient, networkFailure, requireOk } from './api-transport.js';
 import { BaseCommand } from './base-command.js';
 import { flagName } from './flag-name.js';
 import { curatedCommandDescription } from './help-curation.js';
@@ -276,7 +274,7 @@ Canonical command: ${options.canonicalCommand}`
       }
 
       if (operation.destructive && flags.confirm !== true) {
-        const confirmed = await requestConfirmation(operation.summary, mode);
+        const confirmed = await requestConfirmation(`${operation.summary}. Continue?`, mode);
         if (!confirmed) {
           const error = {
             code: 'CONFIRMATION_REQUIRED',
@@ -287,24 +285,13 @@ Canonical command: ${options.canonicalCommand}`
         }
       }
 
-      let apiKey: string;
-      try {
-        apiKey = await resolveApiKey(flags['api-key'], apiUrl.toString());
-      } catch (error) {
-        if (error instanceof AuthenticationError) {
-          return this.fail({ code: error.code, message: error.message }, error.exitCode);
-        }
-        throw error;
-      }
-
-      const url = buildUrl(operation, input, apiUrl);
-      const client = createApiClient({
-        apiKey,
+      const client = await authenticatedClient({
+        apiKey: flags['api-key'],
         apiUrl,
-        environment: ci ? 'ci' : 'local',
         mode,
         version: this.config.pjson.version,
       });
+      const url = buildUrl(operation, input, apiUrl);
 
       let result: Awaited<ReturnType<typeof client.request>>;
       try {
@@ -318,20 +305,10 @@ Canonical command: ${options.canonicalCommand}`
           client.request(url, { body, headers, method: operation.method }),
         );
       } catch (error) {
-        return this.fail(
-          {
-            code: 'NETWORK_ERROR',
-            message: error instanceof Error ? error.message : String(error),
-          },
-          1,
-        );
+        throw networkFailure(error);
       }
 
-      const { payload, response } = result;
-      if (!response.ok) {
-        const apiError = normalizeApiError(response.status, payload);
-        return this.fail(apiError, exitCodeFor(response.status));
-      }
+      const payload = requireOk(result);
 
       // --raw is the untouched API response, so derived fields stay out of it.
       const normalized = flags.raw === true ? payload : withDerivedFields(normalizeResult(payload));

@@ -23,7 +23,7 @@ export default class SkillsInstall extends BaseCommand {
       );
     }
 
-    const confirmed = await requestConfirmation(`Run ${SKILLS_INSTALL_COMMAND}`, mode);
+    const confirmed = await requestConfirmation(`Run ${SKILLS_INSTALL_COMMAND}. Continue?`, mode);
     if (!confirmed) {
       this.logToStderr('Installation cancelled.');
       return;

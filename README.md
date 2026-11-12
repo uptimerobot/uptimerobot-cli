@@ -159,6 +159,20 @@ uptimerobot monitors third-party-service incidents activity-log 800123456 123456
 
 `uptimerobot monitors delete <id>` stops tracking a service. A third-party service cannot be paused.
 
+## Scan
+
+Large providers such as AWS have hundreds of components. `scan 3rd-party` turns a description of what you use into the matching components and monitors them:
+
+```sh
+uptimerobot scan 3rd-party --provider "AWS" --describe "Lambda and DynamoDB in Oregon"
+uptimerobot scan 3rd-party --describe "free workers on cloudflare"
+uptimerobot scan 3rd-party --provider "AWS" --region us-west-2 --dry-run --json
+```
+
+`--dry-run` prints the components it found and changes nothing. Without it the command asks before creating a monitor, adding to your existing monitor for the provider, or replacing its all-components scope; `--confirm` skips the question, and a run without a terminal needs `--confirm` to apply.
+
+The description is sent to UptimeRobot's catalog search and nothing else: the command reads no files or cloud accounts. Use the full service names the provider's status page uses, `Simple Storage Service` not `S3`, because the search knows no abbreviations.
+
 ## Heartbeat monitors
 
 A heartbeat monitor stays silent until something pings it. The API returns the address that job should call as `heartbeatUrl`, and normalized output repeats it as `pingUrl`. Both, and the `url` token they are built from, are secrets, so all three are redacted unless you ask for them:
