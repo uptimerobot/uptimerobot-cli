@@ -64,6 +64,7 @@ may change in minor releases.
 
 ### Fixed
 
+- `uptimerobot init` refuses an outdated setup guide it cannot write before the third-party offer, so a run never ends with services created and no guide; a clipped quoted credential that ends in a backslash is still masked; a compose `CMD-SHELL` healthcheck script is kept as written, so a quoted credential inside it is masked whole.
 - A container health probe's command and URL are redacted like a cron command:
   `user:password@` and a `?token=` style query parameter no longer reach
   `uptimerobot-scan.md`.

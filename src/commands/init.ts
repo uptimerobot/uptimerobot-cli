@@ -1,6 +1,6 @@
 import { access, lstat, open, readFile, rm } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { Flags } from '@oclif/core';
 import type { CliInvocation } from '../lib/agent-setup/cli-invocation.js';
 import { formatInvocation, resolveCliInvocation } from '../lib/agent-setup/cli-invocation.js';
@@ -610,6 +610,21 @@ Precedence:
         },
         1,
       );
+    }
+    // A write that would fail later is refused now, before anything is created.
+    if (original !== file.rendered) {
+      try {
+        await access(original === undefined ? dirname(file.path) : file.path, constants.W_OK);
+      } catch {
+        return this.fail(
+          {
+            code: file.writeCode,
+            message: `${file.path} cannot be written. Make it writable, then run the command again.`,
+            path: file.path,
+          },
+          1,
+        );
+      }
     }
     return original;
   }
