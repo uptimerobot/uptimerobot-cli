@@ -62,8 +62,6 @@ export interface Scoping {
   trackedComponents: readonly TrackedComponent[];
   /** The `--only` value that repeats this row exactly: `AWS=248:9208,9108` or `AWS=248:all`. */
   pin?: string;
-  /** True when the row came from a pin, so no search was made and no pin is owed. */
-  pinned?: boolean;
   /** Pinned ids the provider tree does not hold; the run is blocked on any. */
   pinUnknownIds?: readonly number[];
 }
@@ -255,7 +253,8 @@ async function pinnedScoping(
   pin: Pin,
   access: ApiAccess,
 ): Promise<Scoping> {
-  const base = { terms: [], totalLeaves: 0, pinned: true } as const;
+  // No terms: a pinned row made no search, so no pin is owed on the confirm run.
+  const base = { terms: [], totalLeaves: 0 } as const;
   if (pin === 'all') {
     return { ...base, scope: 'whole', scopeReason: 'pinned-whole', trackedComponents: [] };
   }

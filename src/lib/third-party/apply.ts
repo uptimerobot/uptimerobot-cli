@@ -219,11 +219,7 @@ export function unpinnedRow(
   rows: readonly ResolvedCandidate[],
 ): { provider: string; pin: string; whole: string } | undefined {
   const row = rows.find(
-    (item) =>
-      item.status === 'create' &&
-      (item.terms?.length ?? 0) > 0 &&
-      item.pin !== undefined &&
-      !item.pinned,
+    (item) => item.status === 'create' && (item.terms?.length ?? 0) > 0 && item.pin !== undefined,
   );
   if (row === undefined || row.status !== 'create' || row.pin === undefined) return undefined;
   return { provider: row.provider, pin: row.pin, whole: `${row.provider}=${row.catalog.id}:all` };
