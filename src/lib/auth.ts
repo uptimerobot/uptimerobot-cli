@@ -1,6 +1,6 @@
 import type { CredentialBackend, CredentialStore } from './credential-store.js';
 import { credentialStore } from './credential-store.js';
-import { type ApiClient, createApiClient } from '../api/client.js';
+import { type ApiClient, type ApiCommand, createApiClient } from '../api/client.js';
 import { type ExecutionEnvironment, type InvocationMode, isCI } from './invocation.js';
 
 export const PRODUCTION_API_URL = 'https://api.uptimerobot.com/v3';
@@ -149,7 +149,7 @@ export async function resolveApiAccess(options: {
   explicitApiKey: unknown;
   mode: InvocationMode;
   version: string;
-  command?: string;
+  command?: ApiCommand;
 }): Promise<ApiAccess> {
   const apiUrl = resolveApiUrl();
   const apiKey = await resolveApiKey(options.explicitApiKey, apiUrl.toString());

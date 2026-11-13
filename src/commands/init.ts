@@ -37,7 +37,7 @@ import {
   renderOutcome,
   wantsApplyHint,
 } from '../lib/third-party/init-offer.js';
-import { THIRD_PARTY_COMMAND } from '../lib/third-party/apply.js';
+import { THIRD_PARTY_COMMAND } from '../api/client.js';
 import { resolveFormat } from '../output/resolve-format.js';
 
 /** No signup address is published in this repository, so the public one is used. */

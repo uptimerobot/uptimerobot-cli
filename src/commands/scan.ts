@@ -2,6 +2,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Args, Flags } from '@oclif/core';
 import { resolveCliInvocation } from '../lib/agent-setup/cli-invocation.js';
+import { THIRD_PARTY_COMMAND } from '../api/client.js';
 import { ApiFailure } from '../api/errors.js';
 import {
   type ApiAccess,
@@ -30,7 +31,6 @@ import {
   malformedOnly,
   parseOnly,
   runApply,
-  THIRD_PARTY_COMMAND,
   unknownSelections,
   unresolvedError,
 } from '../lib/third-party/apply.js';

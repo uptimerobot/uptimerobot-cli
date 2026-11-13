@@ -998,7 +998,7 @@ describe('init', () => {
         });
         expect(logged.filter((line) => line.startsWith('| Provider |'))).toHaveLength(1);
         expect(api.commands.length).toBeGreaterThan(0);
-        expect(api.commands).toEqual(api.commands.map(() => 'scan:3rd-party'));
+        expect(api.commands.every((command) => command === 'scan:3rd-party')).toBe(true);
         expect(vi.mocked(requestConfirmation)).toHaveBeenCalledTimes(1);
         expect(vi.mocked(requestConfirmation).mock.calls[0]?.[0]).toBe(
           'Create 1 third-party service now',

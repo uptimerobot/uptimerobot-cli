@@ -13,9 +13,9 @@ may change in minor releases.
 ### Added
 
 - `uptimerobot scan --apply` and the third-party offer in `uptimerobot init`
-  send `x-uptimerobot-command: scan:3rd-party` on every request they make, so
-  the API can count the services this flow creates. No other command sends the
-  header.
+  tag every request they make with `x-uptimerobot-command: scan:3rd-party`,
+  for server-side usage attribution. The header carries no credential or
+  repository data and other commands do not send it.
 - `uptimerobot init` prepares a repository for a coding agent: it scans the
   working tree, writes `uptimerobot-scan.md` and `uptimerobot-setup.md`,
   plants a managed block in `AGENTS.md` for the detected or chosen agent

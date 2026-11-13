@@ -119,7 +119,7 @@ describe('monitors list', () => {
       },
       stderr: '',
     });
-    expect(observedRequest).not.toHaveProperty('command', expect.any(String));
+    expect(observedRequest.command).toBeUndefined();
   });
 
   it('renders an aligned curated table for a human', async () => {

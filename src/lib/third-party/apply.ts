@@ -442,8 +442,6 @@ export const CREATE_COMMAND = `uptimerobot ${CREATE_SUBCOMMAND}`;
 /** What `formatSummary` templates against when a caller has not resolved one. */
 const BARE_INVOCATION: CliInvocation = { command: 'uptimerobot', source: 'override' };
 export const APPLY_COMMAND = 'scan --apply';
-/** The `x-uptimerobot-command` value the API counts third-party creates under. */
-export const THIRD_PARTY_COMMAND = 'scan:3rd-party';
 
 const LEFTOVER_LABELS: readonly [ResolvedCandidate['status'], string][] = [
   ['already-tracked', 'Already tracked before this run'],
