@@ -220,7 +220,7 @@ describe('scopeProposal', () => {
       status: 'unresolved',
       failure: {
         code: COMPONENT_SEARCH_FAILED,
-        message: expect.stringMatching(/^component search failed: .*network error/),
+        message: expect.stringMatching(/^component search for AWS Lambda failed: .*network error/),
       },
     });
   });

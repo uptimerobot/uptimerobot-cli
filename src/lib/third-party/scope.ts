@@ -46,6 +46,8 @@ export interface Scoping {
   scope: 'components' | 'whole';
   scopeReason?: ScopeReason;
   terms: readonly TermOutcome[];
+  /** Distinct leaves kept across every term, the number the cap is judged on. */
+  totalLeaves: number;
   trackedComponents: readonly TrackedComponent[];
 }
 
@@ -92,6 +94,10 @@ export function keepsLeaf(leaf: Leaf, region: string | null): boolean {
   return region === null || leaf.global || leaf.region === region;
 }
 
+/**
+ * Built by hand until the published contract carries the operation; the step
+ * that refreshes `openapi/openapi.yaml` swaps this for `buildUrl(operations[...])`.
+ */
 function componentsUrl(access: ApiAccess, providerId: number, term: string): URL {
   const base = access.apiUrl.toString().replace(/\/?$/, '/');
   const url = new URL(
@@ -116,23 +122,47 @@ function distinctTerms(
   });
 }
 
-/** Rule 1: scoped only when every term matched and the total is within the cap. */
+/** Scoped only when every term matched and the distinct total is within the cap. */
 export function decideScope(
   terms: readonly TermOutcome[],
   kept: readonly TrackedComponent[],
 ): Scoping {
-  if (terms.length === 0)
-    return { scope: 'whole', scopeReason: 'no-terms', terms, trackedComponents: [] };
-  if (terms.some((item) => item.outcome === 'missed')) {
-    return { scope: 'whole', scopeReason: 'term-missed', terms, trackedComponents: [] };
-  }
-  if (kept.length > MAX_TRACKED_COMPONENTS) {
-    return { scope: 'whole', scopeReason: 'too-many', terms, trackedComponents: [] };
-  }
-  return { scope: 'components', terms, trackedComponents: kept };
+  const whole = (scopeReason: ScopeReason): Scoping => ({
+    scope: 'whole',
+    scopeReason,
+    terms,
+    totalLeaves: kept.length,
+    trackedComponents: [],
+  });
+  if (terms.length === 0) return whole('no-terms');
+  if (terms.some((item) => item.outcome === 'missed')) return whole('term-missed');
+  if (kept.length > MAX_TRACKED_COMPONENTS) return whole('too-many');
+  return { scope: 'components', terms, totalLeaves: kept.length, trackedComponents: kept };
 }
 
 class EndpointUnavailable extends Error {}
+
+/** Which call failed and how, so a log of the run names the term and the status. */
+function componentSearchFailure(
+  term: string,
+  error: ApiFailure,
+): { code: string; message: string } {
+  const status = error.cliError.status === undefined ? '' : ` (HTTP ${error.cliError.status})`;
+  return {
+    code: COMPONENT_SEARCH_FAILED,
+    message: `component search for ${term} failed${status}: ${error.cliError.message}`,
+  };
+}
+
+/** A search failure, carrying the term it was for. */
+class ComponentSearchFailed extends Error {
+  constructor(
+    readonly term: string,
+    readonly cause: ApiFailure,
+  ) {
+    super(cause.cliError.message);
+  }
+}
 
 /** One GET per term; a term seen in two regions reads the same tree twice from the cache. */
 async function searchComponents(
@@ -148,9 +178,10 @@ async function searchComponents(
     try {
       payload = await requestJson(access.client, componentsUrl(access, providerId, term), 'GET');
     } catch (error) {
-      if (error instanceof ApiFailure && error.cliError.status === 404)
-        throw new EndpointUnavailable();
-      throw error;
+      // Anything but an API answer is a bug here and must surface, not count as a search failure.
+      if (!(error instanceof ApiFailure)) throw error;
+      if (error.cliError.status === 404) throw new EndpointUnavailable();
+      throw new ComponentSearchFailed(term, error);
     }
     leaves = collectLeaves(payload);
     trees.set(term, leaves);
@@ -187,6 +218,7 @@ async function scopeRow(
           scope: 'whole',
           scopeReason: 'endpoint-unavailable',
           terms,
+          totalLeaves: kept.size,
           trackedComponents: [],
         };
       }
@@ -196,16 +228,6 @@ async function scopeRow(
     for (const leaf of found.kept) if (!kept.has(leaf.id)) kept.set(leaf.id, leaf);
   }
   return decideScope(terms, [...kept.values()]);
-}
-
-function componentSearchFailure(error: unknown): { code: string; message: string } {
-  const detail =
-    error instanceof ApiFailure
-      ? error.cliError.message
-      : error instanceof Error
-        ? error.message
-        : String(error);
-  return { code: COMPONENT_SEARCH_FAILED, message: `component search failed: ${detail}` };
 }
 
 /**
@@ -223,7 +245,32 @@ function monitorFor(tracked: TrackedProviders, providerId: number): TrackedMonit
   const union = lists.some((list) => list === null)
     ? null
     : [...new Set(lists.flatMap((list) => list ?? []))];
+  // The lowest id's needsReview stands for the set; a flag on a second monitor is not merged.
   return { ...first, trackedComponentIds: union };
+}
+
+/** The account's monitor on an `already-tracked` row, when the list named one. */
+function monitorField(
+  row: ResolvedCandidate,
+  tracked: TrackedProviders,
+): { monitor?: TrackedMonitor } {
+  if (row.status !== 'already-tracked') return {};
+  const monitor = monitorFor(tracked, row.catalog.id);
+  return monitor === undefined ? {} : { monitor };
+}
+
+/** The monitor plus the kept leaves its list does not hold, once the search answered. */
+function trackedFields(
+  row: ResolvedCandidate,
+  tracked: TrackedProviders,
+  kept: readonly TrackedComponent[],
+): { monitor?: TrackedMonitor; untracked?: string[] } {
+  if (row.status !== 'already-tracked') return {};
+  const fields = monitorField(row, tracked);
+  const list = fields.monitor?.trackedComponentIds ?? null;
+  const untracked =
+    list === null ? [] : kept.filter((leaf) => !list.includes(leaf.id)).map((leaf) => leaf.name);
+  return { ...fields, untracked };
 }
 
 /**
@@ -269,33 +316,21 @@ export async function scopeProposal(
         ...trackedFields(row, options.tracked, scoping.trackedComponents),
       });
     } catch (error) {
-      if (error instanceof ApiFailure) {
-        const status = error.cliError.status;
-        if (status === 401 || status === 403) throw error;
-        if (isTransient(error)) consecutiveFailures += 1;
-      } else consecutiveFailures += 1;
+      if (!(error instanceof ComponentSearchFailed)) throw error;
+      const status = error.cause.cliError.status;
+      if (status === 401 || status === 403) throw error.cause;
+      if (isTransient(error.cause)) consecutiveFailures += 1;
       // A tracked row is informational here: a failed search must not block the creates.
       if (row.status === 'already-tracked') {
-        scoped.push({ ...row, ...trackedFields(row, options.tracked, undefined) });
+        scoped.push({ ...row, ...monitorField(row, options.tracked) });
         continue;
       }
-      scoped.push({ ...row, status: 'unresolved', failure: componentSearchFailure(error) });
+      scoped.push({
+        ...row,
+        status: 'unresolved',
+        failure: componentSearchFailure(error.term, error.cause),
+      });
     }
   }
   return scoped;
-}
-
-/** For an already-tracked row: the monitor, and the kept leaves its list does not hold. */
-function trackedFields(
-  row: ResolvedCandidate,
-  tracked: TrackedProviders,
-  kept: readonly TrackedComponent[] | undefined,
-): { monitor?: TrackedMonitor; untracked?: string[] } {
-  if (row.status !== 'already-tracked') return {};
-  const monitor = monitorFor(tracked, row.catalog.id);
-  if (kept === undefined) return monitor === undefined ? {} : { monitor };
-  const list = monitor?.trackedComponentIds ?? null;
-  const untracked =
-    list === null ? [] : kept.filter((leaf) => !list.includes(leaf.id)).map((leaf) => leaf.name);
-  return monitor === undefined ? { untracked } : { monitor, untracked };
 }

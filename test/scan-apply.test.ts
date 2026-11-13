@@ -494,7 +494,9 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
         ['scan', root, '--apply', '--confirm'],
         env(stub, { UPTIMEROBOT_OUTPUT: 'table' }),
       );
-      expect(readable.stdout).toContain('component search failed');
+      expect(readable.stdout).toContain(
+        `component search for Amazon Relational Database Service failed (HTTP ${status})`,
+      );
       expect(readable.stdout).not.toContain('catalog could not');
     },
   );

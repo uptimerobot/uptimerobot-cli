@@ -128,7 +128,11 @@ export const COMPONENT_RULES: ReadonlyMap<string, readonly ComponentRule[]> = ne
   ['GitHub', GITHUB],
 ]);
 
-/** Every term of every provider: the only strings `scan --apply` ever sends as component search text. */
+/**
+ * Every term of every provider: the only strings `scan --apply` ever sends as
+ * component search text. The apply tests assert every recorded search against
+ * this list, which is the privacy contract the README states.
+ */
 export const COMPONENT_TERMS: readonly string[] = [...COMPONENT_RULES.values()]
   .flat()
   .map(({ term }) => term);

@@ -35,6 +35,7 @@ import {
   COMPONENT_SEARCH_FAILED,
   MAX_TRACKED_COMPONENTS,
   type ScopeReason,
+  type Scoping,
   type TrackedComponent,
   scopeProposal,
 } from './scope.js';
@@ -432,18 +433,15 @@ function catalogCell(row: ResolvedCandidate): string {
 /** Names shown in a cell before the rest folds into `+N more`. */
 const MAX_COMPONENTS_PER_CELL = 5;
 
-/** A row that resolved to one catalog entry, the only kind scoping touches. */
-type ResolvedRow = Extract<ResolvedCandidate, { catalog: unknown }>;
-
-const SCOPE_REASONS: Record<ScopeReason, (row: ResolvedRow) => string> = {
+const SCOPE_REASONS: Record<ScopeReason, (scoping: Partial<Scoping>) => string> = {
   'no-terms': () => '',
-  'term-missed': (row) =>
-    `no component matched ${(row.terms ?? [])
+  'term-missed': ({ terms }) =>
+    `no component matched ${(terms ?? [])
       .filter((item) => item.outcome === 'missed')
       .map((item) => item.term)
       .join(', ')}; tracking the whole provider`,
-  'too-many': (row) =>
-    `${(row.terms ?? []).reduce((sum, item) => sum + item.leaves, 0)} components matched, over ${MAX_TRACKED_COMPONENTS}; tracking the whole provider`,
+  'too-many': ({ totalLeaves }) =>
+    `${totalLeaves ?? 0} components matched, over ${MAX_TRACKED_COMPONENTS}; tracking the whole provider`,
   'endpoint-unavailable': () => 'component search unavailable; tracking the whole provider',
 };
 
@@ -454,7 +452,7 @@ function foldNames(names: readonly string[]): string {
 }
 
 function componentsCell(row: ResolvedCandidate): string {
-  if (!('catalog' in row)) return '';
+  if (row.status !== 'create' && row.status !== 'already-tracked') return '';
   if (row.status === 'already-tracked') {
     const list = row.monitor?.trackedComponentIds ?? null;
     const covers =
@@ -471,7 +469,11 @@ function componentsCell(row: ResolvedCandidate): string {
   return row.scopeReason === undefined ? '' : SCOPE_REASONS[row.scopeReason](row);
 }
 
-/** One line per scoped component: its name, the signals behind its term, and where the region came from. */
+/**
+ * One line per scoped component: its name, the signals behind its term, and
+ * where the region came from. A term the scan saw under one region in two
+ * files shows the first file's evidence; `--json` carries all of it.
+ */
 function componentLines(row: ResolvedCandidate): string[] {
   if (row.status !== 'create' || row.scope !== 'components') return [];
   const leaves = row.trackedComponents ?? [];

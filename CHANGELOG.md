@@ -14,19 +14,22 @@ may change in minor releases.
 
 - `uptimerobot scan --apply` scopes a third-party service to the components
   the repository uses for AWS, Google Cloud, Microsoft Azure, Cloudflare and
-  GitHub. One components search per term found by the scan; the leaves in the
-  term's region plus the global ones are kept, and the create carries their
-  ids in `trackedComponentIds`. The whole provider is tracked, with a reason,
-  when a term matched nothing (`term-missed`), the kept leaves pass 20
-  (`too-many`), the search endpoint is missing (`endpoint-unavailable`) or
-  the scan found no term (`no-terms`). Any other failed search leaves the row
-  `unresolved` with `COMPONENT_SEARCH_FAILED`, exit 1 `CATALOG_UNRESOLVED`.
-  The proposal table gains a Components column and one evidence line per
-  scoped component; the `--json` row carries `scope`, `scopeReason`,
-  `terms[]` and `trackedComponents[]`, and a `created` result repeats
-  `trackedComponents`. An already-tracked row says whether its monitor tracks
-  every component or N, carries `monitor` and names the found leaves it does
-  not track under `untracked`.
+  GitHub: one components search per term the scan found, the leaves in the
+  term's region plus the global ones kept, their ids sent as
+  `trackedComponentIds`. The proposal table gains a Components column and
+  one evidence line per scoped component.
+  - The whole provider is tracked, with a reason, when a term matched nothing
+    (`term-missed`), more than 20 distinct leaves were kept (`too-many`), the
+    endpoint is missing (`endpoint-unavailable`) or the scan found no term
+    (`no-terms`). Any other failed search leaves the row `unresolved` with
+    `COMPONENT_SEARCH_FAILED`, exit 1 `CATALOG_UNRESOLVED`.
+  - The `--json` row carries `scope`, `scopeReason`, `terms[]`, `totalLeaves`
+    and `trackedComponents[]`; a `created` result repeats
+    `trackedComponents`; an already-tracked row carries `monitor` and
+    `untracked[]` and its Components cell says what the monitor covers.
+  - The `CATALOG_UNRESOLVED` message reads "The component search failed for
+    X" when every unresolved row failed there; it still reads "The catalog
+    could not resolve X" otherwise.
 - `uptimerobot monitors third-party-service maintenances list <id>` and
   `uptimerobot third-party-services maintenances`, generated from the
   published contract, list the upcoming maintenance windows of one
