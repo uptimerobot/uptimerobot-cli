@@ -24,12 +24,6 @@ may change in minor releases.
   the line the region sits on, or `null`, and the evidence behind it. A term
   seen in two regions is listed once per region. The Markdown `signals:`
   suffix lists the same terms. Providers outside the five get an empty list.
-
-### Changed
-
-- The seed context schema is 3: `components` replaces `hints` on each
-  third-party candidate, and terraform findings carry `regionLine` next to
-  `region`.
 - `uptimerobot init` prepares a repository for a coding agent: it scans the
   working tree, writes `uptimerobot-scan.md` and `uptimerobot-setup.md`,
   plants a managed block in `AGENTS.md` for the detected or chosen agent
@@ -74,6 +68,9 @@ may change in minor releases.
 
 ### Changed
 
+- The seed context schema is 3: `components` replaces `hints` on each
+  third-party candidate, and terraform findings carry `regionLine` next to
+  `region`.
 - An API error message is printed on one line; a message the API broke across
   lines used to print as a second, misleading line.
 - A confirmation prompt whose input ends before an answer (Ctrl-D, a closed
