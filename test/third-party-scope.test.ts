@@ -145,6 +145,52 @@ describe('decideScope', () => {
 describe('scopeProposal', () => {
   const tracked = { providerIds: [], monitors: [], partial: false };
 
+  /** A client answering each components term with its own tree. */
+  function answeringApi(trees: Record<string, unknown>): ApiAccess {
+    const fetchImplementation: typeof fetch = async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const term = new URL(request.url).searchParams.get('search') ?? '';
+      return new Response(JSON.stringify(trees[term] ?? { data: [] }), {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      });
+    };
+    const client = createApiClient({
+      apiKey: 'u1-test',
+      apiUrl: API_URL,
+      environment: 'local',
+      fetchImplementation,
+      mode: 'agent',
+      version: '0.0.0-test',
+    });
+    return { client, apiUrl: API_URL };
+  }
+
+  it('keeps a leaf two terms both returned once', async () => {
+    const shared = { id: 7, name: 'Shared', region: null, global: true, children: [] };
+    const access = answeringApi({
+      'AWS Lambda': {
+        data: [shared, { id: 8, name: 'Lambda', region: null, global: false, children: [] }],
+      },
+      'Amazon CloudFront': { data: [shared] },
+    });
+    const [row] = await scopeProposal(
+      [createRow('AWS', 248, ['AWS Lambda', 'Amazon CloudFront'])],
+      {
+        access,
+        tracked,
+        deadline: Date.now() + 60_000,
+      },
+    );
+    expect(row).toMatchObject({
+      scope: 'components',
+      trackedComponents: [
+        { id: 7, term: 'AWS Lambda' },
+        { id: 8, term: 'AWS Lambda' },
+      ],
+    });
+  });
+
   it('stops asking after three transient failures in a row and leaves the rest unresolved', async () => {
     const { access, calls } = failingApi(503);
     const rows = [1, 2, 3, 4, 5].map((id) => createRow(`P${id}`, id, ['AWS Lambda']));
