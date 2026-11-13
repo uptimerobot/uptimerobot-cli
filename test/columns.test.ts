@@ -21,6 +21,7 @@ const EXPECTED_COLLECTION_COMMAND_IDS = [
   'monitors:list',
   'monitors:third-party-service:incidents:activity-log',
   'monitors:third-party-service:incidents:list',
+  'monitors:third-party-service:maintenances:list',
   'status-pages:announcements:list',
   'status-pages:list',
   'tags:list',

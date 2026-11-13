@@ -10068,6 +10068,29 @@ export const operations = {
       "Monitors"
     ]
   },
+  "monitors:third-party-service:maintenances:list": {
+    "commandId": "monitors:third-party-service:maintenances:list",
+    "contentTypes": [],
+    "defaultApiUrl": "https://api.uptimerobot.com/v3",
+    "description": "Returns the maintenance windows the provider a third party service monitor tracks has announced, earliest start first: windows in progress now and windows starting within the next 30 days. Responses are cached for 60 seconds, so a window that ended within the last minute can still appear; `window` is worked out from scheduledFor/scheduledUntil when the response is built (announced or in_progress). Nothing scheduled returns an empty array with a 200, never an error.",
+    "destructive": false,
+    "method": "GET",
+    "operationId": "MonitorsController_getThirdPartyServiceMaintenances",
+    "parameters": [
+      {
+        "in": "path",
+        "name": "id",
+        "required": true,
+        "type": "number"
+      }
+    ],
+    "path": "/monitors/{id}/third-party-service/maintenances",
+    "requestBodyRequired": false,
+    "summary": "Get the upcoming maintenance windows of a third party service",
+    "tags": [
+      "Monitors"
+    ]
+  },
   "monitors:third-party-service:status": {
     "commandId": "monitors:third-party-service:status",
     "contentTypes": [],
@@ -13562,6 +13585,22 @@ export const operations = {
     "summary": "Search third-party providers",
     "tags": [
       "Third-party providers"
+    ]
+  },
+  "third-party-services:maintenances": {
+    "commandId": "third-party-services:maintenances",
+    "contentTypes": [],
+    "defaultApiUrl": "https://api.uptimerobot.com/v3",
+    "description": "Returns the maintenance windows announced by every provider the caller tracks with a third party service monitor, in one list ordered by start (earliest first): windows in progress now and windows starting within the next 30 days. Ended windows are never returned. Each row names the third party service monitor it belongs to (monitorId, friendlyName). `window` is worked out at request time from scheduledFor/scheduledUntil (announced or in_progress). If one provider cannot be read it is left out; if none can, the request fails. Nothing scheduled returns an empty array with a 200, never an error.",
+    "destructive": false,
+    "method": "GET",
+    "operationId": "ThirdPartyServicesController_getMaintenances",
+    "parameters": [],
+    "path": "/third-party-services/maintenances",
+    "requestBodyRequired": false,
+    "summary": "Get the upcoming maintenance windows across all third party services",
+    "tags": [
+      "Third-party services"
     ]
   },
   "user:alert-contacts": {

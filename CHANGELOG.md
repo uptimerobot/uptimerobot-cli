@@ -12,6 +12,10 @@ may change in minor releases.
 
 ### Added
 
+- `uptimerobot monitors third-party-service maintenances list <id>` and
+  `uptimerobot third-party-services maintenances`, generated from the
+  published contract, list the upcoming maintenance windows of one
+  third-party service and across all of them.
 - `uptimerobot init` prepares a repository for a coding agent: it scans the
   working tree, writes `uptimerobot-scan.md` and `uptimerobot-setup.md`,
   plants a managed block in `AGENTS.md` for the detected or chosen agent

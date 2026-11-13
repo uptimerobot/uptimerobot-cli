@@ -1527,6 +1527,44 @@ paths:
       summary: Get the incident history of a third party service
       tags:
         - Monitors
+  /monitors/{id}/third-party-service/maintenances:
+    get:
+      description: >-
+        Returns the maintenance windows the provider a third party service
+        monitor tracks has announced, earliest start first: windows in progress
+        now and windows starting within the next 30 days. Responses are cached
+        for 60 seconds, so a window that ended within the last minute can still
+        appear; `window` is worked out from scheduledFor/scheduledUntil when the
+        response is built (announced or in_progress). Nothing scheduled returns
+        an empty array with a 200, never an error.
+      operationId: MonitorsController_getThirdPartyServiceMaintenances
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: number
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorDependencyMaintenancesDto'
+        default:
+          description: >-
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+      security:
+        - bearer: []
+      summary: Get the upcoming maintenance windows of a third party service
+      tags:
+        - Monitors
   /monitors/{id}/third-party-service/incidents/{incidentId}:
     get:
       description: >-
@@ -3209,6 +3247,41 @@ paths:
       summary: Delete a tag
       tags:
         - Tags
+  /third-party-services/maintenances:
+    get:
+      description: >-
+        Returns the maintenance windows announced by every provider the caller
+        tracks with a third party service monitor, in one list ordered by start
+        (earliest first): windows in progress now and windows starting within
+        the next 30 days. Ended windows are never returned. Each row names the
+        third party service monitor it belongs to (monitorId, friendlyName).
+        `window` is worked out at request time from scheduledFor/scheduledUntil
+        (announced or in_progress). If one provider cannot be read it is left
+        out; if none can, the request fails. Nothing scheduled returns an empty
+        array with a 200, never an error.
+      operationId: ThirdPartyServicesController_getMaintenances
+      parameters: []
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyMaintenancesDto'
+        default:
+          description: >-
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+      security:
+        - bearer: []
+      summary: Get the upcoming maintenance windows across all third party services
+      tags:
+        - Third-party services
   /third-party-providers:
     get:
       description: >-
@@ -5825,6 +5898,76 @@ components:
               - startedAt
               - resolvedAt
               - updates
+      required:
+        - data
+    MonitorDependencyMaintenancesDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              serviceId:
+                type: integer
+              remoteId:
+                type: string
+                nullable: true
+              url:
+                type: string
+                nullable: true
+              title:
+                type: string
+              description:
+                type: string
+                nullable: true
+              impact:
+                type: string
+                nullable: true
+              window:
+                type: string
+                enum:
+                  - announced
+                  - in_progress
+                  - past
+              scheduledFor:
+                type: string
+              scheduledUntil:
+                type: string
+              affectedComponents:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+                    externalId:
+                      type: string
+                      nullable: true
+                    parentId:
+                      type: integer
+                      nullable: true
+                  required:
+                    - id
+                    - name
+                    - externalId
+                    - parentId
+            required:
+              - id
+              - serviceId
+              - remoteId
+              - url
+              - title
+              - description
+              - impact
+              - window
+              - scheduledFor
+              - scheduledUntil
+              - affectedComponents
       required:
         - data
     MonitorThirdPartyServiceIncidentDetailDto:
@@ -11585,6 +11728,82 @@ components:
       required:
         - data
         - nextCursorId
+    DependencyMaintenancesDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              serviceId:
+                type: integer
+              remoteId:
+                type: string
+                nullable: true
+              url:
+                type: string
+                nullable: true
+              title:
+                type: string
+              description:
+                type: string
+                nullable: true
+              impact:
+                type: string
+                nullable: true
+              window:
+                type: string
+                enum:
+                  - announced
+                  - in_progress
+                  - past
+              scheduledFor:
+                type: string
+              scheduledUntil:
+                type: string
+              affectedComponents:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+                    externalId:
+                      type: string
+                      nullable: true
+                    parentId:
+                      type: integer
+                      nullable: true
+                  required:
+                    - id
+                    - name
+                    - externalId
+                    - parentId
+              monitorId:
+                type: integer
+              friendlyName:
+                type: string
+            required:
+              - id
+              - serviceId
+              - remoteId
+              - url
+              - title
+              - description
+              - impact
+              - window
+              - scheduledFor
+              - scheduledUntil
+              - affectedComponents
+              - monitorId
+              - friendlyName
+      required:
+        - data
     ThirdPartyProviderSearchDto:
       type: object
       properties:
