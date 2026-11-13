@@ -16,6 +16,20 @@ may change in minor releases.
   tag every request they make with `x-uptimerobot-command: scan:3rd-party`,
   for server-side usage attribution. The header carries no credential or
   repository data and other commands do not send it.
+- The scan names the components a repository uses for the five providers the
+  catalog tracks by component (AWS, Google Cloud, Microsoft Azure, Cloudflare,
+  GitHub). Each third-party candidate carries `components`: the built-in
+  component term (`Amazon Simple Storage Service` for `aws_s3_bucket` or
+  `@aws-sdk/client-s3`), the terraform region of the file that named it with
+  the line the region sits on, or `null`, and the evidence behind it. A term
+  seen in two regions is listed once per region. The Markdown `signals:`
+  suffix lists the same terms. Providers outside the five get an empty list.
+
+### Changed
+
+- The seed context schema is 3: `components` replaces `hints` on each
+  third-party candidate, and terraform findings carry `regionLine` next to
+  `region`.
 - `uptimerobot init` prepares a repository for a coding agent: it scans the
   working tree, writes `uptimerobot-scan.md` and `uptimerobot-setup.md`,
   plants a managed block in `AGENTS.md` for the detected or chosen agent

@@ -127,7 +127,13 @@ describe('terraform', () => {
         kind: 'terraform-provider',
         value: 'AWS',
         evidence: { file: 'infra/main.tf', line: 7 },
-        detail: { signal: 'provider "aws"', class: 'runtime', service: '', region: 'eu-central-1' },
+        detail: {
+          signal: 'provider "aws"',
+          class: 'runtime',
+          service: '',
+          region: 'eu-central-1',
+          regionLine: '8',
+        },
       }),
       expect.objectContaining({
         kind: 'terraform-resource',
@@ -138,6 +144,7 @@ describe('terraform', () => {
           class: 'runtime',
           service: 's3',
           region: 'eu-central-1',
+          regionLine: '8',
         },
       }),
       expect.objectContaining({
@@ -450,7 +457,13 @@ describe('container registries', () => {
         kind: 'registry',
         value: 'GitHub',
         evidence: { file: 'Dockerfile', line: 2 },
-        detail: { signal: 'FROM ghcr.io', class: 'build-time', service: '', region: '' },
+        detail: {
+          signal: 'FROM ghcr.io',
+          class: 'build-time',
+          service: '',
+          region: '',
+          regionLine: '',
+        },
       }),
       expect.objectContaining({
         value: 'AWS',
@@ -558,7 +571,13 @@ describe('git remotes', () => {
         outcome: 'vendor',
         value: 'GitHub',
         evidence: { file: '.git/config', line: 4 },
-        detail: { signal: 'git remote: github.com', class: 'build-time', service: '', region: '' },
+        detail: {
+          signal: 'git remote: github.com',
+          class: 'build-time',
+          service: '',
+          region: '',
+          regionLine: '',
+        },
       }),
       expect.objectContaining({
         value: 'GitLab',

@@ -62,7 +62,7 @@ export type {
  * Bumped whenever a consumer would have to change to read the document.
  * 2 added `thirdParty` and `summary.thirdPartyProviders`.
  */
-export const SEED_CONTEXT_SCHEMA_VERSION = 2;
+export const SEED_CONTEXT_SCHEMA_VERSION = 3;
 
 /** How a candidate has to be used before it can become a monitor. */
 export type CandidateTarget =

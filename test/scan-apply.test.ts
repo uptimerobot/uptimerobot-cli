@@ -217,7 +217,7 @@ describe('uptimerobot scan --apply', () => {
     });
     const output = JSON.parse(result.stdout);
     expect(output).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       repoRoot: root,
       allowance: { used: 2, limit: 10, proposed: 3 },
       tracked: { providerIds: [], partial: false },

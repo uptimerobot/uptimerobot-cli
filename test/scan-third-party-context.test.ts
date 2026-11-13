@@ -51,13 +51,13 @@ describe('buildThirdPartyContext', () => {
         kind: 'terraform-resource',
         file: 'infra/main.tf',
         line: 14,
-        detail: { signal: 'aws_s3', service: 's3', region: 'eu-central-1' },
+        detail: { signal: 'aws_s3', service: 's3', region: 'eu-central-1', regionLine: '9' },
       }),
       finding('AWS', {
         kind: 'terraform-resource',
         file: 'infra/main.tf',
         line: 20,
-        detail: { signal: 'aws_db', service: 'db', region: 'eu-central-1' },
+        detail: { signal: 'aws_db', service: 'db', region: 'eu-central-1', regionLine: '9' },
       }),
       finding('Stripe', { line: 12, detail: { signal: 'stripe@17.4.0' } }),
     ]);
@@ -90,7 +90,34 @@ describe('buildThirdPartyContext', () => {
             app: '.',
           },
         ],
-        hints: ['db', 'eu-central-1', 's3'],
+        components: [
+          {
+            term: 'Amazon Relational Database Service',
+            region: { code: 'eu-central-1', evidence: { file: 'infra/main.tf', line: 9 } },
+            evidence: [
+              {
+                file: 'infra/main.tf',
+                line: 20,
+                kind: 'terraform-resource',
+                signal: 'aws_db',
+                app: '.',
+              },
+            ],
+          },
+          {
+            term: 'Amazon Simple Storage Service',
+            region: { code: 'eu-central-1', evidence: { file: 'infra/main.tf', line: 9 } },
+            evidence: [
+              {
+                file: 'infra/main.tf',
+                line: 14,
+                kind: 'terraform-resource',
+                signal: 'aws_s3',
+                app: '.',
+              },
+            ],
+          },
+        ],
       },
       {
         provider: 'Stripe',
@@ -99,7 +126,7 @@ describe('buildThirdPartyContext', () => {
         evidence: [
           { file: 'package.json', line: 12, kind: 'npm', signal: 'stripe@17.4.0', app: '.' },
         ],
-        hints: [],
+        components: [],
       },
     ]);
     expect(context.skipped).toEqual([]);
@@ -218,6 +245,173 @@ describe('buildThirdPartyContext', () => {
   });
 });
 
+describe('component terms', () => {
+  const tf = (
+    provider: string,
+    file: string,
+    line: number,
+    signal: string,
+    service: string,
+    region = '',
+    regionLine = '',
+  ): ThirdPartyFinding =>
+    finding(provider, {
+      kind: 'terraform-resource',
+      file,
+      line,
+      detail: { signal, service, region, regionLine },
+    });
+  const componentsOf = (findings: ThirdPartyFinding[]) =>
+    buildThirdPartyContext(findings).candidates.map((candidate) => [
+      candidate.provider,
+      candidate.components.map(({ term, region, evidence }) => ({
+        term,
+        region: region === null ? null : region.code,
+        evidence: evidence.map((item) => `${item.file}:${item.line}`),
+      })),
+    ]);
+
+  it('names one term per service word, with the region of its file, and merges region-less package evidence into it', () => {
+    expect(
+      componentsOf([
+        finding('AWS', {
+          line: 4,
+          detail: { signal: '@aws-sdk/client-s3@3.700.0', package: '@aws-sdk/client-s3' },
+        }),
+        tf('AWS', 'infra/main.tf', 14, 'aws_s3', 's3', 'eu-central-1', '9'),
+        tf('AWS', 'infra/main.tf', 20, 'aws_db', 'db', 'eu-central-1', '9'),
+        tf('AWS', 'infra/main.tf', 26, 'aws_s3', 's3', 'eu-central-1', '9'),
+      ]),
+    ).toEqual([
+      [
+        'AWS',
+        [
+          {
+            term: 'Amazon Relational Database Service',
+            region: 'eu-central-1',
+            evidence: ['infra/main.tf:20'],
+          },
+          {
+            term: 'Amazon Simple Storage Service',
+            region: 'eu-central-1',
+            evidence: ['package.json:4', 'infra/main.tf:14', 'infra/main.tf:26'],
+          },
+        ],
+      ],
+    ]);
+  });
+
+  it('lists a term once per region when two files place it in two regions', () => {
+    expect(
+      componentsOf([
+        tf('AWS', 'infra/eu.tf', 5, 'aws_s3', 's3', 'eu-central-1', '2'),
+        tf('AWS', 'infra/us.tf', 5, 'aws_lambda', 'lambda', 'us-east-1', '2'),
+        tf('AWS', 'infra/us.tf', 9, 'aws_s3', 's3', 'us-east-1', '2'),
+      ]),
+    ).toEqual([
+      [
+        'AWS',
+        [
+          {
+            term: 'Amazon Simple Storage Service',
+            region: 'eu-central-1',
+            evidence: ['infra/eu.tf:5'],
+          },
+          {
+            term: 'Amazon Simple Storage Service',
+            region: 'us-east-1',
+            evidence: ['infra/us.tf:9'],
+          },
+          { term: 'AWS Lambda', region: 'us-east-1', evidence: ['infra/us.tf:5'] },
+        ],
+      ],
+    ]);
+  });
+
+  it('keeps the region null for a package-only term, for Azure, and for a service word with no region', () => {
+    expect(
+      componentsOf([
+        finding('Google Cloud', {
+          detail: { signal: '@google-cloud/storage@7.0.0', package: '@google-cloud/storage' },
+        }),
+        tf('Microsoft Azure', 'infra/az.tf', 3, 'azurerm_storage', 'storage', '', ''),
+        tf('AWS', 'infra/main.tf', 3, 'aws_sqs', 'sqs'),
+      ]),
+    ).toEqual([
+      [
+        'AWS',
+        [{ term: 'Amazon Simple Queue Service', region: null, evidence: ['infra/main.tf:3'] }],
+      ],
+      [
+        'Google Cloud',
+        [{ term: 'Google Cloud Storage', region: null, evidence: ['package.json:1'] }],
+      ],
+      [
+        'Microsoft Azure',
+        [{ term: 'Storage Accounts', region: null, evidence: ['infra/az.tf:3'] }],
+      ],
+    ]);
+  });
+
+  it('maps Cloudflare and GitHub signals that are not packages or resources', () => {
+    expect(
+      componentsOf([
+        finding('Cloudflare', {
+          kind: 'file',
+          file: 'wrangler.toml',
+          detail: { signal: 'wrangler.toml' },
+        }),
+        finding('GitHub', {
+          kind: 'ci-file',
+          file: '.github/workflows/ci.yml',
+          detail: { signal: 'ci: .github/workflows/', class: 'build-time' },
+        }),
+        finding('GitHub', {
+          kind: 'git-host',
+          file: '.git/config',
+          line: 7,
+          detail: { signal: 'git remote: github.com', class: 'build-time' },
+        }),
+        finding('GitHub', {
+          kind: 'registry',
+          file: 'Dockerfile',
+          line: 1,
+          detail: { signal: 'FROM ghcr.io', class: 'build-time' },
+        }),
+        finding('GitHub', {
+          kind: 'npm',
+          line: 9,
+          detail: { signal: '@octokit/rest@21.0.0', package: '@octokit/rest', class: 'build-time' },
+        }),
+      ]),
+    ).toEqual([
+      ['Cloudflare', [{ term: 'Workers', region: null, evidence: ['wrangler.toml:1'] }]],
+      [
+        'GitHub',
+        [
+          { term: 'Actions', region: null, evidence: ['.github/workflows/ci.yml:1'] },
+          { term: 'API Requests', region: null, evidence: ['package.json:9'] },
+          { term: 'Git Operations', region: null, evidence: ['.git/config:7'] },
+          { term: 'Packages', region: null, evidence: ['Dockerfile:1'] },
+        ],
+      ],
+    ]);
+  });
+
+  it('gives an unmapped signal of a scoped provider no term, and a provider outside the five an empty list', () => {
+    expect(
+      componentsOf([
+        finding('AWS', { detail: { signal: 'boto3@1.35.80', package: 'boto3' }, kind: 'pip' }),
+        tf('AWS', 'infra/main.tf', 3, 'aws_iam', 'iam', 'eu-central-1', '1'),
+        finding('Stripe'),
+      ]),
+    ).toEqual([
+      ['AWS', []],
+      ['Stripe', []],
+    ]);
+  });
+});
+
 describe('formatThirdPartySection', () => {
   it('renders the contract section with evidence text per signal kind', () => {
     const context = buildThirdPartyContext([
@@ -272,13 +466,13 @@ describe('formatThirdPartySection', () => {
       '',
       '### Runtime (proposed by default)',
       '',
-      '- AWS: apps/api: boto3@1.35.80 (requirements.txt:3), infra/main.tf:10 (provider "aws"), infra/main.tf:14 (aws_s3); signals: eu-central-1, s3',
+      '- AWS: apps/api: boto3@1.35.80 (requirements.txt:3), infra/main.tf:10 (provider "aws"), infra/main.tf:14 (aws_s3); signals: Amazon Simple Storage Service (eu-central-1)',
       '- Stripe: stripe@17.4.0 (package.json:12)',
       '- Vercel: vercel.json',
       '',
       '### Build-time (optional, affects deploys, not users)',
       '',
-      '- GitHub: git remote: github.com, .github/workflows/ci.yml',
+      '- GitHub: git remote: github.com, .github/workflows/ci.yml; signals: Actions, Git Operations',
       '- Google Cloud: Dockerfile:1 (FROM gcr.io)',
       '',
       '### Skipped',

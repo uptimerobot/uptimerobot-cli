@@ -51,6 +51,8 @@ export interface ConfigFinding extends ScanFinding {
     service: string;
     /** The plain region word of the same terraform file (`eu-central-1`). */
     region: string;
+    /** The line the region was read from, as text like every detail; empty when there is none. */
+    regionLine: string;
   };
 }
 
@@ -68,6 +70,7 @@ interface Match {
   line: number;
   service?: string;
   region?: string;
+  regionLine?: number;
   outcome?: 'hint';
 }
 
@@ -266,8 +269,8 @@ const UNKNOWN_PROVIDER = '';
 
 function terraform(contents: string): Match[] {
   const matches: Match[] = [];
-  const regions = new Map<string, string>();
-  let fileRegion = '';
+  const regions = new Map<string, { value: string; line: number }>();
+  let fileRegion: { value: string; line: number } | undefined;
   // A region counts for the provider whose block it sits in, directly: once
   // the block closes the provider is forgotten, and a region after the first
   // provider block belongs to no one. An unknown provider still owns its block.
@@ -329,15 +332,20 @@ function terraform(contents: string): Match[] {
     const value = TF_REGION.exec(line)?.[1];
     if (value === undefined || !REGION.test(value)) continue;
     if (currentProvider === undefined) {
-      if (!seenProvider && depth === 0 && fileRegion === '') fileRegion = value;
+      if (!seenProvider && depth === 0 && fileRegion === undefined) {
+        fileRegion = { value, line: index + 1 };
+      }
     } else if (depth === providerDepth && !regions.has(currentProvider)) {
-      regions.set(currentProvider, value);
+      regions.set(currentProvider, { value, line: index + 1 });
     }
   }
   return matches.map((match) => {
     const name = match.entry.catalogName;
     if (!REGION_VENDORS.has(name)) return match;
-    return { ...match, region: regions.get(name) ?? fileRegion };
+    const region = regions.get(name) ?? fileRegion;
+    return region === undefined
+      ? match
+      : { ...match, region: region.value, regionLine: region.line };
   });
 }
 
@@ -445,6 +453,7 @@ export function matchConfig(input: ConfigInput): ConfigFinding[] {
       class: BUILD_TIME_KINDS.has(match.kind) ? 'build-time' : match.entry.class,
       service: match.service ?? '',
       region: match.region ?? '',
+      regionLine: match.regionLine === undefined ? '' : String(match.regionLine),
     },
   }));
 }

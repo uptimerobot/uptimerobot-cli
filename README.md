@@ -186,7 +186,7 @@ The scan reads dependency manifests (`package.json`, `requirements*.txt`, `pypro
 - pg (protocol client, self-hosted or unknown)
 ```
 
-The JSON output carries the same data under `thirdParty` (`candidates`, `skipped`, `unknown`, `totals`), and the seed context schema is 2.
+The JSON output carries the same data under `thirdParty` (`candidates`, `skipped`, `unknown`, `totals`), and the seed context schema is 3.
 
 `uptimerobot scan --apply` turns the runtime candidates into third-party services. It needs an API key like every other authenticated command and fails with the usual authentication error before any request when none resolves. It reads the account's third-party services and allowance, searches the catalog once per provider, prints a proposal, asks, then creates:
 
