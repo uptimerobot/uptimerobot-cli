@@ -488,13 +488,13 @@ describe('init', () => {
       seedContext: {
         outcome: 'created',
         path: join(repository, SEED_CONTEXT_FILE),
-        schemaVersion: 2,
+        schemaVersion: 3,
         summary: { accepted: 0, heartbeats: 0, rejected: 0, thirdPartyProviders: 0 },
       },
     });
     const content = await readFile(join(repository, SEED_CONTEXT_FILE), 'utf8');
     expect(content.startsWith(SEED_BEGIN_PREFIX)).toBe(true);
-    expect(content).toContain('# Scan seed context (schema 2)');
+    expect(content).toContain('# Scan seed context (schema 3)');
     expect(content).toContain('## Third-party providers (candidates for third-party services)');
     expect(content).toContain('need no base URL');
     expect(content.trimEnd().endsWith(SEED_END_MARKER)).toBe(true);
@@ -753,7 +753,7 @@ describe('init', () => {
     expect(logged).toHaveLength(1);
     expect(JSON.parse(logged[0] ?? '')).toMatchObject({
       nextSteps: expect.any(Array),
-      seedContext: { schemaVersion: 2 },
+      seedContext: { schemaVersion: 3 },
       skills: { instructions: expect.any(Array) },
       target: 'codex',
     });
@@ -906,9 +906,11 @@ describe('init', () => {
     ): {
       paths: string[];
       posts: unknown[];
+      commands: (string | null)[];
     } {
       const paths: string[] = [];
       const posts: unknown[] = [];
+      const commands: (string | null)[] = [];
       const monitors: unknown[] = (options.tracked ?? []).map((providerId, index) => ({
         id: 100 + index,
         type: 'THIRD_PARTY_SERVICE',
@@ -920,6 +922,7 @@ describe('init', () => {
           const request = input instanceof Request ? input : new Request(input, init);
           const url = new URL(request.url);
           paths.push(`${request.method} ${url.pathname}${url.search}`);
+          commands.push(request.headers.get('x-uptimerobot-command'));
           const json = (status: number, body: unknown): Response =>
             new Response(JSON.stringify(body), {
               headers: { 'content-type': 'application/json' },
@@ -960,7 +963,7 @@ describe('init', () => {
           return json(404, {});
         }),
       );
-      return { paths, posts };
+      return { paths, posts, commands };
     }
 
     async function writeManifest(): Promise<void> {
@@ -994,6 +997,8 @@ describe('init', () => {
           },
         });
         expect(logged.filter((line) => line.startsWith('| Provider |'))).toHaveLength(1);
+        expect(api.commands.length).toBeGreaterThan(0);
+        expect(api.commands.every((command) => command === 'scan:3rd-party')).toBe(true);
         expect(vi.mocked(requestConfirmation)).toHaveBeenCalledTimes(1);
         expect(vi.mocked(requestConfirmation).mock.calls[0]?.[0]).toBe(
           'Create 1 third-party service now',

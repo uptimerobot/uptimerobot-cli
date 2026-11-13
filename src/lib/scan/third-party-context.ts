@@ -3,12 +3,14 @@
  * per provider, and the Markdown that renders them.
  *
  * One provider becomes one candidate whatever the number of signals; its class
- * is runtime when any signal is, its evidence is de-duplicated, and the plain
- * service and region words of its terraform signals become hints. A provider
- * known only through a hint (`Procfile`) is not a candidate. Skipped packages
+ * is runtime when any signal is, its evidence is de-duplicated, and for the
+ * five providers tracked by component the signals that name one become
+ * component terms, each with the region of its file. A provider known only
+ * through a hint (`Procfile`) is not a candidate. Skipped packages
  * and protocol clients are listed by name once, with their first location, so
  * the reader can see what was deliberately left out.
  */
+import { componentTerm } from './components.js';
 import type { ScanEvidence } from './finding.js';
 import type { ThirdPartyFinding } from './third-party.js';
 import { VENDORS, type VendorClass } from './vendors.js';
@@ -22,6 +24,23 @@ export interface ThirdPartyEvidence extends ScanEvidence {
   app: string;
 }
 
+/** The region a component term was seen in, and the terraform line that declared it. */
+export interface ComponentRegion {
+  code: string;
+  declaredAt: ScanEvidence;
+}
+
+/**
+ * One component term of a scoped provider: the built-in search text, the
+ * region of the file that named it (`null` when none did), and the signals
+ * behind it. A term seen in several regions appears once per region.
+ */
+export interface ThirdPartyComponent {
+  term: string;
+  region: ComponentRegion | null;
+  evidence: readonly ThirdPartyEvidence[];
+}
+
 export interface ThirdPartyCandidate {
   /** The provider's exact catalog name. */
   provider: string;
@@ -29,8 +48,8 @@ export interface ThirdPartyCandidate {
   searchTerm: string;
   class: VendorClass;
   evidence: readonly ThirdPartyEvidence[];
-  /** Plain words: terraform service names and regions, never a resource name. */
-  hints: readonly string[];
+  /** Empty for every provider outside the five tracked by component. */
+  components: readonly ThirdPartyComponent[];
 }
 
 export type ThirdPartyMentionReason = 'framework' | 'protocol-client' | 'unmapped' | 'hint';
@@ -107,7 +126,7 @@ export function buildThirdPartyContext(findings: readonly ThirdPartyFinding[]): 
         ? 'runtime'
         : 'build-time',
       evidence: uniqueEvidence(vendorSignals),
-      hints: hintsOf(vendorSignals),
+      components: componentsOf(vendorSignals),
     });
   }
 
@@ -139,15 +158,73 @@ function uniqueEvidence(findings: readonly ThirdPartyFinding[]): ThirdPartyEvide
   return evidence;
 }
 
-function hintsOf(findings: readonly ThirdPartyFinding[]): string[] {
-  const words = new Set<string>();
+function regionOf(finding: ThirdPartyFinding): ComponentRegion | null {
+  const { detail } = finding;
+  if (!('region' in detail) || detail.region === '') return null;
+  // Detail values are strings by convention; the line was written by the matcher.
+  const line = Number(detail.regionLine);
+  if (!Number.isInteger(line) || line < 1) return null;
+  return { code: detail.region, declaredAt: { file: finding.evidence.file, line } };
+}
+
+/** Component entries kept per provider; a repository of many fake regions stops here. */
+const MAX_COMPONENTS_PER_PROVIDER = 20;
+
+/**
+ * Groups the findings that name a component by term. A term with no region
+ * anywhere is one entry; a term seen in regions is one entry per region, and
+ * the region-less signals of that term that are not terraform (a package)
+ * count for every region. A terraform resource without a region stays its
+ * own `null` entry, since its file either names no region or spans several.
+ */
+function componentsOf(findings: readonly ThirdPartyFinding[]): ThirdPartyComponent[] {
+  const byTerm = new Map<
+    string,
+    { finding: ThirdPartyFinding; region: ComponentRegion | null }[]
+  >();
   for (const finding of findings) {
-    const service = 'service' in finding.detail ? finding.detail.service : '';
-    const region = 'region' in finding.detail ? finding.detail.region : '';
-    if (service !== '') words.add(service);
-    if (region !== '') words.add(region);
+    const term = componentTerm(finding);
+    if (term === undefined) continue;
+    const items = byTerm.get(term) ?? [];
+    items.push({ finding, region: regionOf(finding) });
+    byTerm.set(term, items);
   }
-  return [...words].sort();
+  return [...byTerm.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .flatMap(([term, items]): ThirdPartyComponent[] => {
+      const regions = new Map<string, ComponentRegion>();
+      for (const { region } of items) {
+        if (region !== null && !regions.has(region.code)) regions.set(region.code, region);
+      }
+      const isTerraform = ({ finding }: { finding: ThirdPartyFinding }) =>
+        finding.kind === 'terraform-resource';
+      const evidenceIn = (code: string | null): ThirdPartyEvidence[] =>
+        uniqueEvidence(
+          items
+            .filter(
+              (item) =>
+                item.region?.code === code ||
+                (item.region === null && (code === null || !isTerraform(item))),
+            )
+            .map(({ finding }) => finding),
+        );
+      const unplaced = items.filter((item) => item.region === null && isTerraform(item));
+      const regional = [...regions.values()]
+        .sort((left, right) => left.code.localeCompare(right.code))
+        .map((region) => ({ term, region, evidence: evidenceIn(region.code) }));
+      if (regions.size === 0) return [{ term, region: null, evidence: evidenceIn(null) }];
+      return unplaced.length === 0
+        ? regional
+        : [
+            {
+              term,
+              region: null,
+              evidence: uniqueEvidence(unplaced.map(({ finding }) => finding)),
+            },
+            ...regional,
+          ];
+    })
+    .slice(0, MAX_COMPONENTS_PER_PROVIDER);
 }
 
 // --- Rendering ---------------------------------------------------------------
@@ -195,8 +272,12 @@ function evidenceText(evidence: ThirdPartyEvidence): string {
 
 function providerLine(candidate: ThirdPartyCandidate): string {
   const items = capped(candidate.evidence.map(evidenceText), MAX_EVIDENCE_PER_LINE);
-  const hints = candidate.hints.length === 0 ? '' : `; signals: ${candidate.hints.join(', ')}`;
-  return `${candidate.provider}: ${items.join(', ')}${hints}`;
+  const terms = candidate.components.map(({ term, region }) =>
+    region === null ? term : `${term} (${region.code})`,
+  );
+  const signals =
+    terms.length === 0 ? '' : `; signals: ${capped(terms, MAX_NAMES_PER_LINE).join(', ')}`;
+  return `${candidate.provider}: ${items.join(', ')}${signals}`;
 }
 
 const REASON_LABELS: Readonly<Record<ThirdPartyMentionReason, string>> = {

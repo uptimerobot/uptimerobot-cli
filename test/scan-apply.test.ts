@@ -13,7 +13,7 @@ import { runInteractiveCli } from './helpers/run-interactive-cli.js';
  */
 interface Stub {
   url: string;
-  hits: { method: string; path: string; body: unknown }[];
+  hits: { method: string; path: string; body: unknown; command: string | undefined }[];
   monitors: Record<string, unknown>[];
   close(): Promise<void>;
 }
@@ -81,7 +81,12 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
   const server: Server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://stub');
     const body = await readBody(request);
-    hits.push({ method: request.method ?? '', path: `${url.pathname}${url.search}`, body });
+    hits.push({
+      method: request.method ?? '',
+      path: `${url.pathname}${url.search}`,
+      body,
+      command: request.headers['x-uptimerobot-command'] as string | undefined,
+    });
     const reply = (status: number, payload: unknown): void => {
       response.writeHead(status, { 'content-type': 'application/json' });
       response.end(JSON.stringify(payload));
@@ -212,7 +217,7 @@ describe('uptimerobot scan --apply', () => {
     });
     const output = JSON.parse(result.stdout);
     expect(output).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       repoRoot: root,
       allowance: { used: 2, limit: 10, proposed: 3 },
       tracked: { providerIds: [], partial: false },
@@ -267,6 +272,17 @@ describe('uptimerobot scan --apply', () => {
       { type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 801 } } },
       { type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 861 } } },
     ]);
+  });
+
+  it('tags every request of an apply run with the scan:3rd-party command header', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(0);
+    expect(stub.hits.length).toBeGreaterThan(0);
+    expect(stub.hits.every((hit) => hit.command === 'scan:3rd-party')).toBe(true);
   });
 
   it('creates each provider once across two confirmed runs, whatever the catalog cache says', async () => {

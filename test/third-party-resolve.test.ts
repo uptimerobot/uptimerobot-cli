@@ -95,7 +95,7 @@ function candidate(
         app: '.',
       },
     ],
-    hints: [],
+    components: [],
     ...overrides,
   };
 }
@@ -598,7 +598,7 @@ describe('resolveCandidates', () => {
 
   it('keeps every candidate field on the resolved row', async () => {
     const { access } = stubApi({ searches: { stripe: [rows(row(801, 'Stripe'))] } });
-    const [resolved] = await resolveCandidates([candidate('Stripe', { hints: ['s3'] })], {
+    const [resolved] = await resolveCandidates([candidate('Stripe', { components: [] })], {
       access,
       includeBuildTime: false,
       tracked: NONE,
@@ -607,7 +607,7 @@ describe('resolveCandidates', () => {
       provider: 'Stripe',
       searchTerm: 'stripe',
       class: 'runtime',
-      hints: ['s3'],
+      components: [],
       evidence: [{ file: 'package.json', line: 3 }],
       regionDefaulted: false,
     });
