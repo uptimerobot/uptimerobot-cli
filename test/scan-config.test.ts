@@ -127,7 +127,14 @@ describe('terraform', () => {
         kind: 'terraform-provider',
         value: 'AWS',
         evidence: { file: 'infra/main.tf', line: 7 },
-        detail: { signal: 'provider "aws"', class: 'runtime', service: '', region: 'eu-central-1' },
+        detail: {
+          signal: 'provider "aws"',
+          class: 'runtime',
+          service: '',
+          component: '',
+          region: 'eu-central-1',
+          regionLine: '8',
+        },
       }),
       expect.objectContaining({
         kind: 'terraform-resource',
@@ -137,7 +144,9 @@ describe('terraform', () => {
           signal: 'aws_s3',
           class: 'runtime',
           service: 's3',
+          component: 'Amazon Simple Storage Service',
           region: 'eu-central-1',
+          regionLine: '8',
         },
       }),
       expect.objectContaining({
@@ -308,6 +317,80 @@ describe('terraform', () => {
     ]);
   });
 
+  it('drops the region when two blocks of one provider name disagree, and keeps a repeated one', () => {
+    const contents = [
+      'provider "aws" {',
+      '  region = "eu-central-1"',
+      '}',
+      'provider "aws" {',
+      '  alias  = "use1"',
+      '  region = "us-east-1"',
+      '}',
+      'resource "aws_cloudfront_distribution" "cdn" {}',
+      'provider "google" {',
+      '  region = "europe-west1"',
+      '}',
+      'provider "google" {',
+      '  region = "europe-west1"',
+      '}',
+      'resource "google_storage_bucket" "b" {}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['AWS', ''],
+      ['AWS', ''],
+      ['Google Cloud', 'europe-west1'],
+      ['Google Cloud', 'europe-west1'],
+    ]);
+  });
+
+  it('keeps a second resource with the same first word when it names another component', () => {
+    const contents = [
+      'provider "cloudflare" {}',
+      'resource "cloudflare_workers_script" "api" {}',
+      'resource "cloudflare_workers_kv_namespace" "kv" {}',
+      'resource "cloudflare_workers_route" "r" {}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(
+      findings
+        .filter((finding) => finding.kind === 'terraform-resource')
+        .map((finding) => [finding.evidence.line, finding.detail.component]),
+    ).toEqual([
+      [2, 'Workers'],
+      [3, 'Workers KV'],
+    ]);
+  });
+
+  it('names the component of a resource type by its full type when the first word is shared', () => {
+    const contents = [
+      'provider "google" {}',
+      'resource "google_cloud_run_v2_service" "api" {}',
+      'resource "google_cloud_scheduler_job" "nightly" {}',
+      'resource "google_container_registry" "images" {}',
+      'provider "cloudflare" {}',
+      'resource "cloudflare_workers_kv_namespace" "kv" {}',
+      'resource "cloudflare_zone_settings_override" "z" {}',
+      'provider "azurerm" {}',
+      'resource "azurerm_linux_web_app" "web" {}',
+      'resource "azurerm_windows_function_app" "fn" {}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(
+      findings
+        .filter((finding) => finding.kind === 'terraform-resource')
+        .map((finding) => [finding.detail.signal, finding.detail.component]),
+    ).toEqual([
+      ['google_cloud', 'Cloud Run'],
+      ['google_cloud', ''],
+      ['google_container', ''],
+      ['cloudflare_workers', 'Workers KV'],
+      ['cloudflare_zone', ''],
+      ['azurerm_linux', 'App Service'],
+      ['azurerm_windows', 'Azure Functions'],
+    ]);
+  });
+
   it('takes a file default only from the top level, never from a resource before the first provider', () => {
     const contents = [
       'resource "aws_s3_bucket" "b" {',
@@ -450,7 +533,14 @@ describe('container registries', () => {
         kind: 'registry',
         value: 'GitHub',
         evidence: { file: 'Dockerfile', line: 2 },
-        detail: { signal: 'FROM ghcr.io', class: 'build-time', service: '', region: '' },
+        detail: {
+          signal: 'FROM ghcr.io',
+          class: 'build-time',
+          service: '',
+          component: '',
+          region: '',
+          regionLine: '',
+        },
       }),
       expect.objectContaining({
         value: 'AWS',
@@ -558,7 +648,14 @@ describe('git remotes', () => {
         outcome: 'vendor',
         value: 'GitHub',
         evidence: { file: '.git/config', line: 4 },
-        detail: { signal: 'git remote: github.com', class: 'build-time', service: '', region: '' },
+        detail: {
+          signal: 'git remote: github.com',
+          class: 'build-time',
+          service: '',
+          component: '',
+          region: '',
+          regionLine: '',
+        },
       }),
       expect.objectContaining({
         value: 'GitLab',

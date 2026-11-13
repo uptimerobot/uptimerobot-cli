@@ -1,0 +1,44 @@
+{
+  "data": [
+    {
+      "id": 9500,
+      "name": "Amazon Simple Queue Service",
+      "status": "operational",
+      "region": null,
+      "global": false,
+      "children": [
+        {
+          "id": 9501,
+          "name": "Amazon Simple Queue Service (N. Virginia)",
+          "status": "operational",
+          "region": {
+            "code": "us-east-1",
+            "name": "N. Virginia"
+          },
+          "global": false
+        },
+        {
+          "id": 9502,
+          "name": "Amazon Simple Queue Service (Ohio)",
+          "status": "operational",
+          "region": {
+            "code": "us-east-2",
+            "name": "Ohio"
+          },
+          "global": false
+        },
+        {
+          "id": 9503,
+          "name": "Amazon Simple Queue Service (N. California)",
+          "status": "operational",
+          "region": {
+            "code": "us-west-1",
+            "name": "N. California"
+          },
+          "global": false
+        }
+      ]
+    }
+  ],
+  "regionLike": false
+}

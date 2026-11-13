@@ -1,8 +1,10 @@
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { type IncomingMessage, type Server, createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { COMPONENT_TERMS } from '../src/lib/scan/components.js';
 import { runCli } from './helpers/run-cli.js';
 import { runInteractiveCli } from './helpers/run-interactive-cli.js';
 
@@ -13,7 +15,7 @@ import { runInteractiveCli } from './helpers/run-interactive-cli.js';
  */
 interface Stub {
   url: string;
-  hits: { method: string; path: string; body: unknown }[];
+  hits: { method: string; path: string; body: unknown; command: string | undefined }[];
   monitors: Record<string, unknown>[];
   close(): Promise<void>;
 }
@@ -31,6 +33,14 @@ interface StubOptions {
   catalogStatus?: number;
   /** Search terms whose lookup answers 503 while the rest resolve. */
   catalogDown?: string[];
+  /** Every components search answers this status instead of the recorded fixture. */
+  componentsStatus?: number;
+  /** Every components search answers this body with 200 instead of the recorded fixture. */
+  componentsBody?: unknown;
+  /** Every provider detail read answers this status instead of the merged fixture tree. */
+  providerStatus?: number;
+  /** Every provider detail read answers this body with 200 instead of the merged fixture tree. */
+  providerBody?: unknown;
 }
 
 const row = (id: number, name: string, isTracked = false): Record<string, unknown> => ({
@@ -47,6 +57,7 @@ const DEFAULT_CATALOG: Record<string, Record<string, unknown>[]> = {
   stripe: [row(801, 'Stripe'), row(802, 'Stripe Terminal')],
   vercel: [row(861, 'Vercel')],
   resend: [row(77, 'Resend')],
+  aws: [row(248, 'AWS')],
   github: [row(6, 'GitHub')],
   sentry: [],
 };
@@ -81,7 +92,12 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
   const server: Server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://stub');
     const body = await readBody(request);
-    hits.push({ method: request.method ?? '', path: `${url.pathname}${url.search}`, body });
+    hits.push({
+      method: request.method ?? '',
+      path: `${url.pathname}${url.search}`,
+      body,
+      command: request.headers['x-uptimerobot-command'] as string | undefined,
+    });
     const reply = (status: number, payload: unknown): void => {
       response.writeHead(status, { 'content-type': 'application/json' });
       response.end(JSON.stringify(payload));
@@ -108,6 +124,34 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
       if (options.catalogDown?.includes(url.searchParams.get('search') ?? '') === true)
         return reply(503, 'catalog down');
       return reply(200, { data: catalog[url.searchParams.get('search') ?? ''] ?? [] });
+    }
+    const detail = /^\/v3\/third-party-providers\/(\d+)$/.exec(url.pathname);
+    if (request.method === 'GET' && detail !== null) {
+      if (options.providerStatus !== undefined)
+        return reply(options.providerStatus, { code: 'DOWN', message: 'provider down' });
+      if (options.providerBody !== undefined) return reply(200, options.providerBody);
+      // The whole tree is every recorded components answer of the provider, merged.
+      const directory = join(FIXTURES, detail[1]!);
+      if (!existsSync(directory))
+        return reply(404, { code: '026-016', message: 'unknown provider' });
+      const roots = readdirSync(directory).flatMap((name) => {
+        const parsed = JSON.parse(readFileSync(join(directory, name), 'utf8')) as {
+          data: unknown[];
+        };
+        return parsed.data;
+      });
+      return reply(200, { data: { id: Number(detail[1]), name: 'provider', components: roots } });
+    }
+    const components = /^\/v3\/third-party-providers\/(\d+)\/components$/.exec(url.pathname);
+    if (request.method === 'GET' && components !== null) {
+      if (options.componentsStatus !== undefined)
+        return reply(options.componentsStatus, { code: 'DOWN', message: 'components down' });
+      if (options.componentsBody !== undefined) return reply(200, options.componentsBody);
+      const term = url.searchParams.get('search') ?? '';
+      const fixture = join(FIXTURES, components[1]!, `${encodeURIComponent(term)}.json`);
+      // A recorded answer per query string; a term with no recording is a test bug, not a miss.
+      if (!existsSync(fixture)) return reply(599, { message: `no components fixture for ${term}` });
+      return reply(200, JSON.parse(readFileSync(fixture, 'utf8')));
     }
     if (request.method === 'POST' && url.pathname === '/v3/monitors') {
       const scripted = options.createReplies?.[creates];
@@ -166,6 +210,23 @@ async function writeRepository(files: Record<string, string>): Promise<string> {
   return root;
 }
 
+const FIXTURES = join(import.meta.dirname, 'fixtures', 'third-party', 'components');
+
+const AWS_TERRAFORM = [
+  'provider "aws" {',
+  '  region = "eu-central-1"',
+  '}',
+  'resource "aws_s3_bucket" "logs" {}',
+  'resource "aws_db_instance" "main" {}',
+  '',
+].join('\n');
+
+/** The skill's django-aws fixture: S3 and RDS in Frankfurt, two scoped components. */
+const AWS_REPOSITORY = {
+  'requirements.txt': 'boto3==1.35.80\n',
+  'infra/main.tf': AWS_TERRAFORM,
+};
+
 const REPOSITORY = {
   'package.json': JSON.stringify({
     dependencies: {
@@ -195,6 +256,691 @@ const env = (stub: Stub, extra: Record<string, string | undefined> = {}) => ({
 
 const posts = (stub: Stub) => stub.hits.filter((hit) => hit.method === 'POST');
 
+describe('uptimerobot scan --apply scopes a provider to its components', () => {
+  const componentSearches = (stub: Stub) =>
+    stub.hits
+      .filter((hit) => hit.path.includes('/components?'))
+      .map((hit) =>
+        decodeURIComponent(new URL(hit.path, 'http://x').searchParams.get('search') ?? ''),
+      );
+
+  it('proposes the two Frankfurt components of the django-aws fixture and creates with exactly their ids', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const proposed = await runCli(['scan', root, '--apply', '--json'], env(stub));
+    expect(proposed.exitCode).toBe(2);
+    const pin = JSON.parse(proposed.stdout).proposal[0].pin as string;
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', pin],
+      env(stub),
+    );
+
+    expect(result.exitCode).toBe(0);
+    const output = JSON.parse(proposed.stdout);
+    expect(output.proposal[0]).toMatchObject({
+      provider: 'AWS',
+      status: 'create',
+      scope: 'components',
+      terms: [
+        {
+          term: 'Amazon Relational Database Service',
+          region: 'eu-central-1',
+          outcome: 'matched',
+          leaves: 1,
+        },
+        {
+          term: 'Amazon Simple Storage Service',
+          region: 'eu-central-1',
+          outcome: 'matched',
+          leaves: 1,
+        },
+      ],
+      trackedComponents: [
+        {
+          id: 9208,
+          name: 'Amazon Relational Database Service (Frankfurt)',
+          term: 'Amazon Relational Database Service',
+          region: 'eu-central-1',
+        },
+        {
+          id: 9108,
+          name: 'Amazon Simple Storage Service (Frankfurt)',
+          term: 'Amazon Simple Storage Service',
+          region: 'eu-central-1',
+        },
+      ],
+    });
+    expect(output.proposal[0].scopeReason).toBeUndefined();
+    expect(posts(stub).map((hit) => hit.body)).toEqual([
+      {
+        type: 'THIRD_PARTY_SERVICE',
+        config: { thirdPartyService: { providerId: 248, trackedComponentIds: [9208, 9108] } },
+      },
+    ]);
+    expect(JSON.parse(result.stdout).results[0]).toMatchObject({
+      provider: 'AWS',
+      status: 'created',
+      trackedComponents: [{ id: 9208 }, { id: 9108 }],
+    });
+    expect(componentSearches(stub)).toEqual([
+      'Amazon Relational Database Service',
+      'Amazon Simple Storage Service',
+    ]);
+    const componentHits = stub.hits.filter((hit) => hit.path.includes('/components?'));
+    expect(
+      componentHits.map((hit) => [...new URL(hit.path, 'http://x').searchParams.keys()]),
+    ).toEqual(componentHits.map(() => ['search']));
+  });
+
+  it('leaves the row unresolved when the components endpoint answers 200 without a tree', async () => {
+    const stub = await startStub({ componentsBody: { message: 'maintenance' } });
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout).proposal[0]).toMatchObject({
+      status: 'unresolved',
+      failure: { code: 'COMPONENT_SEARCH_FAILED' },
+    });
+    expect(posts(stub)).toEqual([]);
+  });
+
+  it('shows a hostile leaf name on one line with its format characters and backticks gone', async () => {
+    const stub = await startStub({
+      componentsBody: {
+        data: [
+          {
+            id: 9001,
+            name: `Evil\u202e \`[x](https://e)\`\nline two ${'x'.repeat(300)}`,
+            region: null,
+            global: true,
+            children: [],
+          },
+          { id: 9002, name: '   ', region: null, global: true, children: [] },
+        ],
+      },
+    });
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(
+      ['scan', root, '--apply'],
+      env(stub, { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+
+    const awsLines = result.stdout.split('\n').filter((line) => line.includes('AWS'));
+    expect(awsLines.length).toBeGreaterThan(1);
+    expect(awsLines.join('\n')).not.toContain('\u202e');
+    expect(awsLines.join('\n')).not.toContain('`');
+    expect(result.stdout).toContain("Evil '[x](https://e)' line two ");
+    expect(result.stdout).not.toContain('x'.repeat(200));
+    expect(result.stdout).not.toContain('- AWS, :');
+  });
+
+  it('keeps a tracked row informational when its component search fails, so the creates still run', async () => {
+    const stub = await startStub({
+      componentsStatus: 503,
+      monitors: [
+        {
+          id: 100,
+          type: 'THIRD_PARTY_SERVICE',
+          config: { thirdPartyService: { providerId: 248, trackedComponentIds: [9108] } },
+        },
+      ],
+    });
+    const root = await writeRepository({
+      ...AWS_REPOSITORY,
+      'package.json': '{ "dependencies": { "stripe": "17.4.0" } }',
+    });
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(
+      output.proposal.find((row: { provider: string }) => row.provider === 'AWS'),
+    ).toMatchObject({
+      status: 'already-tracked',
+      monitor: { monitorId: 100 },
+    });
+    expect(
+      output.proposal.find((row: { provider: string }) => row.provider === 'AWS').untracked,
+    ).toBeUndefined();
+    expect(output.results).toEqual([{ provider: 'Stripe', status: 'created', monitorId: 5000 }]);
+  });
+
+  it('reads two monitors of one provider as one list, where any that tracks everything means nothing is untracked', async () => {
+    const monitor = (id: number, trackedComponentIds: number[] | null) => ({
+      id,
+      type: 'THIRD_PARTY_SERVICE',
+      config: { thirdPartyService: { providerId: 248, trackedComponentIds } },
+    });
+    const root = await writeRepository(AWS_REPOSITORY);
+    const union = await startStub({ monitors: [monitor(101, [9108]), monitor(100, [9208])] });
+    const any = await startStub({ monitors: [monitor(100, [9108]), monitor(101, null)] });
+
+    const unionRun = JSON.parse(
+      (await runCli(['scan', root, '--apply', '--json'], env(union))).stdout,
+    );
+    const anyRun = JSON.parse((await runCli(['scan', root, '--apply', '--json'], env(any))).stdout);
+
+    expect(unionRun.proposal[0]).toMatchObject({
+      monitor: { monitorId: 100, trackedComponentIds: [9208, 9108] },
+      untracked: [],
+    });
+    expect(anyRun.proposal[0]).toMatchObject({
+      monitor: { trackedComponentIds: null },
+      untracked: [],
+    });
+  });
+
+  it('asks the endpoint once for a term seen in two regions', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      'infra/eu.tf': AWS_TERRAFORM,
+      'infra/us.tf': AWS_TERRAFORM.replace('eu-central-1', 'us-west-2').replace(
+        'aws_db_instance',
+        'aws_db_x',
+      ),
+    });
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    const output = JSON.parse(result.stdout);
+    expect(output.proposal[0].scope).toBe('components');
+    expect(componentSearches(stub)).toEqual([
+      'Amazon Relational Database Service',
+      'Amazon Simple Storage Service',
+    ]);
+    expect(output.proposal[0].trackedComponents.map((leaf: { id: number }) => leaf.id)).toEqual([
+      9208, 9204, 9108, 9104,
+    ]);
+  });
+
+  it('shows the scoped components and one evidence line per component to a person', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(
+      ['scan', root, '--apply'],
+      env(stub, { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stdout).toContain(
+      '| AWS | provider "aws", aws_s3, aws_db, +1 more | runtime | 248, operational, https://status.aws.example/ | Amazon Relational Database Service (Frankfurt), Amazon Simple Storage Service (Frankfurt) | create |',
+    );
+    expect(result.stdout).toContain(
+      '- AWS, Amazon Simple Storage Service (Frankfurt): infra/main.tf:4 (aws_s3), region eu-central-1 from infra/main.tf:2',
+    );
+    expect(result.stdout).toContain(
+      '- AWS, Amazon Relational Database Service (Frankfurt): infra/main.tf:5 (aws_db), region eu-central-1 from infra/main.tf:2',
+    );
+  });
+
+  it('tracks the whole provider and says which term missed when one term matches nothing', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      ...AWS_REPOSITORY,
+      'infra/main.tf': `${AWS_TERRAFORM}resource "aws_lambda_function" "fn" {}\n`,
+    });
+
+    const result = await runCli(['scan', root, '--apply', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(2);
+    const output = JSON.parse(result.stdout);
+    expect(output.proposal[0]).toMatchObject({
+      provider: 'AWS',
+      scope: 'whole',
+      scopeReason: 'term-missed',
+      trackedComponents: [],
+      pin: 'AWS=248:all',
+    });
+    await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'AWS=248:all'],
+      env(stub),
+    );
+    expect(output.proposal[0].terms).toContainEqual({
+      term: 'AWS Lambda',
+      region: 'eu-central-1',
+      outcome: 'missed',
+      leaves: 0,
+    });
+    expect(posts(stub).map((hit) => hit.body)).toEqual([
+      { type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 248 } } },
+    ]);
+    const readable = await runCli(
+      ['scan', root, '--apply'],
+      env(await startStub(), { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+    expect(readable.stdout).toContain(
+      'no component matched AWS Lambda; tracking the whole provider',
+    );
+  });
+
+  it('tracks the whole provider when a term with no region matches more than twenty leaves', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      'infra/main.tf': 'resource "aws_s3_bucket" "logs" {}\n',
+    });
+
+    const result = await runCli(['scan', root, '--apply', '--json'], env(stub));
+
+    const output = JSON.parse(result.stdout);
+    expect(output.proposal[0]).toMatchObject({ scope: 'whole', scopeReason: 'too-many' });
+    expect(output.proposal[0].terms).toEqual([
+      { term: 'Amazon Simple Storage Service', region: null, outcome: 'matched', leaves: 23 },
+    ]);
+    const readable = await runCli(
+      ['scan', root, '--apply'],
+      env(await startStub(), { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+    expect(readable.stdout).toContain(
+      '23 components matched, over 20; tracking the whole provider',
+    );
+  });
+
+  it('tracks the whole provider when the components endpoint is not there', async () => {
+    const stub = await startStub({ componentsStatus: 404 });
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.proposal[0]).toMatchObject({
+      scope: 'whole',
+      scopeReason: 'endpoint-unavailable',
+    });
+    expect(posts(stub)).toHaveLength(1);
+    expect(componentSearches(stub)).toHaveLength(1);
+  });
+
+  it.each([500, 429, 400])(
+    'leaves the row unresolved and creates nothing when a components call answers %i',
+    async (status) => {
+      const stub = await startStub({ componentsStatus: status });
+      const root = await writeRepository(AWS_REPOSITORY);
+
+      const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+      expect(result.exitCode).toBe(1);
+      expect(JSON.parse(result.stderr).error.code).toBe('CATALOG_UNRESOLVED');
+      const output = JSON.parse(result.stdout);
+      expect(output.proposal[0]).toMatchObject({
+        status: 'unresolved',
+        failure: { code: 'COMPONENT_SEARCH_FAILED' },
+      });
+      expect(posts(stub)).toEqual([]);
+      const readable = await runCli(
+        ['scan', root, '--apply', '--confirm'],
+        env(stub, { UPTIMEROBOT_OUTPUT: 'table' }),
+      );
+      expect(readable.stdout).toContain(
+        `component search for Amazon Relational Database Service failed (HTTP ${status})`,
+      );
+      expect(readable.stdout).not.toContain('catalog could not');
+    },
+  );
+
+  it('says what an already-tracked monitor covers and which found component it does not', async () => {
+    const tracked = (trackedComponentIds: number[] | null, id: number) => ({
+      id,
+      type: 'THIRD_PARTY_SERVICE',
+      config: { thirdPartyService: { providerId: 248, trackedComponentIds } },
+    });
+    const root = await writeRepository(AWS_REPOSITORY);
+    const scoped = await startStub({ monitors: [tracked([9108], 100)] });
+    const whole = await startStub({ monitors: [tracked(null, 101)] });
+
+    const scopedRun = JSON.parse(
+      (await runCli(['scan', root, '--apply', '--json'], env(scoped))).stdout,
+    );
+    const wholeRun = JSON.parse(
+      (await runCli(['scan', root, '--apply', '--json'], env(whole))).stdout,
+    );
+
+    expect(scopedRun.proposal[0]).toMatchObject({
+      status: 'already-tracked',
+      monitor: { monitorId: 100, trackedComponentIds: [9108], needsReview: false },
+      untracked: ['Amazon Relational Database Service (Frankfurt)'],
+    });
+    expect(wholeRun.proposal[0]).toMatchObject({
+      status: 'already-tracked',
+      monitor: { monitorId: 101, trackedComponentIds: null },
+      untracked: [],
+    });
+    const readable = await runCli(
+      ['scan', root, '--apply'],
+      env(scoped, { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+    expect(readable.stdout).toContain(
+      'tracks 1 component; scan found Amazon Relational Database Service (Frankfurt), not tracked',
+    );
+    const readableWhole = await runCli(
+      ['scan', root, '--apply'],
+      env(whole, { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+    expect(readableWhole.stdout).toContain('| tracks every component |');
+  });
+
+  it('asks the endpoint nothing for a provider without component terms', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    const output = JSON.parse(result.stdout);
+    expect(
+      output.proposal.find((row: { provider: string }) => row.provider === 'Stripe'),
+    ).toMatchObject({
+      scope: 'whole',
+      scopeReason: 'no-terms',
+      terms: [],
+    });
+    expect(componentSearches(stub)).toEqual([]);
+  });
+
+  it('sends only built-in component terms as search text', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      ...AWS_REPOSITORY,
+      'infra/main.tf': `${AWS_TERRAFORM}resource "aws_sqs_queue" "q" {}\nresource "aws_cloudfront_distribution" "cdn" {}\n`,
+    });
+
+    await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    const searches = componentSearches(stub);
+    expect(searches.length).toBeGreaterThan(2);
+    expect(searches.every((term) => COMPONENT_TERMS.includes(term))).toBe(true);
+  });
+});
+
+describe('uptimerobot scan --apply pins the components an agent confirms', () => {
+  const componentSearches = (stub: Stub) =>
+    stub.hits.filter((hit) => hit.path.includes('/components?'));
+
+  it('names the pin on every row so the confirm run can repeat the proposal exactly', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      ...AWS_REPOSITORY,
+      'package.json': '{ "dependencies": { "stripe": "17.4.0" } }',
+    });
+
+    const output = JSON.parse(
+      (await runCli(['scan', root, '--apply', '--json'], env(stub))).stdout,
+    );
+
+    expect(
+      output.proposal.map((row: { provider: string; pin?: string }) => [row.provider, row.pin]),
+    ).toEqual([
+      ['AWS', 'AWS=248:9208,9108'],
+      ['Stripe', 'Stripe=801:all'],
+    ]);
+  });
+
+  it('creates exactly the pinned ids without a components search, even when the tree moved', async () => {
+    const stub = await startStub({ componentsBody: { data: [] } });
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'AWS=248:9208,9108'],
+      env(stub),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(componentSearches(stub)).toEqual([]);
+    expect(stub.hits.filter((hit) => hit.path === '/v3/third-party-providers/248')).toHaveLength(1);
+    expect(posts(stub).map((hit) => hit.body)).toEqual([
+      {
+        type: 'THIRD_PARTY_SERVICE',
+        config: { thirdPartyService: { providerId: 248, trackedComponentIds: [9208, 9108] } },
+      },
+    ]);
+    const output = JSON.parse(result.stdout);
+    expect(output.proposal[0]).toMatchObject({
+      scope: 'components',
+      trackedComponents: [
+        { id: 9208, name: 'Amazon Relational Database Service (Frankfurt)' },
+        { id: 9108, name: 'Amazon Simple Storage Service (Frankfurt)' },
+      ],
+    });
+  });
+
+  it('pins the whole provider with :all', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'AWS=248:all'],
+      env(stub),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(componentSearches(stub)).toEqual([]);
+    expect(posts(stub).map((hit) => hit.body)).toEqual([
+      { type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 248 } } },
+    ]);
+    expect(JSON.parse(result.stdout).proposal[0]).toMatchObject({
+      scope: 'whole',
+      scopeReason: 'pinned-whole',
+    });
+  });
+
+  it('blocks a pin naming an id the provider tree does not hold', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'AWS=248:9208,4242'],
+      env(stub),
+    );
+
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stderr).error).toMatchObject({
+      code: 'INVALID_INPUT',
+      path: 'only',
+      message: expect.stringContaining('4242'),
+    });
+    expect(JSON.parse(result.stdout).confirmation).toBe('blocked');
+    expect(posts(stub)).toEqual([]);
+  });
+
+  it('refuses an off-terminal --confirm on a row with component terms unless its pin is given', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      ...AWS_REPOSITORY,
+      'package.json': '{ "dependencies": { "stripe": "17.4.0" } }',
+    });
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stderr).error).toMatchObject({
+      code: 'INVALID_INPUT',
+      path: 'only',
+      message:
+        'pass --only AWS=248:9208,9108 to create what the proposal showed, or --only AWS=248:all for the whole provider. Nothing was created.',
+    });
+    expect(posts(stub)).toEqual([]);
+
+    const pinned = await runCli(
+      [
+        'scan',
+        root,
+        '--apply',
+        '--confirm',
+        '--json',
+        '--only',
+        'AWS=248:9208,9108',
+        '--only',
+        'Stripe',
+      ],
+      env(stub),
+    );
+    expect(pinned.exitCode).toBe(0);
+    expect(posts(stub)).toHaveLength(2);
+  });
+
+  it('rejects a malformed pin before any request', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(AWS_REPOSITORY);
+    for (const only of [
+      'AWS=248:',
+      'AWS=248:x',
+      'AWS=248:1,,2',
+      'AWS=248:-1',
+      'AWS=248:1:2',
+      'AWS=248:ALL',
+    ]) {
+      const result = await runCli(
+        ['scan', root, '--apply', '--confirm', '--json', '--only', only],
+        env(stub),
+      );
+      expect(result.exitCode, only).toBe(2);
+      expect(JSON.parse(result.stderr).error.code, only).toBe('INVALID_INPUT');
+    }
+    expect(stub.hits).toEqual([]);
+  });
+
+  it('names every unpinned row at once, so one failed run teaches every pin', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      ...AWS_REPOSITORY,
+      'package.json': '{ "devDependencies": { "@octokit/rest": "21.0.0" } }',
+    });
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--include-build-time'],
+      env(stub),
+    );
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stderr).error.message).toBe(
+      'pass --only AWS=248:9208,9108 --only GitHub=6:6102 to create what the proposal showed, or --only AWS=248:all --only GitHub=6:all for the whole provider. Nothing was created.',
+    );
+  });
+
+  it('leaves a pinned row unresolved when the provider read carries no component tree', async () => {
+    const stub = await startStub({ providerBody: { data: { id: 248, name: 'AWS' } } });
+    const root = await writeRepository(AWS_REPOSITORY);
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'AWS=248:9108'],
+      env(stub),
+    );
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout).proposal[0]).toMatchObject({
+      status: 'unresolved',
+      failure: {
+        code: 'COMPONENT_SEARCH_FAILED',
+        message: expect.stringContaining('component tree'),
+      },
+    });
+  });
+
+  it('quotes a pin whose provider name has a space, so the printed command runs as printed', async () => {
+    const stub = await startStub({
+      catalog: { ...DEFAULT_CATALOG, 'google cloud': [row(5, 'Google Cloud')] },
+    });
+    const root = await writeRepository({
+      'infra/main.tf': 'provider "google" {}\nresource "google_storage_bucket" "b" {}\n',
+    });
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+    expect(JSON.parse(result.stderr).error.message).toBe(
+      'pass --only "Google Cloud=5:5101" to create what the proposal showed, or --only "Google Cloud=5:all" for the whole provider. Nothing was created.',
+    );
+    const pinned = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'Google Cloud=5:5101'],
+      env(stub),
+    );
+    expect(pinned.exitCode).toBe(0);
+  });
+
+  it('refuses two pins for one provider that disagree', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(AWS_REPOSITORY);
+    const result = await runCli(
+      [
+        'scan',
+        root,
+        '--apply',
+        '--confirm',
+        '--json',
+        '--only',
+        'AWS=248:9108',
+        '--only',
+        'AWS=248:all',
+      ],
+      env(stub),
+    );
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stderr).error.message).toBe(
+      '--only pins aws twice with different components.',
+    );
+    expect(stub.hits).toEqual([]);
+  });
+
+  it('sends a duplicated pinned id once', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(AWS_REPOSITORY);
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'AWS=248:9108,9108'],
+      env(stub),
+    );
+    expect(result.exitCode).toBe(0);
+    expect(posts(stub)[0]?.body).toEqual({
+      type: 'THIRD_PARTY_SERVICE',
+      config: { thirdPartyService: { providerId: 248, trackedComponentIds: [9108] } },
+    });
+    expect(JSON.parse(result.stdout).proposal[0].pin).toBe('AWS=248:9108');
+  });
+
+  it('leaves the row unresolved when the pinned provider tree cannot be read, and prints no pin on a tracked row', async () => {
+    const root = await writeRepository(AWS_REPOSITORY);
+    const down = await startStub({ providerStatus: 503 });
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'AWS=248:9108'],
+      env(down),
+    );
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout).proposal[0]).toMatchObject({
+      status: 'unresolved',
+      failure: { code: 'COMPONENT_SEARCH_FAILED' },
+    });
+    expect(posts(down)).toEqual([]);
+
+    const tracked = await startStub({
+      monitors: [
+        {
+          id: 100,
+          type: 'THIRD_PARTY_SERVICE',
+          config: { thirdPartyService: { providerId: 248 } },
+        },
+      ],
+    });
+    const output = JSON.parse(
+      (await runCli(['scan', root, '--apply', '--json'], env(tracked))).stdout,
+    );
+    expect(output.proposal[0].status).toBe('already-tracked');
+    expect(output.proposal[0].pin).toBeUndefined();
+  });
+
+  it.runIf(process.platform === 'darwin' || process.platform === 'linux')(
+    'needs no pin at a terminal, where the run that shows is the run that creates',
+    async () => {
+      const stub = await startStub();
+      const root = await writeRepository(AWS_REPOSITORY);
+      const result = await runInteractiveCli(['scan', root, '--apply', '--confirm'], [], {
+        UPTIMEROBOT_AGENT: '0',
+        UPTIMEROBOT_API_KEY: 'u123-secret',
+        UPTIMEROBOT_DEV_API_URL: stub.url,
+      });
+      expect(result.exitCode).toBe(0);
+      expect(posts(stub)).toHaveLength(1);
+    },
+    30_000,
+  );
+});
+
 describe('uptimerobot scan --apply', () => {
   it('proposes without creating in agent mode and asks for confirmation', async () => {
     const stub = await startStub();
@@ -212,7 +958,7 @@ describe('uptimerobot scan --apply', () => {
     });
     const output = JSON.parse(result.stdout);
     expect(output).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       repoRoot: root,
       allowance: { used: 2, limit: 10, proposed: 3 },
       tracked: { providerIds: [], partial: false },
@@ -267,6 +1013,17 @@ describe('uptimerobot scan --apply', () => {
       { type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 801 } } },
       { type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 861 } } },
     ]);
+  });
+
+  it('tags every request of an apply run with the scan:3rd-party command header', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(0);
+    expect(stub.hits.length).toBeGreaterThan(0);
+    expect(stub.hits.every((hit) => hit.command === 'scan:3rd-party')).toBe(true);
   });
 
   it('creates each provider once across two confirmed runs, whatever the catalog cache says', async () => {
@@ -483,12 +1240,24 @@ describe('uptimerobot scan --apply', () => {
     expect(stub.hits).toEqual([]);
 
     const included = await runCli(
-      ['scan', root, '--apply', '--confirm', '--json', '--only', 'GitHub', '--include-build-time'],
+      [
+        'scan',
+        root,
+        '--apply',
+        '--confirm',
+        '--json',
+        '--only',
+        'GitHub=6:6102',
+        '--include-build-time',
+      ],
       env(stub),
     );
     expect(included.exitCode).toBe(0);
     expect(posts(stub).map((hit) => hit.body)).toEqual([
-      { type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 6 } } },
+      {
+        type: 'THIRD_PARTY_SERVICE',
+        config: { thirdPartyService: { providerId: 6, trackedComponentIds: [6102] } },
+      },
     ]);
   });
 
@@ -659,7 +1428,8 @@ describe('uptimerobot scan --apply', () => {
       ]),
     ).toEqual([['Vercel', 'create']]);
     expect(output.results).toEqual([{ provider: 'Vercel', status: 'created', monitorId: 5002 }]);
-    expect(posts(stub).at(-1)?.body).toMatchObject({
+    expect(posts(stub).at(-1)?.body).toEqual({
+      type: 'THIRD_PARTY_SERVICE',
       config: { thirdPartyService: { providerId: 862 } },
     });
 
@@ -836,10 +1606,10 @@ describe('uptimerobot scan --apply', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain(
-      '| Stripe | stripe@17.4.0 | runtime | 801, operational, https://status.stripe.example/ | create |',
+      '| Stripe | stripe@17.4.0 | runtime | 801, operational, https://status.stripe.example/ |  | create |',
     );
     expect(result.stdout).toContain(
-      '| Sentry | @sentry/nextjs@8.42.0 | runtime | not in catalog | none |',
+      '| Sentry | @sentry/nextjs@8.42.0 | runtime | not in catalog |  | none |',
     );
     expect(result.stdout).toContain('2 of 10 third-party slots used, 3 proposed.');
     expect(result.stdout).toContain(
