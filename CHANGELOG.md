@@ -12,6 +12,21 @@ may change in minor releases.
 
 ### Added
 
+- `uptimerobot scan --apply` scopes a third-party service to the components
+  the repository uses for AWS, Google Cloud, Microsoft Azure, Cloudflare and
+  GitHub. One components search per term found by the scan; the leaves in the
+  term's region plus the global ones are kept, and the create carries their
+  ids in `trackedComponentIds`. The whole provider is tracked, with a reason,
+  when a term matched nothing (`term-missed`), the kept leaves pass 20
+  (`too-many`), the search endpoint is missing (`endpoint-unavailable`) or
+  the scan found no term (`no-terms`). Any other failed search leaves the row
+  `unresolved` with `COMPONENT_SEARCH_FAILED`, exit 1 `CATALOG_UNRESOLVED`.
+  The proposal table gains a Components column and one evidence line per
+  scoped component; the `--json` row carries `scope`, `scopeReason`,
+  `terms[]` and `trackedComponents[]`, and a `created` result repeats
+  `trackedComponents`. An already-tracked row says whether its monitor tracks
+  every component or N, carries `monitor` and names the found leaves it does
+  not track under `untracked`.
 - `uptimerobot monitors third-party-service maintenances list <id>` and
   `uptimerobot third-party-services maintenances`, generated from the
   published contract, list the upcoming maintenance windows of one

@@ -23,6 +23,7 @@ import type { ThirdPartyCandidate } from '../scan/third-party-context.js';
 import type { CliError } from '../types.js';
 import {
   type ApiAccess,
+  DEFAULT_TIME_BUDGET_MS,
   type ResolvedCandidate,
   type TrackedProviders,
   applyAllowance,
@@ -30,6 +31,13 @@ import {
   readTrackedProviders,
   resolveCandidates,
 } from './resolve.js';
+import {
+  COMPONENT_SEARCH_FAILED,
+  MAX_TRACKED_COMPONENTS,
+  type ScopeReason,
+  type TrackedComponent,
+  scopeProposal,
+} from './scope.js';
 
 export interface ApplySelection {
   /** Provider names to keep, optionally `Name=<catalog id>` to settle an ambiguous row. */
@@ -58,7 +66,13 @@ export interface Proposal {
  * reported as not created, nor handed out as a command to repeat.
  */
 export type CreateResult =
-  | { provider: string; status: 'created'; monitorId: number }
+  | {
+      provider: string;
+      status: 'created';
+      monitorId: number;
+      /** The leaves the create was scoped to; absent for a whole-provider create. */
+      trackedComponents?: readonly TrackedComponent[];
+    }
   | { provider: string; status: 'unknown'; error: { code: string; message: string } }
   | { provider: string; status: 'failed'; error: { code: string; message: string } };
 
@@ -226,13 +240,20 @@ export async function prepareProposal(
   access: ApiAccess,
 ): Promise<Proposal> {
   const tracked = await readTrackedProviders(access);
+  const deadline = Date.now() + DEFAULT_TIME_BUDGET_MS;
   const resolved = await resolveCandidates(selectCandidates(candidates, selection), {
     access,
     includeBuildTime: selection.includeBuildTime,
     tracked,
+    deadline,
+  });
+  const scoped = await scopeProposal(applyOnlyChoices(resolved, selection.only, tracked), {
+    access,
+    tracked,
+    deadline,
   });
   const allowance = await readAllowance(access);
-  const proposal = applyAllowance(applyOnlyChoices(resolved, selection.only, tracked), allowance);
+  const proposal = applyAllowance(scoped, allowance);
   const proposed = proposal.filter((row) => row.status === 'create').length;
   return {
     proposal,
@@ -265,9 +286,16 @@ export async function createProposed(
   for (const row of proposal) {
     if (row.status !== 'create') continue;
     const url = buildUrl(CREATE, { path: {}, query: {} }, access.apiUrl);
+    const scopedIds =
+      row.scope === 'components' ? row.trackedComponents?.map((leaf) => leaf.id) : undefined;
     const body = JSON.stringify({
       type: 'THIRD_PARTY_SERVICE',
-      config: { thirdPartyService: { providerId: row.catalog.id } },
+      config: {
+        thirdPartyService: {
+          providerId: row.catalog.id,
+          ...(scopedIds === undefined ? {} : { trackedComponentIds: scopedIds }),
+        },
+      },
     });
     let payload: unknown;
     try {
@@ -290,7 +318,12 @@ export async function createProposed(
       results.push({ provider: row.provider, status: 'unknown', error: failure.cliError });
       return { results, failure };
     }
-    results.push({ provider: row.provider, status: 'created', monitorId });
+    results.push({
+      provider: row.provider,
+      status: 'created',
+      monitorId,
+      ...(row.scope === 'components' ? { trackedComponents: row.trackedComponents ?? [] } : {}),
+    });
   }
   return { results };
 }
@@ -309,12 +342,18 @@ export interface ApplyRun {
  * the account were in sync, so a script's `&&` does not carry on past it.
  */
 export function unresolvedError(proposal: readonly ResolvedCandidate[]): CliError | undefined {
-  const names = proposal.filter((row) => row.status === 'unresolved').map((row) => row.provider);
-  if (names.length === 0) return undefined;
+  const unresolved = proposal.filter((row) => row.status === 'unresolved');
+  if (unresolved.length === 0) return undefined;
+  const names = unresolved.map((row) => row.provider).join(', ');
+  const searchFailed = unresolved.every(
+    (row) => row.status === 'unresolved' && row.failure.code === COMPONENT_SEARCH_FAILED,
+  );
   return {
     code: 'CATALOG_UNRESOLVED',
     command: APPLY_COMMAND,
-    message: `The catalog could not resolve ${names.join(', ')}; retry later.`,
+    message: searchFailed
+      ? `The component search failed for ${names}; retry later.`
+      : `The catalog could not resolve ${names}; retry later.`,
   };
 }
 
@@ -391,6 +430,71 @@ function catalogCell(row: ResolvedCandidate): string {
   }
 }
 
+/** Names shown in a cell before the rest folds into `+N more`. */
+const MAX_COMPONENTS_PER_CELL = 5;
+
+/** A row that resolved to one catalog entry, the only kind scoping touches. */
+type ResolvedRow = Extract<ResolvedCandidate, { catalog: unknown }>;
+
+const SCOPE_REASONS: Record<ScopeReason, (row: ResolvedRow) => string> = {
+  'no-terms': () => '',
+  'term-missed': (row) =>
+    `no component matched ${(row.terms ?? [])
+      .filter((item) => item.outcome === 'missed')
+      .map((item) => item.term)
+      .join(', ')}; tracking the whole provider`,
+  'too-many': (row) =>
+    `${(row.terms ?? []).reduce((sum, item) => sum + item.leaves, 0)} components matched, over ${MAX_TRACKED_COMPONENTS}; tracking the whole provider`,
+  'endpoint-unavailable': () => 'component search unavailable; tracking the whole provider',
+};
+
+function foldNames(names: readonly string[]): string {
+  const shown = names.slice(0, MAX_COMPONENTS_PER_CELL);
+  const more = names.length - shown.length;
+  return [...shown, ...(more > 0 ? [`+${more} more, see --json`] : [])].join(', ');
+}
+
+function componentsCell(row: ResolvedCandidate): string {
+  if (!('catalog' in row)) return '';
+  if (row.status === 'already-tracked') {
+    const list = row.monitor?.trackedComponentIds ?? null;
+    const covers =
+      list === null
+        ? 'tracks every component'
+        : `tracks ${list.length} ${list.length === 1 ? 'component' : 'components'}`;
+    const missing = row.untracked ?? [];
+    return missing.length === 0
+      ? covers
+      : `${covers}; scan found ${foldNames(missing)}, not tracked`;
+  }
+  if (row.scope === 'components')
+    return foldNames((row.trackedComponents ?? []).map((leaf) => leaf.name));
+  return row.scopeReason === undefined ? '' : SCOPE_REASONS[row.scopeReason](row);
+}
+
+/** One line per scoped component: its name, the signals behind its term, and where the region came from. */
+function componentLines(row: ResolvedCandidate): string[] {
+  if (row.status !== 'create' || row.scope !== 'components') return [];
+  const leaves = row.trackedComponents ?? [];
+  const lines = leaves.slice(0, MAX_COMPONENTS_PER_CELL).map((leaf) => {
+    const source = row.components.find(
+      (item) => item.term === leaf.term && (item.region?.code ?? null) === leaf.region,
+    );
+    const evidence = (source?.evidence ?? []).map(
+      (item) => `${item.file}:${item.line} (${item.signal})`,
+    );
+    const region =
+      source?.region === null || source?.region === undefined
+        ? []
+        : [
+            `region ${source.region.code} from ${source.region.declaredAt.file}:${source.region.declaredAt.line}`,
+          ];
+    return `- ${row.provider}, ${plain(leaf.name)}: ${[...evidence, ...region].join(', ')}`;
+  });
+  const more = leaves.length - lines.length;
+  return more > 0 ? [...lines, `- ${row.provider}: +${more} more components, see --json`] : lines;
+}
+
 function evidenceCell(row: ResolvedCandidate): string {
   const shown = row.evidence.slice(0, 3).map((item) => item.signal);
   const more = row.evidence.length - shown.length;
@@ -409,8 +513,8 @@ function cell(text: string): string {
 /** The proposal as a Markdown table plus the allowance line. */
 export function formatProposal(proposal: Proposal): string[] {
   const lines = [
-    '| Provider | Evidence | Class | Catalog | Action |',
-    '| --- | --- | --- | --- | --- |',
+    '| Provider | Evidence | Class | Catalog | Components | Action |',
+    '| --- | --- | --- | --- | --- | --- |',
   ];
   for (const row of proposal.proposal) {
     const cells = [
@@ -418,11 +522,14 @@ export function formatProposal(proposal: Proposal): string[] {
       evidenceCell(row),
       row.class,
       catalogCell(row),
+      componentsCell(row),
       ACTIONS[row.status],
     ];
     lines.push(`| ${cells.map(cell).join(' | ')} |`);
   }
-  if (proposal.proposal.length === 0) lines.push('| (no candidates) | | | | |');
+  if (proposal.proposal.length === 0) lines.push('| (no candidates) | | | | | |');
+  const components = proposal.proposal.flatMap(componentLines);
+  if (components.length > 0) lines.push('', ...components);
   const { allowance, tracked } = proposal;
   const slots =
     allowance.used !== null && allowance.limit !== null

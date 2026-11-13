@@ -1,8 +1,10 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { type IncomingMessage, type Server, createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { COMPONENT_TERMS } from '../src/lib/scan/components.js';
 import { runCli } from './helpers/run-cli.js';
 import { runInteractiveCli } from './helpers/run-interactive-cli.js';
 
@@ -31,6 +33,8 @@ interface StubOptions {
   catalogStatus?: number;
   /** Search terms whose lookup answers 503 while the rest resolve. */
   catalogDown?: string[];
+  /** Every components search answers this status instead of the recorded fixture. */
+  componentsStatus?: number;
 }
 
 const row = (id: number, name: string, isTracked = false): Record<string, unknown> => ({
@@ -47,6 +51,7 @@ const DEFAULT_CATALOG: Record<string, Record<string, unknown>[]> = {
   stripe: [row(801, 'Stripe'), row(802, 'Stripe Terminal')],
   vercel: [row(861, 'Vercel')],
   resend: [row(77, 'Resend')],
+  aws: [row(248, 'AWS')],
   github: [row(6, 'GitHub')],
   sentry: [],
 };
@@ -114,6 +119,16 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
         return reply(503, 'catalog down');
       return reply(200, { data: catalog[url.searchParams.get('search') ?? ''] ?? [] });
     }
+    const components = /^\/v3\/third-party-providers\/(\d+)\/components$/.exec(url.pathname);
+    if (request.method === 'GET' && components !== null) {
+      if (options.componentsStatus !== undefined)
+        return reply(options.componentsStatus, { code: 'DOWN', message: 'components down' });
+      const term = url.searchParams.get('search') ?? '';
+      const fixture = join(FIXTURES, components[1]!, `${encodeURIComponent(term)}.json`);
+      // A recorded answer per query string; a term with no recording is a test bug, not a miss.
+      if (!existsSync(fixture)) return reply(599, { message: `no components fixture for ${term}` });
+      return reply(200, JSON.parse(readFileSync(fixture, 'utf8')));
+    }
     if (request.method === 'POST' && url.pathname === '/v3/monitors') {
       const scripted = options.createReplies?.[creates];
       creates += 1;
@@ -171,6 +186,23 @@ async function writeRepository(files: Record<string, string>): Promise<string> {
   return root;
 }
 
+const FIXTURES = join(import.meta.dirname, 'fixtures', 'third-party', 'components');
+
+const AWS_TERRAFORM = [
+  'provider "aws" {',
+  '  region = "eu-central-1"',
+  '}',
+  'resource "aws_s3_bucket" "logs" {}',
+  'resource "aws_db_instance" "main" {}',
+  '',
+].join('\n');
+
+/** The skill's django-aws fixture: S3 and RDS in Frankfurt, two scoped components. */
+const AWS_REPOSITORY = {
+  'requirements.txt': 'boto3==1.35.80\n',
+  'infra/main.tf': AWS_TERRAFORM,
+};
+
 const REPOSITORY = {
   'package.json': JSON.stringify({
     dependencies: {
@@ -199,6 +231,265 @@ const env = (stub: Stub, extra: Record<string, string | undefined> = {}) => ({
 });
 
 const posts = (stub: Stub) => stub.hits.filter((hit) => hit.method === 'POST');
+
+describe('uptimerobot scan --apply scopes a provider to its components', () => {
+  const componentSearches = (stub: Stub) =>
+    stub.hits
+      .filter((hit) => hit.path.includes('/components?'))
+      .map((hit) =>
+        decodeURIComponent(new URL(hit.path, 'http://x').searchParams.get('search') ?? ''),
+      );
+
+  it('proposes the two Frankfurt components of the django-aws fixture and creates with exactly their ids', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.proposal[0]).toMatchObject({
+      provider: 'AWS',
+      status: 'create',
+      scope: 'components',
+      terms: [
+        {
+          term: 'Amazon Relational Database Service',
+          region: 'eu-central-1',
+          outcome: 'matched',
+          leaves: 1,
+        },
+        {
+          term: 'Amazon Simple Storage Service',
+          region: 'eu-central-1',
+          outcome: 'matched',
+          leaves: 1,
+        },
+      ],
+      trackedComponents: [
+        {
+          id: 9208,
+          name: 'Amazon Relational Database Service (Frankfurt)',
+          term: 'Amazon Relational Database Service',
+          region: 'eu-central-1',
+        },
+        {
+          id: 9108,
+          name: 'Amazon Simple Storage Service (Frankfurt)',
+          term: 'Amazon Simple Storage Service',
+          region: 'eu-central-1',
+        },
+      ],
+    });
+    expect(output.proposal[0].scopeReason).toBeUndefined();
+    expect(posts(stub).map((hit) => hit.body)).toEqual([
+      {
+        type: 'THIRD_PARTY_SERVICE',
+        config: { thirdPartyService: { providerId: 248, trackedComponentIds: [9208, 9108] } },
+      },
+    ]);
+    expect(output.results[0]).toMatchObject({
+      provider: 'AWS',
+      status: 'created',
+      trackedComponents: [{ id: 9208 }, { id: 9108 }],
+    });
+    expect(componentSearches(stub)).toEqual([
+      'Amazon Relational Database Service',
+      'Amazon Simple Storage Service',
+    ]);
+  });
+
+  it('shows the scoped components and one evidence line per component to a person', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm'],
+      env(stub, { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain(
+      '| AWS | provider "aws", aws_s3, aws_db, +1 more | runtime | 248, operational, https://status.aws.example/ | Amazon Relational Database Service (Frankfurt), Amazon Simple Storage Service (Frankfurt) | create |',
+    );
+    expect(result.stdout).toContain(
+      '- AWS, Amazon Simple Storage Service (Frankfurt): infra/main.tf:4 (aws_s3), region eu-central-1 from infra/main.tf:2',
+    );
+    expect(result.stdout).toContain(
+      '- AWS, Amazon Relational Database Service (Frankfurt): infra/main.tf:5 (aws_db), region eu-central-1 from infra/main.tf:2',
+    );
+  });
+
+  it('tracks the whole provider and says which term missed when one term matches nothing', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      ...AWS_REPOSITORY,
+      'infra/main.tf': `${AWS_TERRAFORM}resource "aws_lambda_function" "fn" {}\n`,
+    });
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.proposal[0]).toMatchObject({
+      provider: 'AWS',
+      scope: 'whole',
+      scopeReason: 'term-missed',
+      trackedComponents: [],
+    });
+    expect(output.proposal[0].terms).toContainEqual({
+      term: 'AWS Lambda',
+      region: 'eu-central-1',
+      outcome: 'missed',
+      leaves: 0,
+    });
+    expect(posts(stub).map((hit) => hit.body)).toEqual([
+      { type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 248 } } },
+    ]);
+    const readable = await runCli(
+      ['scan', root, '--apply', '--confirm'],
+      env(await startStub(), { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+    expect(readable.stdout).toContain(
+      'no component matched AWS Lambda; tracking the whole provider',
+    );
+  });
+
+  it('tracks the whole provider when a term with no region matches more than twenty leaves', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      'infra/main.tf': 'resource "aws_s3_bucket" "logs" {}\n',
+    });
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    const output = JSON.parse(result.stdout);
+    expect(output.proposal[0]).toMatchObject({ scope: 'whole', scopeReason: 'too-many' });
+    expect(output.proposal[0].terms).toEqual([
+      { term: 'Amazon Simple Storage Service', region: null, outcome: 'matched', leaves: 23 },
+    ]);
+    const readable = await runCli(
+      ['scan', root, '--apply', '--confirm'],
+      env(await startStub(), { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+    expect(readable.stdout).toContain(
+      '23 components matched, over 20; tracking the whole provider',
+    );
+  });
+
+  it('tracks the whole provider when the components endpoint is not there', async () => {
+    const stub = await startStub({ componentsStatus: 404 });
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.proposal[0]).toMatchObject({
+      scope: 'whole',
+      scopeReason: 'endpoint-unavailable',
+    });
+    expect(posts(stub)).toHaveLength(1);
+    expect(componentSearches(stub)).toHaveLength(1);
+  });
+
+  it.each([500, 429, 400])(
+    'leaves the row unresolved and creates nothing when a components call answers %i',
+    async (status) => {
+      const stub = await startStub({ componentsStatus: status });
+      const root = await writeRepository(AWS_REPOSITORY);
+
+      const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+      expect(result.exitCode).toBe(1);
+      expect(JSON.parse(result.stderr).error.code).toBe('CATALOG_UNRESOLVED');
+      const output = JSON.parse(result.stdout);
+      expect(output.proposal[0]).toMatchObject({
+        status: 'unresolved',
+        failure: { code: 'COMPONENT_SEARCH_FAILED' },
+      });
+      expect(posts(stub)).toEqual([]);
+      const readable = await runCli(
+        ['scan', root, '--apply', '--confirm'],
+        env(stub, { UPTIMEROBOT_OUTPUT: 'table' }),
+      );
+      expect(readable.stdout).toContain('component search failed');
+      expect(readable.stdout).not.toContain('catalog could not');
+    },
+  );
+
+  it('says what an already-tracked monitor covers and which found component it does not', async () => {
+    const tracked = (trackedComponentIds: number[] | null, id: number) => ({
+      id,
+      type: 'THIRD_PARTY_SERVICE',
+      config: { thirdPartyService: { providerId: 248, trackedComponentIds } },
+    });
+    const root = await writeRepository(AWS_REPOSITORY);
+    const scoped = await startStub({ monitors: [tracked([9108], 100)] });
+    const whole = await startStub({ monitors: [tracked(null, 101)] });
+
+    const scopedRun = JSON.parse(
+      (await runCli(['scan', root, '--apply', '--json'], env(scoped))).stdout,
+    );
+    const wholeRun = JSON.parse(
+      (await runCli(['scan', root, '--apply', '--json'], env(whole))).stdout,
+    );
+
+    expect(scopedRun.proposal[0]).toMatchObject({
+      status: 'already-tracked',
+      monitor: { monitorId: 100, trackedComponentIds: [9108], needsReview: false },
+      untracked: ['Amazon Relational Database Service (Frankfurt)'],
+    });
+    expect(wholeRun.proposal[0]).toMatchObject({
+      status: 'already-tracked',
+      monitor: { monitorId: 101, trackedComponentIds: null },
+      untracked: [],
+    });
+    const readable = await runCli(
+      ['scan', root, '--apply'],
+      env(scoped, { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+    expect(readable.stdout).toContain(
+      'tracks 1 component; scan found Amazon Relational Database Service (Frankfurt), not tracked',
+    );
+    const readableWhole = await runCli(
+      ['scan', root, '--apply'],
+      env(whole, { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+    expect(readableWhole.stdout).toContain('| tracks every component |');
+  });
+
+  it('asks the endpoint nothing for a provider without component terms', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    const output = JSON.parse(result.stdout);
+    expect(
+      output.proposal.find((row: { provider: string }) => row.provider === 'Stripe'),
+    ).toMatchObject({
+      scope: 'whole',
+      scopeReason: 'no-terms',
+      terms: [],
+    });
+    expect(componentSearches(stub)).toEqual([]);
+  });
+
+  it('sends only built-in component terms as search text', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      ...AWS_REPOSITORY,
+      'infra/main.tf': `${AWS_TERRAFORM}resource "aws_sqs_queue" "q" {}\nresource "aws_cloudfront_distribution" "cdn" {}\n`,
+    });
+
+    await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    const searches = componentSearches(stub);
+    expect(searches.length).toBeGreaterThan(2);
+    expect(searches.every((term) => COMPONENT_TERMS.includes(term))).toBe(true);
+  });
+});
 
 describe('uptimerobot scan --apply', () => {
   it('proposes without creating in agent mode and asks for confirmation', async () => {
@@ -504,7 +795,10 @@ describe('uptimerobot scan --apply', () => {
     );
     expect(included.exitCode).toBe(0);
     expect(posts(stub).map((hit) => hit.body)).toEqual([
-      { type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 6 } } },
+      {
+        type: 'THIRD_PARTY_SERVICE',
+        config: { thirdPartyService: { providerId: 6, trackedComponentIds: [6102] } },
+      },
     ]);
   });
 
@@ -852,10 +1146,10 @@ describe('uptimerobot scan --apply', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain(
-      '| Stripe | stripe@17.4.0 | runtime | 801, operational, https://status.stripe.example/ | create |',
+      '| Stripe | stripe@17.4.0 | runtime | 801, operational, https://status.stripe.example/ |  | create |',
     );
     expect(result.stdout).toContain(
-      '| Sentry | @sentry/nextjs@8.42.0 | runtime | not in catalog | none |',
+      '| Sentry | @sentry/nextjs@8.42.0 | runtime | not in catalog |  | none |',
     );
     expect(result.stdout).toContain('2 of 10 third-party slots used, 3 proposed.');
     expect(result.stdout).toContain(

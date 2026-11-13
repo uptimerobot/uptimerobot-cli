@@ -128,6 +128,11 @@ export const COMPONENT_RULES: ReadonlyMap<string, readonly ComponentRule[]> = ne
   ['GitHub', GITHUB],
 ]);
 
+/** Every term of every provider: the only strings `scan --apply` ever sends as component search text. */
+export const COMPONENT_TERMS: readonly string[] = [...COMPONENT_RULES.values()]
+  .flat()
+  .map(({ term }) => term);
+
 function packageMatches(pattern: string, name: string): boolean {
   return pattern.endsWith('*') ? name.startsWith(pattern.slice(0, -1)) : name === pattern;
 }
