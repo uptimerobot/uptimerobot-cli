@@ -155,7 +155,7 @@ describe('OpenAPI command generation', () => {
       thirdPartyServiceCommands,
     }).toEqual({
       bulkUpdate: true,
-      commandCount: 102,
+      commandCount: 104,
       genericMonitorCreate: true,
       monitorCreateCommands: [
         'api',
@@ -169,15 +169,17 @@ describe('OpenAPI command generation', () => {
         'udp',
         'visual-comparison',
       ],
-      result: { exitCode: 0, stderr: '', stdout: 'Generated 102 commands.\n' },
+      result: { exitCode: 0, stderr: '', stdout: 'Generated 104 commands.\n' },
       thirdPartyServiceCommands: [
         'monitors/create/third-party-service',
         'monitors/third-party-service/incidents/activity-log',
         'monitors/third-party-service/incidents/get',
         'monitors/third-party-service/incidents/list',
+        'monitors/third-party-service/maintenances/list',
         'monitors/third-party-service/status',
         'third-party-providers/get',
         'third-party-providers/list',
+        'third-party-services/maintenances',
       ],
     });
   });

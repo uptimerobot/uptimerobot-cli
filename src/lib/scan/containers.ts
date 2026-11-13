@@ -15,7 +15,7 @@
  */
 
 import { readFile, readdir, realpath, stat } from 'node:fs/promises';
-import { join, relative, resolve, sep } from 'node:path';
+import { basename, join, relative, resolve, sep } from 'node:path';
 import { LineCounter, isMap, isNode, isScalar, isSeq, parseDocument } from 'yaml';
 import type { ScanFinding } from './finding.js';
 import { redactClipped } from './redact.js';
@@ -72,7 +72,7 @@ const COMPOSE_PATTERN = /^(docker-)?compose(\..+)?\.ya?ml$/i;
 const DOCKERFILE_PATTERN = /^dockerfile(\..+)?$|\.dockerfile$/i;
 
 /** A probed address, stopping at whatever ends an argument in a shell command. */
-const SCHEME_URL_PATTERN = /https?:\/\/[^\s"'`,;|&<>()[\]{}\\]+/i;
+const SCHEME_URL_PATTERN = /https?:\/\/(?:\[[^\]\s"'`]*\]|[^\s"'`,;|&<>()[\]{}\\])+/i;
 const HOST_PORT_PATTERN = /[a-z0-9][a-z0-9.-]*:\d{2,5}(?:\/[^\s"'`,;|&<>()[\]{}\\]*)?/i;
 
 const VARIABLE_PATTERN = /^\$\{?([A-Za-z_][A-Za-z0-9_]*)/;
@@ -164,9 +164,11 @@ async function collectSources(
         // Dot-directories are tooling, VCS, build caches and agent worktrees,
         // never deployment config; the named set covers the non-dotted ones.
         const skipped = entry.name.startsWith('.') || SKIPPED_DIRECTORIES.has(entry.name);
-        if (!skipped && current.depth < limits.maxDepth) {
-          queue.push({ depth: current.depth + 1, path: absolute });
-        }
+        if (skipped) continue;
+        // A directory the depth limit keeps closed may hold a Dockerfile, so the
+        // walk is partial from here on, whatever it finds elsewhere.
+        if (current.depth >= limits.maxDepth) onTruncated?.();
+        else queue.push({ depth: current.depth + 1, path: absolute });
         continue;
       }
       // Symlinked directories are never traversed: they invite cycles, and a
@@ -203,6 +205,8 @@ function classify(name: string): SourceKind | undefined {
 async function isContainedFile(root: string, absolute: string): Promise<boolean> {
   const target = await realpath(absolute).catch(() => undefined);
   if (target === undefined || !(target === root || target.startsWith(root + sep))) return false;
+  // The alias was classified by name; the file it opens must pass the same exclusion.
+  if (DOTENV_PATTERN.test(basename(target))) return false;
   const stats = await stat(target).catch(() => undefined);
   return stats?.isFile() ?? false;
 }
@@ -395,11 +399,20 @@ function longFormPort(
 /** Flattens both `test` spellings: an exec array or a shell string. */
 function composeTestCommand(test: unknown): string {
   if (isSeq(test)) {
-    return test.items
+    const parts = test.items
       .map((item) => scalarText(item))
-      .filter((part): part is string => part !== undefined)
-      .filter((part) => part !== 'CMD' && part !== 'CMD-SHELL' && part !== 'NONE')
-      .join(' ');
+      .filter((part): part is string => part !== undefined);
+    // CMD-SHELL carries one shell script whose own quotes the redactor reads;
+    // re-quoting it would escape them and split a quoted credential at a space.
+    if (parts[0] === 'CMD-SHELL') return parts.slice(1).join(' ');
+    return (
+      parts
+        .filter((part) => part !== 'CMD' && part !== 'NONE')
+        // An argument with a space inside stays one word for the redactor, which
+        // would otherwise mask only the part before the space.
+        .map((part) => (/\s/.test(part) ? `"${part.replaceAll('"', '\\"')}"` : part))
+        .join(' ')
+    );
   }
   return scalarText(test) ?? '';
 }

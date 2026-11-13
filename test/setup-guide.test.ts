@@ -174,7 +174,7 @@ describe('renderSetupGuide', () => {
 
   it('collapses monitor creation to a single confirmation, no separate yes', () => {
     expect(guide).toContain('One confirmation, not a ceremony');
-    expect(guide).toContain('**is** the go-ahead');
+    expect(guide).toContain('One clear answer creates the plan it answered');
     expect(guide).toContain('No separate "type yes" step');
     // The strict shown-diff-then-yes gate stays, but only for the file edits.
     expect(guide).toContain('one file, one diff, one yes');
@@ -270,5 +270,32 @@ describe('every create example attaches the alert contact', () => {
     const occurrences = guide.split('--assigned-alert-contacts "$CONTACT_ID"').length - 1;
 
     expect(occurrences).toBe(3);
+  });
+});
+
+describe('round three guardrails', () => {
+  const guide = renderSetupGuide(ON_PATH);
+
+  it('asks for a yes on the completed targets before creating host-less rows', () => {
+    expect(prose(guide)).toContain(
+      'The reply that names the base URL is not the go-ahead for rows that still need an origin',
+    );
+    expect(guide).not.toContain('**is** the go-ahead');
+  });
+
+  it('keeps the push URL out of a checked-in crontab', () => {
+    expect(prose(guide)).toContain(
+      'Inline the full push URL only in a crontab that is not checked in',
+    );
+    expect(guide).toContain(
+      '&& { curl -fsS --retry 3 --max-time 10 "$(cat /etc/uptimerobot/backup-heartbeat)" > /dev/null || true; }',
+    );
+  });
+
+  it('pages the tagged monitor list to the end before writing the report', () => {
+    expect(prose(guide)).toContain(
+      'keep paging with `--cursor` until no `nextCursor` comes back, as in Step 1',
+    );
+    expect(prose(guide)).toContain('If a monitor you just created is missing from every page');
   });
 });

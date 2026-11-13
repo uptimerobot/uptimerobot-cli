@@ -35,6 +35,9 @@ import {
 } from '../lib/third-party/apply.js';
 import { resolveFormat } from '../output/resolve-format.js';
 
+/** A cut-short scan can miss a provider, so 'Nothing to create.' alone would overstate the result. */
+const TRUNCATED_WARNING = 'The scan stopped early, so this proposal may be missing providers.';
+
 /**
  * Prints the seed context `uptimerobot init` hands its agent, on its own, and
  * with `--apply` turns its third-party providers into third-party services.
@@ -262,6 +265,7 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
       )) {
         this.log(line);
       }
+      if (context.summary.truncated) this.log(TRUNCATED_WARNING);
     }
     // A declined prompt exits like a missing confirmation: the generated
     // destructive commands do the same, and a script must tell "no" from "done".
