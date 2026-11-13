@@ -286,8 +286,10 @@ export async function createProposed(
   for (const row of proposal) {
     if (row.status !== 'create') continue;
     const url = buildUrl(CREATE, { path: {}, query: {} }, access.apiUrl);
-    const scopedIds =
-      row.scope === 'components' ? row.trackedComponents?.map((leaf) => leaf.id) : undefined;
+    // An empty list would mean every component to the API, the opposite of a scope.
+    const ids =
+      row.scope === 'components' ? (row.trackedComponents ?? []).map((leaf) => leaf.id) : [];
+    const scopedIds = ids.length === 0 ? undefined : ids;
     const body = JSON.stringify({
       type: 'THIRD_PARTY_SERVICE',
       config: {
@@ -459,7 +461,8 @@ function componentsCell(row: ResolvedCandidate): string {
       list === null
         ? 'tracks every component'
         : `tracks ${list.length} ${list.length === 1 ? 'component' : 'components'}`;
-    const missing = row.untracked ?? [];
+    if (row.untracked === undefined) return `${covers}; component search failed`;
+    const missing = row.untracked;
     return missing.length === 0
       ? covers
       : `${covers}; scan found ${foldNames(missing)}, not tracked`;
@@ -490,7 +493,7 @@ function componentLines(row: ResolvedCandidate): string[] {
         : [
             `region ${source.region.code} from ${source.region.declaredAt.file}:${source.region.declaredAt.line}`,
           ];
-    return `- ${row.provider}, ${plain(leaf.name)}: ${[...evidence, ...region].join(', ')}`;
+    return plain(`- ${row.provider}, ${leaf.name}: ${[...evidence, ...region].join(', ')}`);
   });
   const more = leaves.length - lines.length;
   return more > 0 ? [...lines, `- ${row.provider}: +${more} more components, see --json`] : lines;

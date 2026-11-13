@@ -233,6 +233,35 @@ describe('scopeProposal', () => {
     expect(scoped.every((row) => row.status === 'unresolved')).toBe(true);
   });
 
+  it('stops between the terms of one row once the deadline has passed', async () => {
+    let asked = 0;
+    const slow: typeof fetch = async () => {
+      asked += 1;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return new Response(JSON.stringify({ data: [{ id: asked, name: 'n', children: [] }] }), {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      });
+    };
+    const client = createApiClient({
+      apiKey: 'u1-test',
+      apiUrl: API_URL,
+      environment: 'local',
+      fetchImplementation: slow,
+      mode: 'agent',
+      version: '0.0.0-test',
+    });
+    const [row] = await scopeProposal(
+      [createRow('AWS', 248, ['AWS Lambda', 'Amazon CloudFront', 'Amazon Route 53'])],
+      { access: { client, apiUrl: API_URL }, tracked, deadline: Date.now() + 10 },
+    );
+    expect(asked).toBeLessThan(3);
+    expect(row).toMatchObject({
+      status: 'unresolved',
+      failure: { code: 'ABORTED_AFTER_TIME_BUDGET' },
+    });
+  });
+
   it('asks nothing past the deadline', async () => {
     const { access, calls } = failingApi(200);
     const [row] = await scopeProposal([createRow('AWS', 248, ['AWS Lambda'])], {

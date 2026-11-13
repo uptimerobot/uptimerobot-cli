@@ -12,6 +12,7 @@
 import { requestJson } from '../../api/client.js';
 import { ApiFailure } from '../../api/errors.js';
 import { isPlainRecord } from '../objects.js';
+import { hasUnsafeCharacters } from '../scan/support.js';
 import type { ThirdPartyComponent } from '../scan/third-party-context.js';
 import {
   ABORTED_CODE,
@@ -62,11 +63,27 @@ interface Leaf {
   global: boolean;
 }
 
+/** A catalog name shown to a person or an agent: one line, no control or format characters, bounded. */
+const MAX_LEAF_NAME_LENGTH = 120;
+
+function leafName(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  let result = '';
+  for (const character of value.replaceAll(/\s+/g, ' ').trim()) {
+    if (!hasUnsafeCharacters(character)) result += character === '`' ? "'" : character;
+  }
+  if (result === '') return undefined;
+  return result.length > MAX_LEAF_NAME_LENGTH
+    ? `${result.slice(0, MAX_LEAF_NAME_LENGTH)}…`
+    : result;
+}
+
 function leafOf(item: unknown): Leaf | undefined {
   if (!isPlainRecord(item)) return undefined;
-  const { id, name, region, global } = item;
+  const { id, region, global } = item;
   if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) return undefined;
-  if (typeof name !== 'string') return undefined;
+  const name = leafName(item.name);
+  if (name === undefined) return undefined;
   const code = isPlainRecord(region) && typeof region.code === 'string' ? region.code : null;
   return { id, name, region: code, global: global === true };
 }
@@ -174,16 +191,19 @@ async function searchComponents(
 ): Promise<{ outcome: TermOutcome; kept: TrackedComponent[] }> {
   let leaves = trees.get(term);
   if (leaves === undefined) {
-    let payload: unknown;
     try {
-      payload = await requestJson(access.client, componentsUrl(access, providerId, term), 'GET');
+      const payload = await requestJson(
+        access.client,
+        componentsUrl(access, providerId, term),
+        'GET',
+      );
+      leaves = collectLeaves(payload);
     } catch (error) {
       // Anything but an API answer is a bug here and must surface, not count as a search failure.
       if (!(error instanceof ApiFailure)) throw error;
       if (error.cliError.status === 404) throw new EndpointUnavailable();
       throw new ComponentSearchFailed(term, error);
     }
-    leaves = collectLeaves(payload);
     trees.set(term, leaves);
   }
   const kept = leaves
@@ -200,15 +220,20 @@ async function searchComponents(
   };
 }
 
+class OutOfTime extends Error {}
+
 async function scopeRow(
   row: ResolvedCandidate,
   providerId: number,
   access: ApiAccess,
+  deadline: number,
 ): Promise<Scoping> {
   const terms: TermOutcome[] = [];
   const kept = new Map<number, TrackedComponent>();
   const trees = new Map<string, Leaf[]>();
   for (const { term, region } of distinctTerms(row.components)) {
+    // One term can retry for seconds on a 429, so the budget is checked between terms too.
+    if (Date.now() > deadline) throw new OutOfTime();
     let found: Awaited<ReturnType<typeof searchComponents>>;
     try {
       found = await searchComponents(access, providerId, term, region, trees);
@@ -241,7 +266,10 @@ function monitorFor(tracked: TrackedProviders, providerId: number): TrackedMonit
     .sort((left, right) => left.monitorId - right.monitorId);
   const first = mine[0];
   if (first === undefined) return undefined;
-  const lists = mine.map((monitor) => monitor.trackedComponentIds);
+  // The API stores an empty list as null, so both mean every component.
+  const lists = mine.map((monitor) =>
+    monitor.trackedComponentIds?.length === 0 ? null : monitor.trackedComponentIds,
+  );
   const union = lists.some((list) => list === null)
     ? null
     : [...new Set(lists.flatMap((list) => list ?? []))];
@@ -308,7 +336,7 @@ export async function scopeProposal(
       continue;
     }
     try {
-      const scoping = await scopeRow(row, row.catalog.id, options.access);
+      const scoping = await scopeRow(row, row.catalog.id, options.access, options.deadline);
       consecutiveFailures = 0;
       scoped.push({
         ...row,
@@ -316,6 +344,14 @@ export async function scopeProposal(
         ...trackedFields(row, options.tracked, scoping.trackedComponents),
       });
     } catch (error) {
+      if (error instanceof OutOfTime) {
+        scoped.push({
+          ...row,
+          status: 'unresolved',
+          failure: { code: TIME_BUDGET_CODE, message: 'Not asked: the searches ran out of time.' },
+        });
+        continue;
+      }
       if (!(error instanceof ComponentSearchFailed)) throw error;
       const status = error.cause.cliError.status;
       if (status === 401 || status === 403) throw error.cause;

@@ -35,6 +35,8 @@ interface StubOptions {
   catalogDown?: string[];
   /** Every components search answers this status instead of the recorded fixture. */
   componentsStatus?: number;
+  /** Every components search answers this body with 200 instead of the recorded fixture. */
+  componentsBody?: unknown;
 }
 
 const row = (id: number, name: string, isTracked = false): Record<string, unknown> => ({
@@ -123,6 +125,7 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
     if (request.method === 'GET' && components !== null) {
       if (options.componentsStatus !== undefined)
         return reply(options.componentsStatus, { code: 'DOWN', message: 'components down' });
+      if (options.componentsBody !== undefined) return reply(200, options.componentsBody);
       const term = url.searchParams.get('search') ?? '';
       const fixture = join(FIXTURES, components[1]!, `${encodeURIComponent(term)}.json`);
       // A recorded answer per query string; a term with no recording is a test bug, not a miss.
@@ -297,7 +300,55 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
       'Amazon Relational Database Service',
       'Amazon Simple Storage Service',
     ]);
-    expect(stub.hits.some((hit) => hit.path.includes('region='))).toBe(false);
+    const componentHits = stub.hits.filter((hit) => hit.path.includes('/components?'));
+    expect(
+      componentHits.map((hit) => [...new URL(hit.path, 'http://x').searchParams.keys()]),
+    ).toEqual(componentHits.map(() => ['search']));
+  });
+
+  it('leaves the row unresolved when the components endpoint answers 200 without a tree', async () => {
+    const stub = await startStub({ componentsBody: { message: 'maintenance' } });
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout).proposal[0]).toMatchObject({
+      status: 'unresolved',
+      failure: { code: 'COMPONENT_SEARCH_FAILED' },
+    });
+    expect(posts(stub)).toEqual([]);
+  });
+
+  it('shows a hostile leaf name on one line with its format characters and backticks gone', async () => {
+    const stub = await startStub({
+      componentsBody: {
+        data: [
+          {
+            id: 9001,
+            name: `Evil\u202e \`[x](https://e)\`\nline two ${'x'.repeat(300)}`,
+            region: null,
+            global: true,
+            children: [],
+          },
+          { id: 9002, name: '   ', region: null, global: true, children: [] },
+        ],
+      },
+    });
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm'],
+      env(stub, { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+
+    const awsLines = result.stdout.split('\n').filter((line) => line.includes('AWS'));
+    expect(awsLines.length).toBeGreaterThan(1);
+    expect(awsLines.join('\n')).not.toContain('\u202e');
+    expect(awsLines.join('\n')).not.toContain('`');
+    expect(result.stdout).toContain("Evil '[x](https://e)' line two ");
+    expect(result.stdout).not.toContain('x'.repeat(200));
+    expect(result.stdout).not.toContain('- AWS, :');
   });
 
   it('keeps a tracked row informational when its component search fails, so the creates still run', async () => {
