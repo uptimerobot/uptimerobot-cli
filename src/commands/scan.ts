@@ -24,6 +24,7 @@ import {
   type Proposal,
   buildApplyOutput,
   buildTimeOnlyError,
+  conflictingPins,
   confirmationRequiredError,
   excludedBuildTime,
   formatProposal,
@@ -143,6 +144,18 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
       // scan and before any request, like every other authenticated command.
       const access = await this.resolveAccess(flags['api-key'], mode);
       const context = await scanRepository(repoRoot);
+      const conflict = conflictingPins(selection.only);
+      if (conflict !== undefined) {
+        return this.fail(
+          {
+            code: 'INVALID_INPUT',
+            expected: 'one pin per provider',
+            message: `--only pins ${conflict} twice with different components.`,
+            path: 'only',
+          },
+          2,
+        );
+      }
       const unknownByFlag = unknownSelections(context.thirdParty.candidates, selection);
       const unknown = [...unknownByFlag.only, ...unknownByFlag.skip];
       if (unknown.length > 0) {

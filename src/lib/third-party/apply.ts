@@ -150,6 +150,20 @@ function pinsFor(
   return pins;
 }
 
+/** Two `--only` entries that pin one provider differently: the run cannot honour both. */
+export function conflictingPins(only: readonly string[]): string | undefined {
+  const seen = new Map<string, string>();
+  for (const entry of only) {
+    const { name, pin } = parseOnly(entry);
+    if (pin === undefined) continue;
+    const text = pin === 'all' ? 'all' : [...new Set(pin)].join(',');
+    const previous = seen.get(name);
+    if (previous !== undefined && previous !== text) return name;
+    seen.set(name, text);
+  }
+  return undefined;
+}
+
 /** The `--only` and `--skip` names that match no candidate: a typo would otherwise be a silent no-op. */
 /** The `--only` and `--skip` entries no scanned provider matches, per flag, so the error names the one to edit. */
 export function unknownSelections(
@@ -225,12 +239,18 @@ export function unpinnedRows(
   );
 }
 
+/** A `--only` value as it is typed in a shell: quoted when the provider name has a space. */
+const onlyArgument = (value: string): string =>
+  /[^\w=:,.-]/.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
+
 export function unpinnedError(rows: readonly { pin: string; whole: string }[]): CliError {
-  const pins = rows.map((row) => `--only ${row.pin}`).join(' ');
-  const wholes = rows.map((row) => `--only ${row.whole}`).join(' ');
+  const pins = rows.map((row) => `--only ${onlyArgument(row.pin)}`).join(' ');
+  const wholes = rows.map((row) => `--only ${onlyArgument(row.whole)}`).join(' ');
   return {
     code: 'INVALID_INPUT',
-    expected: rows.map((row) => `--only ${row.pin} or --only ${row.whole}`).join('; '),
+    expected: rows
+      .map((row) => `--only ${onlyArgument(row.pin)} or --only ${onlyArgument(row.whole)}`)
+      .join('; '),
     message: `pass ${pins} to create what the proposal showed, or ${wholes} for the whole provider. Nothing was created.`,
     path: 'only',
   };

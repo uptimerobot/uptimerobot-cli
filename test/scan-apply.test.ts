@@ -691,6 +691,7 @@ describe('uptimerobot scan --apply pins the components an agent confirms', () =>
 
     expect(result.exitCode).toBe(0);
     expect(componentSearches(stub)).toEqual([]);
+    expect(stub.hits.filter((hit) => hit.path === '/v3/third-party-providers/248')).toHaveLength(1);
     expect(posts(stub).map((hit) => hit.body)).toEqual([
       {
         type: 'THIRD_PARTY_SERVICE',
@@ -834,6 +835,48 @@ describe('uptimerobot scan --apply pins the components an agent confirms', () =>
         message: expect.stringContaining('component tree'),
       },
     });
+  });
+
+  it('quotes a pin whose provider name has a space, so the printed command runs as printed', async () => {
+    const stub = await startStub({
+      catalog: { ...DEFAULT_CATALOG, 'google cloud': [row(5, 'Google Cloud')] },
+    });
+    const root = await writeRepository({
+      'infra/main.tf': 'provider "google" {}\nresource "google_storage_bucket" "b" {}\n',
+    });
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+    expect(JSON.parse(result.stderr).error.message).toBe(
+      'pass --only "Google Cloud=5:5101" to create what the proposal showed, or --only "Google Cloud=5:all" for the whole provider. Nothing was created.',
+    );
+    const pinned = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'Google Cloud=5:5101'],
+      env(stub),
+    );
+    expect(pinned.exitCode).toBe(0);
+  });
+
+  it('refuses two pins for one provider that disagree', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(AWS_REPOSITORY);
+    const result = await runCli(
+      [
+        'scan',
+        root,
+        '--apply',
+        '--confirm',
+        '--json',
+        '--only',
+        'AWS=248:9108',
+        '--only',
+        'AWS=248:all',
+      ],
+      env(stub),
+    );
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stderr).error.message).toBe(
+      '--only pins aws twice with different components.',
+    );
+    expect(stub.hits).toEqual([]);
   });
 
   it('sends a duplicated pinned id once', async () => {
