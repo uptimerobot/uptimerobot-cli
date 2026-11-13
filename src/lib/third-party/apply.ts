@@ -247,13 +247,12 @@ export async function prepareProposal(
     tracked,
     deadline,
   });
-  const scoped = await scopeProposal(applyOnlyChoices(resolved, selection.only, tracked), {
-    access,
-    tracked,
-    deadline,
-  });
   const allowance = await readAllowance(access);
-  const proposal = applyAllowance(scoped, allowance);
+  // Scoped after the allowance, so a row that gets no slot costs no component search.
+  const proposal = await scopeProposal(
+    applyAllowance(applyOnlyChoices(resolved, selection.only, tracked), allowance),
+    { access, tracked, deadline },
+  );
   const proposed = proposal.filter((row) => row.status === 'create').length;
   return {
     proposal,

@@ -297,6 +297,87 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
       'Amazon Relational Database Service',
       'Amazon Simple Storage Service',
     ]);
+    expect(stub.hits.some((hit) => hit.path.includes('region='))).toBe(false);
+  });
+
+  it('keeps a tracked row informational when its component search fails, so the creates still run', async () => {
+    const stub = await startStub({
+      componentsStatus: 503,
+      monitors: [
+        {
+          id: 100,
+          type: 'THIRD_PARTY_SERVICE',
+          config: { thirdPartyService: { providerId: 248, trackedComponentIds: [9108] } },
+        },
+      ],
+    });
+    const root = await writeRepository({
+      ...AWS_REPOSITORY,
+      'package.json': '{ "dependencies": { "stripe": "17.4.0" } }',
+    });
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(
+      output.proposal.find((row: { provider: string }) => row.provider === 'AWS'),
+    ).toMatchObject({
+      status: 'already-tracked',
+      monitor: { monitorId: 100 },
+    });
+    expect(
+      output.proposal.find((row: { provider: string }) => row.provider === 'AWS').untracked,
+    ).toBeUndefined();
+    expect(output.results).toEqual([{ provider: 'Stripe', status: 'created', monitorId: 5000 }]);
+  });
+
+  it('reads two monitors of one provider as one list, where any that tracks everything means nothing is untracked', async () => {
+    const monitor = (id: number, trackedComponentIds: number[] | null) => ({
+      id,
+      type: 'THIRD_PARTY_SERVICE',
+      config: { thirdPartyService: { providerId: 248, trackedComponentIds } },
+    });
+    const root = await writeRepository(AWS_REPOSITORY);
+    const union = await startStub({ monitors: [monitor(101, [9108]), monitor(100, [9208])] });
+    const any = await startStub({ monitors: [monitor(100, [9108]), monitor(101, null)] });
+
+    const unionRun = JSON.parse(
+      (await runCli(['scan', root, '--apply', '--json'], env(union))).stdout,
+    );
+    const anyRun = JSON.parse((await runCli(['scan', root, '--apply', '--json'], env(any))).stdout);
+
+    expect(unionRun.proposal[0]).toMatchObject({
+      monitor: { monitorId: 100, trackedComponentIds: [9208, 9108] },
+      untracked: [],
+    });
+    expect(anyRun.proposal[0]).toMatchObject({
+      monitor: { trackedComponentIds: null },
+      untracked: [],
+    });
+  });
+
+  it('asks the endpoint once for a term seen in two regions', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      'infra/eu.tf': AWS_TERRAFORM,
+      'infra/us.tf': AWS_TERRAFORM.replace('eu-central-1', 'us-west-2').replace(
+        'aws_db_instance',
+        'aws_db_x',
+      ),
+    });
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    const output = JSON.parse(result.stdout);
+    expect(output.proposal[0].scope).toBe('components');
+    expect(componentSearches(stub)).toEqual([
+      'Amazon Relational Database Service',
+      'Amazon Simple Storage Service',
+    ]);
+    expect(output.proposal[0].trackedComponents.map((leaf: { id: number }) => leaf.id)).toEqual([
+      9208, 9204, 9108, 9104,
+    ]);
   });
 
   it('shows the scoped components and one evidence line per component to a person', async () => {
@@ -969,7 +1050,8 @@ describe('uptimerobot scan --apply', () => {
       ]),
     ).toEqual([['Vercel', 'create']]);
     expect(output.results).toEqual([{ provider: 'Vercel', status: 'created', monitorId: 5002 }]);
-    expect(posts(stub).at(-1)?.body).toMatchObject({
+    expect(posts(stub).at(-1)?.body).toEqual({
+      type: 'THIRD_PARTY_SERVICE',
       config: { thirdPartyService: { providerId: 862 } },
     });
 

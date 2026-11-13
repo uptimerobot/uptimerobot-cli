@@ -134,21 +134,28 @@ export function decideScope(
 
 class EndpointUnavailable extends Error {}
 
+/** One GET per term; a term seen in two regions reads the same tree twice from the cache. */
 async function searchComponents(
   access: ApiAccess,
   providerId: number,
   term: string,
   region: string | null,
+  trees: Map<string, Leaf[]>,
 ): Promise<{ outcome: TermOutcome; kept: TrackedComponent[] }> {
-  let payload: unknown;
-  try {
-    payload = await requestJson(access.client, componentsUrl(access, providerId, term), 'GET');
-  } catch (error) {
-    if (error instanceof ApiFailure && error.cliError.status === 404)
-      throw new EndpointUnavailable();
-    throw error;
+  let leaves = trees.get(term);
+  if (leaves === undefined) {
+    let payload: unknown;
+    try {
+      payload = await requestJson(access.client, componentsUrl(access, providerId, term), 'GET');
+    } catch (error) {
+      if (error instanceof ApiFailure && error.cliError.status === 404)
+        throw new EndpointUnavailable();
+      throw error;
+    }
+    leaves = collectLeaves(payload);
+    trees.set(term, leaves);
   }
-  const kept = collectLeaves(payload)
+  const kept = leaves
     .filter((leaf) => keepsLeaf(leaf, region))
     .map(({ id, name }) => ({ id, name, term, region }));
   return {
@@ -169,10 +176,11 @@ async function scopeRow(
 ): Promise<Scoping> {
   const terms: TermOutcome[] = [];
   const kept = new Map<number, TrackedComponent>();
+  const trees = new Map<string, Leaf[]>();
   for (const { term, region } of distinctTerms(row.components)) {
     let found: Awaited<ReturnType<typeof searchComponents>>;
     try {
-      found = await searchComponents(access, providerId, term, region);
+      found = await searchComponents(access, providerId, term, region, trees);
     } catch (error) {
       if (error instanceof EndpointUnavailable) {
         return {
@@ -200,11 +208,22 @@ function componentSearchFailure(error: unknown): { code: string; message: string
   return { code: COMPONENT_SEARCH_FAILED, message: `component search failed: ${detail}` };
 }
 
-/** The monitor that tracks a provider; the lowest id when the account holds two. */
+/**
+ * The monitor that tracks a provider: the lowest id when the account holds
+ * two, with the list every one of them tracks together, so a second monitor
+ * that tracks every component means nothing is untracked.
+ */
 function monitorFor(tracked: TrackedProviders, providerId: number): TrackedMonitor | undefined {
-  return tracked.monitors
+  const mine = tracked.monitors
     .filter((monitor) => monitor.providerId === providerId)
-    .sort((left, right) => left.monitorId - right.monitorId)[0];
+    .sort((left, right) => left.monitorId - right.monitorId);
+  const first = mine[0];
+  if (first === undefined) return undefined;
+  const lists = mine.map((monitor) => monitor.trackedComponentIds);
+  const union = lists.some((list) => list === null)
+    ? null
+    : [...new Set(lists.flatMap((list) => list ?? []))];
+  return { ...first, trackedComponentIds: union };
 }
 
 /**
@@ -255,6 +274,11 @@ export async function scopeProposal(
         if (status === 401 || status === 403) throw error;
         if (isTransient(error)) consecutiveFailures += 1;
       } else consecutiveFailures += 1;
+      // A tracked row is informational here: a failed search must not block the creates.
+      if (row.status === 'already-tracked') {
+        scoped.push({ ...row, ...trackedFields(row, options.tracked, undefined) });
+        continue;
+      }
       scoped.push({ ...row, status: 'unresolved', failure: componentSearchFailure(error) });
     }
   }
@@ -265,10 +289,11 @@ export async function scopeProposal(
 function trackedFields(
   row: ResolvedCandidate,
   tracked: TrackedProviders,
-  kept: readonly TrackedComponent[],
+  kept: readonly TrackedComponent[] | undefined,
 ): { monitor?: TrackedMonitor; untracked?: string[] } {
   if (row.status !== 'already-tracked') return {};
   const monitor = monitorFor(tracked, row.catalog.id);
+  if (kept === undefined) return monitor === undefined ? {} : { monitor };
   const list = monitor?.trackedComponentIds ?? null;
   const untracked =
     list === null ? [] : kept.filter((leaf) => !list.includes(leaf.id)).map((leaf) => leaf.name);
