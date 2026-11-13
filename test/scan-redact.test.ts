@@ -112,4 +112,11 @@ describe('redactSecrets, round four', () => {
     expect(clipped).toContain('tool --password ***');
     expect(redactClipped(`echo "${'a'.repeat(3000)}"`, 2000)).toContain('aaa');
   });
+
+  it('masks a clipped quoted credential whose cut lands right after a backslash', () => {
+    const prefix = 'tool --password "hunter2\\';
+    const clipped = redactClipped(`${prefix}${'p'.repeat(3000)}"`, prefix.length);
+    expect(clipped).not.toContain('hunter2');
+    expect(clipped).toContain('tool --password ***');
+  });
 });

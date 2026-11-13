@@ -87,15 +87,20 @@ export function redactClipped(value: string, limit: number): string {
  */
 function closeOpenQuote(text: string): string {
   let open: string | undefined;
+  let danglingEscape = false;
   for (let index = 0; index < text.length; index += 1) {
     const character = text[index]!;
-    if (open === undefined) {
-      if (character === '\\') index += 1;
-      else if (character === '"' || character === "'" || character === '`') open = character;
-    } else if (character === '\\' && open === '"') index += 1;
-    else if (character === open) open = undefined;
+    const escapes = character === '\\' && (open === undefined || open === '"');
+    if (escapes) {
+      // A clip right after a backslash would turn the added quote into an escaped one.
+      danglingEscape = index === text.length - 1;
+      index += 1;
+    } else if (open === undefined) {
+      if (character === '"' || character === "'" || character === '`') open = character;
+    } else if (character === open) open = undefined;
   }
-  return open === undefined ? text : text + open;
+  if (open === undefined) return text;
+  return (danglingEscape ? text.slice(0, -1) : text) + open;
 }
 
 /**

@@ -30,6 +30,7 @@ export const COLLECTION_COMMAND_IDS = [
   'monitors:list',
   'monitors:third-party-service:incidents:activity-log',
   'monitors:third-party-service:incidents:list',
+  'monitors:third-party-service:maintenances:list',
   'status-pages:announcements:list',
   'status-pages:list',
   'tags:list',
@@ -127,6 +128,13 @@ export const COMMAND_COLUMNS = {
     { key: 'title', maxWidth: 48 },
     { header: 'STARTED', key: 'startedAt' },
     { header: 'RESOLVED', key: 'resolvedAt' },
+  ],
+  'monitors:third-party-service:maintenances:list': [
+    { key: 'id' },
+    { key: 'impact' },
+    { key: 'title', maxWidth: 48 },
+    { header: 'FROM', key: 'scheduledFor' },
+    { header: 'UNTIL', key: 'scheduledUntil' },
   ],
   'status-pages:announcements:list': [
     { key: 'id' },
