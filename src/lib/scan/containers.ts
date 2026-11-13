@@ -399,11 +399,15 @@ function longFormPort(
 /** Flattens both `test` spellings: an exec array or a shell string. */
 function composeTestCommand(test: unknown): string {
   if (isSeq(test)) {
+    const parts = test.items
+      .map((item) => scalarText(item))
+      .filter((part): part is string => part !== undefined);
+    // CMD-SHELL carries one shell script whose own quotes the redactor reads;
+    // re-quoting it would escape them and split a quoted credential at a space.
+    if (parts[0] === 'CMD-SHELL') return parts.slice(1).join(' ');
     return (
-      test.items
-        .map((item) => scalarText(item))
-        .filter((part): part is string => part !== undefined)
-        .filter((part) => part !== 'CMD' && part !== 'CMD-SHELL' && part !== 'NONE')
+      parts
+        .filter((part) => part !== 'CMD' && part !== 'NONE')
         // An argument with a space inside stays one word for the redactor, which
         // would otherwise mask only the part before the space.
         .map((part) => (/\s/.test(part) ? `"${part.replaceAll('"', '\\"')}"` : part))

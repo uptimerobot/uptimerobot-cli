@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1337,6 +1337,32 @@ describe('init', () => {
         restoreTerminal();
       }
     });
+
+    it.runIf(process.platform === 'darwin' || process.platform === 'linux')(
+      'refuses an outdated guide it cannot write before any service is created',
+      async () => {
+        keyring.set(STORED_CREDENTIAL, 'u123-stored');
+        await writeManifest();
+        const guidePath = join(repository, SETUP_GUIDE_FILE);
+        await writeFile(guidePath, `${SETUP_BEGIN_PREFIX} -->\nold guide\n`);
+        await chmod(guidePath, 0o444);
+        const api = stubApi();
+        const { requestConfirmation } = await import('../src/lib/invocation.js');
+        const restoreTerminal = stubTerminal();
+        try {
+          const { default: Init } = await import('../src/commands/init.js');
+          await expect(
+            Init.run(['--no-launch', '--no-agent'], { root: projectRoot }),
+          ).rejects.toMatchObject({ cliError: { code: 'SETUP_GUIDE_WRITE_FAILED' } });
+          expect(catalogCalls(api.paths)).toEqual([]);
+          expect(api.posts).toEqual([]);
+          expect(vi.mocked(requestConfirmation)).not.toHaveBeenCalled();
+        } finally {
+          restoreTerminal();
+          await chmod(guidePath, 0o644);
+        }
+      },
+    );
 
     it('refuses a foreign setup guide before any service is created', async () => {
       keyring.set(STORED_CREDENTIAL, 'u123-stored');

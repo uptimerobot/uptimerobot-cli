@@ -655,6 +655,22 @@ describe('scanContainers — round three', () => {
     expect(readPaths.some((path) => path.endsWith('.env'))).toBe(false);
   });
 
+  it('keeps a CMD-SHELL script as written so a quoted credential inside it is still masked', async () => {
+    const root = await temporaryRepo({
+      'docker-compose.yml': [
+        'services:',
+        '  api:',
+        '    healthcheck:',
+        '      test: ["CMD-SHELL", "curl --user \\"admin:alpha hunter2\\" http://localhost:3000/health"]',
+        '',
+      ].join('\n'),
+    });
+    const [finding] = await scanContainers(root);
+    expect(finding?.value).toBe('http://localhost:3000/health');
+    expect(finding?.detail?.command).not.toContain('hunter2');
+    expect(finding?.detail?.command).not.toContain('alpha');
+  });
+
   it('keeps a credential with a space inside one exec-array argument out of the command', async () => {
     const root = await temporaryRepo({
       'docker-compose.yml': [
