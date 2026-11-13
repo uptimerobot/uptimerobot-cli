@@ -5,12 +5,18 @@
  * string spelled as the catalog component name; nothing from the
  * repository is ever used as a term. Each rule names the terraform service
  * word (`s3` from `aws_s3_bucket`), the package names, or the signal texts
- * that point at the component. The tables mirror the component scoping
- * section of the discover-third-party-services skill.
+ * that point at the component. The tables copy the "Component scoping"
+ * section of the discover-third-party-services skill (`reference.md` in
+ * the uptimerobot/ai repository); when the catalog renames a component, the
+ * term text changes here first and the seed schema version is bumped.
+ * Within a provider the first matching rule wins, so a rule keyed on full
+ * resource types sits above a rule keyed on the shared first word.
+ * The signal substrings copy the texts `config.ts` emits (`ci: <pattern>`,
+ * `git remote: <host>`, `FROM <registry>`, the bare config file name).
  */
 import type { ThirdPartyFinding } from './third-party.js';
 
-interface ComponentRule {
+type ComponentRule = {
   readonly term: string;
   /** The first word after the terraform resource prefix, when that word is enough. */
   readonly services?: readonly string[];
@@ -20,7 +26,7 @@ interface ComponentRule {
   readonly packages?: readonly string[];
   /** Substrings of a file, CI, registry or git-host signal. */
   readonly signals?: readonly string[];
-}
+};
 
 const rule = (term: string, parts: Omit<ComponentRule, 'term'>): ComponentRule => ({
   term,
@@ -140,14 +146,11 @@ const PACKAGE_KINDS: ReadonlySet<ThirdPartyFinding['kind']> = new Set([
  * type is still known: the matcher keeps only the first word of the type in
  * the finding, and this term is the one built-in string that may carry more.
  */
-export function terraformComponent(provider: string, type: string): string {
+export function terraformComponent(provider: string, type: string): string | undefined {
   const word = type.split('_')[1] ?? '';
-  return (
-    COMPONENT_RULES.get(provider)?.find(
-      (item) =>
-        (item.resources?.includes(type) ?? false) || (item.services?.includes(word) ?? false),
-    )?.term ?? ''
-  );
+  return COMPONENT_RULES.get(provider)?.find(
+    (item) => (item.resources?.includes(type) ?? false) || (item.services?.includes(word) ?? false),
+  )?.term;
 }
 
 function ruleMatches(item: ComponentRule, finding: ThirdPartyFinding): boolean {

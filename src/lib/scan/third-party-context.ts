@@ -24,16 +24,16 @@ export interface ThirdPartyEvidence extends ScanEvidence {
   app: string;
 }
 
-/** The region a component term was seen in, with the terraform line that named it. */
+/** The region a component term was seen in, and the terraform line that declared it. */
 export interface ComponentRegion {
   code: string;
-  evidence: ScanEvidence;
+  declaredAt: ScanEvidence;
 }
 
 /**
  * One component term of a scoped provider: the built-in search text, the
  * region of the file that named it (`null` when none did), and the signals
- * behind it. A term seen in two regions appears twice.
+ * behind it. A term seen in several regions appears once per region.
  */
 export interface ThirdPartyComponent {
   term: string;
@@ -161,10 +161,10 @@ function uniqueEvidence(findings: readonly ThirdPartyFinding[]): ThirdPartyEvide
 function regionOf(finding: ThirdPartyFinding): ComponentRegion | null {
   const { detail } = finding;
   if (!('region' in detail) || detail.region === '') return null;
-  return {
-    code: detail.region,
-    evidence: { file: finding.evidence.file, line: Number(detail.regionLine) },
-  };
+  // Detail values are strings by convention; the line was written by the matcher.
+  const line = Number(detail.regionLine);
+  if (!Number.isInteger(line) || line < 1) return null;
+  return { code: detail.region, declaredAt: { file: finding.evidence.file, line } };
 }
 
 /**

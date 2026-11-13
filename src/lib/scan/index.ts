@@ -61,6 +61,8 @@ export type {
 /**
  * Bumped whenever a consumer would have to change to read the document.
  * 2 added `thirdParty` and `summary.thirdPartyProviders`.
+ * 3 replaced `hints` with `components` on each third-party candidate and
+ *   added `regionLine` and `component` to the terraform finding detail.
  */
 export const SEED_CONTEXT_SCHEMA_VERSION = 3;
 

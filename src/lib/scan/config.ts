@@ -331,7 +331,7 @@ function terraform(contents: string): Match[] {
           signal: `${item.signal.pattern}${word}`,
           line: index + 1,
           service: word,
-          component: terraformComponent(item.entry.catalogName, type),
+          component: terraformComponent(item.entry.catalogName, type) ?? '',
         });
       }
       continue;
@@ -351,6 +351,8 @@ function terraform(contents: string): Match[] {
   return matches.map((match) => {
     const name = match.entry.catalogName;
     if (!REGION_VENDORS.has(name)) return match;
+    // Two blocks of one provider with different regions: neither one, and not
+    // the file default either, since the file plainly spans regions.
     const region = disagreed.has(name) ? undefined : (regions.get(name) ?? fileRegion);
     return region === undefined
       ? match

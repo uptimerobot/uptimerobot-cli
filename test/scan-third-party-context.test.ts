@@ -3,7 +3,8 @@ import {
   buildThirdPartyContext,
   formatThirdPartySection,
 } from '../src/lib/scan/third-party-context.js';
-import { terraformComponent } from '../src/lib/scan/components.js';
+import { COMPONENT_RULES, terraformComponent } from '../src/lib/scan/components.js';
+import { VENDORS } from '../src/lib/scan/vendors.js';
 import type { ThirdPartyFinding } from '../src/lib/scan/third-party.js';
 
 type Overrides = Partial<Omit<ThirdPartyFinding, 'detail' | 'evidence'>> & {
@@ -106,7 +107,7 @@ describe('buildThirdPartyContext', () => {
         components: [
           {
             term: 'Amazon Relational Database Service',
-            region: { code: 'eu-central-1', evidence: { file: 'infra/main.tf', line: 9 } },
+            region: { code: 'eu-central-1', declaredAt: { file: 'infra/main.tf', line: 9 } },
             evidence: [
               {
                 file: 'infra/main.tf',
@@ -119,7 +120,7 @@ describe('buildThirdPartyContext', () => {
           },
           {
             term: 'Amazon Simple Storage Service',
-            region: { code: 'eu-central-1', evidence: { file: 'infra/main.tf', line: 9 } },
+            region: { code: 'eu-central-1', declaredAt: { file: 'infra/main.tf', line: 9 } },
             evidence: [
               {
                 file: 'infra/main.tf',
@@ -259,6 +260,15 @@ describe('buildThirdPartyContext', () => {
 });
 
 describe('component terms', () => {
+  /** The real resource types behind the short signals the tests use. */
+  const TYPES: Record<string, string> = {
+    aws_s3: 'aws_s3_bucket',
+    aws_db: 'aws_db_instance',
+    aws_lambda: 'aws_lambda_function',
+    aws_sqs: 'aws_sqs_queue',
+    aws_iam: 'aws_iam_role',
+    azurerm_storage: 'azurerm_storage_account',
+  };
   const tf = (
     provider: string,
     file: string,
@@ -267,6 +277,7 @@ describe('component terms', () => {
     service: string,
     region = '',
     regionLine = '',
+    resource = TYPES[signal] ?? `${signal}_x`,
   ): ThirdPartyFinding =>
     finding(provider, {
       kind: 'terraform-resource',
@@ -275,12 +286,12 @@ describe('component terms', () => {
       detail: {
         signal,
         service,
-        component: terraformComponent(provider, `${signal}_x`),
+        component: terraformComponent(provider, resource) ?? '',
         region,
         regionLine,
       },
     });
-  const componentsOf = (findings: ThirdPartyFinding[]) =>
+  const componentsByProvider = (findings: ThirdPartyFinding[]) =>
     buildThirdPartyContext(findings).candidates.map((candidate) => [
       candidate.provider,
       candidate.components.map(({ term, region, evidence }) => ({
@@ -292,7 +303,7 @@ describe('component terms', () => {
 
   it('names one term per service word, with the region of its file, and merges region-less package evidence into it', () => {
     expect(
-      componentsOf([
+      componentsByProvider([
         finding('AWS', {
           line: 4,
           detail: { signal: '@aws-sdk/client-s3@3.700.0', package: '@aws-sdk/client-s3' },
@@ -322,7 +333,7 @@ describe('component terms', () => {
 
   it('lists a term once per region when two files place it in two regions', () => {
     expect(
-      componentsOf([
+      componentsByProvider([
         tf('AWS', 'infra/eu.tf', 5, 'aws_s3', 's3', 'eu-central-1', '2'),
         tf('AWS', 'infra/us.tf', 5, 'aws_lambda', 'lambda', 'us-east-1', '2'),
         tf('AWS', 'infra/us.tf', 9, 'aws_s3', 's3', 'us-east-1', '2'),
@@ -349,7 +360,7 @@ describe('component terms', () => {
 
   it('keeps the region null for a package-only term, for Azure, and for a service word with no region', () => {
     expect(
-      componentsOf([
+      componentsByProvider([
         finding('Google Cloud', {
           detail: { signal: '@google-cloud/storage@7.0.0', package: '@google-cloud/storage' },
         }),
@@ -374,7 +385,7 @@ describe('component terms', () => {
 
   it('maps Cloudflare and GitHub signals that are not packages or resources', () => {
     expect(
-      componentsOf([
+      componentsByProvider([
         finding('Cloudflare', {
           kind: 'file',
           file: 'wrangler.toml',
@@ -419,7 +430,7 @@ describe('component terms', () => {
 
   it('gives an unmapped signal of a scoped provider no term, and a provider outside the five an empty list', () => {
     expect(
-      componentsOf([
+      componentsByProvider([
         finding('AWS', { detail: { signal: 'boto3@1.35.80', package: 'boto3' }, kind: 'pip' }),
         tf('AWS', 'infra/main.tf', 3, 'aws_iam', 'iam', 'eu-central-1', '1'),
         finding('Stripe'),
@@ -428,6 +439,18 @@ describe('component terms', () => {
       ['AWS', []],
       ['Stripe', []],
     ]);
+  });
+});
+
+describe('COMPONENT_RULES', () => {
+  it('keys every table on a vendor catalog name and keeps terms non-empty and unique per provider', () => {
+    const names = new Set(VENDORS.map((entry) => entry.catalogName));
+    for (const [provider, rules] of COMPONENT_RULES) {
+      expect(names.has(provider), provider).toBe(true);
+      const terms = rules.map(({ term }) => term);
+      expect(terms.every((term) => term.length > 0)).toBe(true);
+      expect(new Set(terms).size, provider).toBe(terms.length);
+    }
   });
 });
 
