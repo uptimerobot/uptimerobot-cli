@@ -1,0 +1,244 @@
+{
+  "data": [
+    {
+      "id": 9100,
+      "name": "Amazon Simple Storage Service",
+      "status": "operational",
+      "region": null,
+      "global": false,
+      "children": [
+        {
+          "id": 9101,
+          "name": "Amazon Simple Storage Service (N. Virginia)",
+          "status": "operational",
+          "region": {
+            "code": "us-east-1",
+            "name": "N. Virginia"
+          },
+          "global": false
+        },
+        {
+          "id": 9102,
+          "name": "Amazon Simple Storage Service (Ohio)",
+          "status": "operational",
+          "region": {
+            "code": "us-east-2",
+            "name": "Ohio"
+          },
+          "global": false
+        },
+        {
+          "id": 9103,
+          "name": "Amazon Simple Storage Service (N. California)",
+          "status": "operational",
+          "region": {
+            "code": "us-west-1",
+            "name": "N. California"
+          },
+          "global": false
+        },
+        {
+          "id": 9104,
+          "name": "Amazon Simple Storage Service (Oregon)",
+          "status": "operational",
+          "region": {
+            "code": "us-west-2",
+            "name": "Oregon"
+          },
+          "global": false
+        },
+        {
+          "id": 9105,
+          "name": "Amazon Simple Storage Service (Ireland)",
+          "status": "operational",
+          "region": {
+            "code": "eu-west-1",
+            "name": "Ireland"
+          },
+          "global": false
+        },
+        {
+          "id": 9106,
+          "name": "Amazon Simple Storage Service (London)",
+          "status": "operational",
+          "region": {
+            "code": "eu-west-2",
+            "name": "London"
+          },
+          "global": false
+        },
+        {
+          "id": 9107,
+          "name": "Amazon Simple Storage Service (Paris)",
+          "status": "operational",
+          "region": {
+            "code": "eu-west-3",
+            "name": "Paris"
+          },
+          "global": false
+        },
+        {
+          "id": 9108,
+          "name": "Amazon Simple Storage Service (Frankfurt)",
+          "status": "operational",
+          "region": {
+            "code": "eu-central-1",
+            "name": "Frankfurt"
+          },
+          "global": false
+        },
+        {
+          "id": 9109,
+          "name": "Amazon Simple Storage Service (Zurich)",
+          "status": "operational",
+          "region": {
+            "code": "eu-central-2",
+            "name": "Zurich"
+          },
+          "global": false
+        },
+        {
+          "id": 9110,
+          "name": "Amazon Simple Storage Service (Stockholm)",
+          "status": "operational",
+          "region": {
+            "code": "eu-north-1",
+            "name": "Stockholm"
+          },
+          "global": false
+        },
+        {
+          "id": 9111,
+          "name": "Amazon Simple Storage Service (Milan)",
+          "status": "operational",
+          "region": {
+            "code": "eu-south-1",
+            "name": "Milan"
+          },
+          "global": false
+        },
+        {
+          "id": 9112,
+          "name": "Amazon Simple Storage Service (Spain)",
+          "status": "operational",
+          "region": {
+            "code": "eu-south-2",
+            "name": "Spain"
+          },
+          "global": false
+        },
+        {
+          "id": 9113,
+          "name": "Amazon Simple Storage Service (Mumbai)",
+          "status": "operational",
+          "region": {
+            "code": "ap-south-1",
+            "name": "Mumbai"
+          },
+          "global": false
+        },
+        {
+          "id": 9114,
+          "name": "Amazon Simple Storage Service (Hyderabad)",
+          "status": "operational",
+          "region": {
+            "code": "ap-south-2",
+            "name": "Hyderabad"
+          },
+          "global": false
+        },
+        {
+          "id": 9115,
+          "name": "Amazon Simple Storage Service (Singapore)",
+          "status": "operational",
+          "region": {
+            "code": "ap-southeast-1",
+            "name": "Singapore"
+          },
+          "global": false
+        },
+        {
+          "id": 9116,
+          "name": "Amazon Simple Storage Service (Sydney)",
+          "status": "operational",
+          "region": {
+            "code": "ap-southeast-2",
+            "name": "Sydney"
+          },
+          "global": false
+        },
+        {
+          "id": 9117,
+          "name": "Amazon Simple Storage Service (Jakarta)",
+          "status": "operational",
+          "region": {
+            "code": "ap-southeast-3",
+            "name": "Jakarta"
+          },
+          "global": false
+        },
+        {
+          "id": 9118,
+          "name": "Amazon Simple Storage Service (Melbourne)",
+          "status": "operational",
+          "region": {
+            "code": "ap-southeast-4",
+            "name": "Melbourne"
+          },
+          "global": false
+        },
+        {
+          "id": 9119,
+          "name": "Amazon Simple Storage Service (Tokyo)",
+          "status": "operational",
+          "region": {
+            "code": "ap-northeast-1",
+            "name": "Tokyo"
+          },
+          "global": false
+        },
+        {
+          "id": 9120,
+          "name": "Amazon Simple Storage Service (Seoul)",
+          "status": "operational",
+          "region": {
+            "code": "ap-northeast-2",
+            "name": "Seoul"
+          },
+          "global": false
+        },
+        {
+          "id": 9121,
+          "name": "Amazon Simple Storage Service (Osaka)",
+          "status": "operational",
+          "region": {
+            "code": "ap-northeast-3",
+            "name": "Osaka"
+          },
+          "global": false
+        },
+        {
+          "id": 9122,
+          "name": "Amazon Simple Storage Service (Canada-Central)",
+          "status": "operational",
+          "region": {
+            "code": "ca-central-1",
+            "name": "Canada-Central"
+          },
+          "global": false
+        },
+        {
+          "id": 9123,
+          "name": "Amazon Simple Storage Service (Sao Paulo)",
+          "status": "operational",
+          "region": {
+            "code": "sa-east-1",
+            "name": "Sao Paulo"
+          },
+          "global": false
+        }
+      ]
+    }
+  ],
+  "regionLike": false
+}

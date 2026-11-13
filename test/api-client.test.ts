@@ -257,11 +257,12 @@ describe('API client', () => {
   });
 
   it('follows a same-origin redirect and re-attaches credentials to every hop', async () => {
-    const seen: Array<{ authorization: string | null; url: string }> = [];
+    const seen: Array<{ authorization: string | null; command: string | null; url: string }> = [];
     const fetchImplementation = vi.fn<typeof fetch>().mockImplementation(async (request) => {
       const outgoing = request instanceof Request ? request : new Request(request);
       seen.push({
         authorization: outgoing.headers.get('authorization'),
+        command: outgoing.headers.get('x-uptimerobot-command'),
         url: outgoing.url,
       });
       if (seen.length === 1) {
@@ -278,6 +279,7 @@ describe('API client', () => {
     const client = createApiClient({
       apiKey: 'u123-secret',
       apiUrl: new URL('https://api.uptimerobot.com/v3'),
+      command: 'scan:3rd-party',
       environment: 'local',
       fetchImplementation,
       mode: 'human',
@@ -292,10 +294,12 @@ describe('API client', () => {
     expect(seen).toEqual([
       {
         authorization: 'Bearer u123-secret',
+        command: 'scan:3rd-party',
         url: 'https://api.uptimerobot.com/v3/monitors',
       },
       {
         authorization: 'Bearer u123-secret',
+        command: 'scan:3rd-party',
         url: 'https://api.uptimerobot.com/v3/monitors-archived',
       },
     ]);

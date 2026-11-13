@@ -88,7 +88,7 @@ describe('uptimerobot scan', () => {
 
     const context = await Scan.run([root, '--json'], { root: projectRoot });
 
-    expect(context.schemaVersion).toBe(2);
+    expect(context.schemaVersion).toBe(3);
     expect(context.repoRoot).toBe(root);
     expect(context.summary).toEqual({
       accepted: 4,
@@ -131,7 +131,21 @@ describe('uptimerobot scan', () => {
               app: '.',
             },
           ],
-          hints: [],
+          components: [
+            {
+              term: 'Actions',
+              region: null,
+              evidence: [
+                {
+                  file: '.github/workflows/nightly.yml',
+                  line: 1,
+                  kind: 'ci-file',
+                  signal: 'ci: .github/workflows/',
+                  app: '.',
+                },
+              ],
+            },
+          ],
         },
         {
           provider: 'Stripe',
@@ -140,7 +154,7 @@ describe('uptimerobot scan', () => {
           evidence: [
             { file: 'package.json', line: 3, kind: 'npm', signal: 'stripe@17.4.0', app: '.' },
           ],
-          hints: [],
+          components: [],
         },
       ],
       totals: { skipped: 1, unknown: 1 },
@@ -183,7 +197,7 @@ describe('uptimerobot scan', () => {
     await Scan.run([root], { root: projectRoot });
 
     const output = printed();
-    expect(output).toContain('# Scan seed context (schema 2)');
+    expect(output).toContain('# Scan seed context (schema 3)');
     expect(output).toContain(`Repository: ${root}`);
     expect(output).toContain('4 accepted, 2 skipped, 1 scheduled job, 2 third-party providers.');
     expect(output).toContain('## Skipped, and why');
@@ -204,7 +218,7 @@ describe('uptimerobot scan', () => {
     await Scan.run([root, '--format', 'table'], { root: projectRoot });
 
     const output = printed();
-    expect(output).toContain('# Scan seed context (schema 2)');
+    expect(output).toContain('# Scan seed context (schema 3)');
     expect(output).not.toContain('"schemaVersion"');
   });
 
@@ -213,7 +227,7 @@ describe('uptimerobot scan', () => {
 
     await Scan.run([root, '--format', 'json'], { root: projectRoot });
 
-    expect(JSON.parse(printed())).toMatchObject({ schemaVersion: 2 });
+    expect(JSON.parse(printed())).toMatchObject({ schemaVersion: 3 });
   });
 
   it('scans the current directory when no path is given', async () => {

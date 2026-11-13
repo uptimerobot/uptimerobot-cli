@@ -12,10 +12,41 @@ may change in minor releases.
 
 ### Added
 
+- `uptimerobot scan --apply` scopes a third-party service to the components
+  the repository uses for AWS, Google Cloud, Microsoft Azure, Cloudflare and
+  GitHub: one components search per term the scan found, the leaves in the
+  term's region plus the global ones kept, their ids sent as
+  `trackedComponentIds`. The proposal table gains a Components column and
+  one evidence line per scoped component.
+  - The whole provider is tracked, with a reason, when a term matched nothing
+    (`term-missed`), more than 20 distinct leaves were kept (`too-many`), the
+    endpoint is missing (`endpoint-unavailable`) or the scan found no term
+    (`no-terms`). Any other failed search leaves the row `unresolved` with
+    `COMPONENT_SEARCH_FAILED`, exit 1 `CATALOG_UNRESOLVED`.
+  - The `--json` row carries `scope`, `scopeReason`, `terms[]`, `totalLeaves`
+    and `trackedComponents[]`; a `created` result repeats
+    `trackedComponents`; an already-tracked row carries `monitor` and
+    `untracked[]` and its Components cell says what the monitor covers.
+  - The `CATALOG_UNRESOLVED` message reads "The component search failed for
+    X" when every unresolved row failed there; it still reads "The catalog
+    could not resolve X" otherwise.
 - `uptimerobot monitors third-party-service maintenances list <id>` and
   `uptimerobot third-party-services maintenances`, generated from the
   published contract, list the upcoming maintenance windows of one
   third-party service and across all of them.
+- `uptimerobot scan --apply` and the third-party offer in `uptimerobot init`
+  tag every request they make with `x-uptimerobot-command: scan:3rd-party`,
+  for server-side usage attribution. The header carries no credential or
+  repository data and other commands do not send it.
+- The scan names the components a repository uses for the five providers the
+  catalog tracks by component (AWS, Google Cloud, Microsoft Azure, Cloudflare,
+  GitHub). Each third-party candidate carries `components[]` with `term` (the
+  built-in component name, `Amazon Simple Storage Service` for `aws_s3_bucket`
+  or `@aws-sdk/client-s3`), `region` (the terraform region code of the file
+  that named it and the line that declared it, or `null`) and `evidence`. A
+  term seen in several regions is listed once per region. The Markdown
+  `signals:` suffix lists the same terms. Providers outside the five get an
+  empty list.
 - `uptimerobot init` prepares a repository for a coding agent: it scans the
   working tree, writes `uptimerobot-scan.md` and `uptimerobot-setup.md`,
   plants a managed block in `AGENTS.md` for the detected or chosen agent
@@ -60,6 +91,11 @@ may change in minor releases.
 
 ### Changed
 
+- The seed context schema is 3: `hints` is removed from each third-party
+  candidate, replaced by `components`, and terraform findings carry
+  `regionLine` and `component` next to `region`.
+- A terraform file whose provider blocks for one provider name two different
+  regions reports no region for that provider's resources, not the first one.
 - An API error message is printed on one line; a message the API broke across
   lines used to print as a second, misleading line.
 - A confirmation prompt whose input ends before an answer (Ctrl-D, a closed

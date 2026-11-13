@@ -29,7 +29,7 @@ function candidate(
         app: '.',
       },
     ],
-    hints: [],
+    components: [],
   };
 }
 
@@ -41,7 +41,7 @@ const choice = (id: number, name: string, isTracked = false) => ({
   isTracked,
 });
 
-const NONE = { providerIds: [], partial: false };
+const NONE = { providerIds: [], monitors: [], partial: false };
 
 describe('parseOnly', () => {
   it.each([
@@ -106,7 +106,11 @@ describe('applyOnlyChoices', () => {
       catalog: { id: 862 },
     });
     expect(
-      applyOnlyChoices([ambiguous], ['Vercel=861'], { providerIds: [861], partial: false })[0],
+      applyOnlyChoices([ambiguous], ['Vercel=861'], {
+        providerIds: [861],
+        monitors: [],
+        partial: false,
+      })[0],
     ).toMatchObject({
       status: 'already-tracked',
     });
@@ -189,15 +193,15 @@ describe('rendering', () => {
     const lines = formatProposal({
       proposal: [create, over, missing, unresolved],
       allowance: { used: 9, limit: 10, proposed: 1 },
-      tracked: { providerIds: [1, 2], partial: true },
+      tracked: { providerIds: [1, 2], monitors: [], partial: true },
     });
     expect(lines).toEqual([
-      '| Provider | Evidence | Class | Catalog | Action |',
-      '| --- | --- | --- | --- | --- |',
-      '| Stripe | stripe@1 | runtime | 801, operational, https://status.stripe.example/ | create |',
-      '| Vercel | vercel@1 | runtime | 861, operational, https://status.stripe.example/ | over allowance |',
-      '| Sentry | sentry@1 | runtime | not in catalog | none |',
-      '| Resend | resend@1 | runtime | unresolved: Slow / down | retry |',
+      '| Provider | Evidence | Class | Catalog | Components | Action |',
+      '| --- | --- | --- | --- | --- | --- |',
+      '| Stripe | stripe@1 | runtime | 801, operational, https://status.stripe.example/ |  | create |',
+      '| Vercel | vercel@1 | runtime | 861, operational, https://status.stripe.example/ |  | over allowance |',
+      '| Sentry | sentry@1 | runtime | not in catalog |  | none |',
+      '| Resend | resend@1 | runtime | unresolved: Slow / down |  | retry |',
       '',
       '9 of 10 third-party slots used, 1 proposed. Tracked set read from the account (2 services, partial: the list stopped at its page cap).',
     ]);
