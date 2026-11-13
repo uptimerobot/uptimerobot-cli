@@ -259,15 +259,22 @@ async function pinnedScoping(
     return { ...base, scope: 'whole', scopeReason: 'pinned-whole', trackedComponents: [] };
   }
   const url = buildUrl(PROVIDER_GET, { path: { id: row.catalog.id }, query: {} }, access.apiUrl);
-  const payload = await requestJson(access.client, url, PROVIDER_GET.method);
-  const record = isPlainRecord(payload) && isPlainRecord(payload.data) ? payload.data : payload;
-  const tree = isPlainRecord(record) ? record.components : undefined;
-  const leaves = new Map(collectLeaves({ data: tree }).map((leaf) => [leaf.id, leaf]));
-  const trackedComponents = pin.flatMap((id) => {
+  let leaves: Map<number, Leaf>;
+  try {
+    const payload = await requestJson(access.client, url, PROVIDER_GET.method);
+    const record = isPlainRecord(payload) && isPlainRecord(payload.data) ? payload.data : payload;
+    const tree = isPlainRecord(record) ? record.components : undefined;
+    leaves = new Map(collectLeaves({ data: tree }).map((leaf) => [leaf.id, leaf]));
+  } catch (error) {
+    if (!(error instanceof ApiFailure)) throw error;
+    throw new ComponentSearchFailed(`the pinned ${row.provider} tree`, error);
+  }
+  const ids = [...new Set(pin)];
+  const trackedComponents = ids.flatMap((id) => {
     const leaf = leaves.get(id);
     return leaf === undefined ? [] : [{ id, name: leaf.name, term: '', region: leaf.region }];
   });
-  const pinUnknownIds = pin.filter((id) => !leaves.has(id));
+  const pinUnknownIds = ids.filter((id) => !leaves.has(id));
   return {
     ...base,
     scope: 'components',
@@ -379,17 +386,12 @@ export async function scopeProposal(
       continue;
     }
     const pin = row.status === 'create' ? options.pins?.get(row.provider) : undefined;
-    if (pin !== undefined) {
-      const scoping = await pinnedScoping(row, pin, options.access);
-      scoped.push({ ...row, ...scoping, pin: pinText(row.provider, row.catalog.id, scoping) });
-      continue;
-    }
-    if (row.components.length === 0) {
+    if (pin === undefined && row.components.length === 0) {
       const scoping = decideScope([], []);
       scoped.push({
         ...row,
         ...scoping,
-        pin: pinText(row.provider, row.catalog.id, scoping),
+        ...(row.status === 'create' ? { pin: pinText(row.provider, row.catalog.id, scoping) } : {}),
         ...trackedFields(row, options.tracked, []),
       });
       continue;
@@ -408,12 +410,15 @@ export async function scopeProposal(
       continue;
     }
     try {
-      const scoping = await scopeRow(row, row.catalog.id, options.access, options.deadline);
+      const scoping =
+        pin === undefined
+          ? await scopeRow(row, row.catalog.id, options.access, options.deadline)
+          : await pinnedScoping(row, pin, options.access);
       consecutiveFailures = 0;
       scoped.push({
         ...row,
         ...scoping,
-        pin: pinText(row.provider, row.catalog.id, scoping),
+        ...(row.status === 'create' ? { pin: pinText(row.provider, row.catalog.id, scoping) } : {}),
         ...trackedFields(row, options.tracked, scoping.trackedComponents),
       });
     } catch (error) {

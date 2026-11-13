@@ -37,6 +37,8 @@ interface StubOptions {
   componentsStatus?: number;
   /** Every components search answers this body with 200 instead of the recorded fixture. */
   componentsBody?: unknown;
+  /** Every provider detail read answers this status instead of the merged fixture tree. */
+  providerStatus?: number;
 }
 
 const row = (id: number, name: string, isTracked = false): Record<string, unknown> => ({
@@ -123,6 +125,8 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
     }
     const detail = /^\/v3\/third-party-providers\/(\d+)$/.exec(url.pathname);
     if (request.method === 'GET' && detail !== null) {
+      if (options.providerStatus !== undefined)
+        return reply(options.providerStatus, { code: 'DOWN', message: 'provider down' });
       // The whole tree is every recorded components answer of the provider, merged.
       const directory = join(FIXTURES, detail[1]!);
       if (!existsSync(directory))
@@ -778,7 +782,14 @@ describe('uptimerobot scan --apply pins the components an agent confirms', () =>
   it('rejects a malformed pin before any request', async () => {
     const stub = await startStub();
     const root = await writeRepository(AWS_REPOSITORY);
-    for (const only of ['AWS=248:', 'AWS=248:x', 'AWS=248:1,,2', 'AWS=248:-1']) {
+    for (const only of [
+      'AWS=248:',
+      'AWS=248:x',
+      'AWS=248:1,,2',
+      'AWS=248:-1',
+      'AWS=248:1:2',
+      'AWS=248:ALL',
+    ]) {
       const result = await runCli(
         ['scan', root, '--apply', '--confirm', '--json', '--only', only],
         env(stub),
@@ -787,6 +798,51 @@ describe('uptimerobot scan --apply pins the components an agent confirms', () =>
       expect(JSON.parse(result.stderr).error.code, only).toBe('INVALID_INPUT');
     }
     expect(stub.hits).toEqual([]);
+  });
+
+  it('sends a duplicated pinned id once', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(AWS_REPOSITORY);
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'AWS=248:9108,9108'],
+      env(stub),
+    );
+    expect(result.exitCode).toBe(0);
+    expect(posts(stub)[0]?.body).toEqual({
+      type: 'THIRD_PARTY_SERVICE',
+      config: { thirdPartyService: { providerId: 248, trackedComponentIds: [9108] } },
+    });
+    expect(JSON.parse(result.stdout).proposal[0].pin).toBe('AWS=248:9108');
+  });
+
+  it('leaves the row unresolved when the pinned provider tree cannot be read, and prints no pin on a tracked row', async () => {
+    const root = await writeRepository(AWS_REPOSITORY);
+    const down = await startStub({ providerStatus: 503 });
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'AWS=248:9108'],
+      env(down),
+    );
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout).proposal[0]).toMatchObject({
+      status: 'unresolved',
+      failure: { code: 'COMPONENT_SEARCH_FAILED' },
+    });
+    expect(posts(down)).toEqual([]);
+
+    const tracked = await startStub({
+      monitors: [
+        {
+          id: 100,
+          type: 'THIRD_PARTY_SERVICE',
+          config: { thirdPartyService: { providerId: 248 } },
+        },
+      ],
+    });
+    const output = JSON.parse(
+      (await runCli(['scan', root, '--apply', '--json'], env(tracked))).stdout,
+    );
+    expect(output.proposal[0].status).toBe('already-tracked');
+    expect(output.proposal[0].pin).toBeUndefined();
   });
 
   it.runIf(process.platform === 'darwin' || process.platform === 'linux')(

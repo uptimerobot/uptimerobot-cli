@@ -131,8 +131,9 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
         return this.fail(
           {
             code: 'INVALID_INPUT',
-            expected: '<provider> or <provider>=<catalog id>',
-            message: `--only ${malformed} names no catalog id.`,
+            expected:
+              '<provider>, <provider>=<catalog id>, <provider>=<catalog id>:<component ids>, or <provider>=<catalog id>:all',
+            message: `--only ${malformed} is not a provider, a catalog id, or a pin.`,
             path: 'only',
           },
           2,
