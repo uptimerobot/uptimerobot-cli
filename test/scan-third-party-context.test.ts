@@ -428,6 +428,49 @@ describe('component terms', () => {
     ]);
   });
 
+  it('keeps a terraform resource without a region out of the region entries another file made', () => {
+    expect(
+      componentsByProvider([
+        tf('AWS', 'infra/eu.tf', 5, 'aws_s3', 's3', 'eu-central-1', '2'),
+        tf('AWS', 'infra/multi.tf', 9, 'aws_s3', 's3'),
+        finding('AWS', {
+          line: 4,
+          detail: { signal: '@aws-sdk/client-s3@3.0.0', package: '@aws-sdk/client-s3' },
+        }),
+      ]),
+    ).toEqual([
+      [
+        'AWS',
+        [
+          { term: 'Amazon Simple Storage Service', region: null, evidence: ['infra/multi.tf:9'] },
+          {
+            term: 'Amazon Simple Storage Service',
+            region: 'eu-central-1',
+            evidence: ['infra/eu.tf:5', 'package.json:4'],
+          },
+        ],
+      ],
+    ]);
+  });
+
+  it('keeps at most twenty component entries per provider', () => {
+    const findings = Array.from({ length: 25 }, (_, index) =>
+      tf(
+        'AWS',
+        `infra/r${index}.tf`,
+        1,
+        'aws_s3',
+        's3',
+        `us-east-${String(index + 1).padStart(2, '0')}`,
+        '1',
+      ),
+    );
+    expect(componentsByProvider(findings)[0]?.[1]).toHaveLength(20);
+    const section = formatThirdPartySection(buildThirdPartyContext(findings)).join('\n');
+    expect(section).toContain('(us-east-20)');
+    expect(section).not.toContain('us-east-21');
+  });
+
   it('gives an unmapped signal of a scoped provider no term, and a provider outside the five an empty list', () => {
     expect(
       componentsByProvider([

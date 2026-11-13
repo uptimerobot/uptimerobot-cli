@@ -344,6 +344,24 @@ describe('terraform', () => {
     ]);
   });
 
+  it('keeps a second resource with the same first word when it names another component', () => {
+    const contents = [
+      'provider "cloudflare" {}',
+      'resource "cloudflare_workers_script" "api" {}',
+      'resource "cloudflare_workers_kv_namespace" "kv" {}',
+      'resource "cloudflare_workers_route" "r" {}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(
+      findings
+        .filter((finding) => finding.kind === 'terraform-resource')
+        .map((finding) => [finding.evidence.line, finding.detail.component]),
+    ).toEqual([
+      [2, 'Workers'],
+      [3, 'Workers KV'],
+    ]);
+  });
+
   it('names the component of a resource type by its full type when the first word is shared', () => {
     const contents = [
       'provider "google" {}',
@@ -364,6 +382,7 @@ describe('terraform', () => {
         .map((finding) => [finding.detail.signal, finding.detail.component]),
     ).toEqual([
       ['google_cloud', 'Cloud Run'],
+      ['google_cloud', ''],
       ['google_container', ''],
       ['cloudflare_workers', 'Workers KV'],
       ['cloudflare_zone', ''],

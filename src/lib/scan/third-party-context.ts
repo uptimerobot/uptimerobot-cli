@@ -167,10 +167,15 @@ function regionOf(finding: ThirdPartyFinding): ComponentRegion | null {
   return { code: detail.region, declaredAt: { file: finding.evidence.file, line } };
 }
 
+/** Component entries kept per provider; a repository of many fake regions stops here. */
+const MAX_COMPONENTS_PER_PROVIDER = 20;
+
 /**
  * Groups the findings that name a component by term. A term with no region
  * anywhere is one entry; a term seen in regions is one entry per region, and
- * the region-less signals of that term (a package) count for every region.
+ * the region-less signals of that term that are not terraform (a package)
+ * count for every region. A terraform resource without a region stays its
+ * own `null` entry, since its file either names no region or spans several.
  */
 function componentsOf(findings: readonly ThirdPartyFinding[]): ThirdPartyComponent[] {
   const byTerm = new Map<
@@ -191,17 +196,35 @@ function componentsOf(findings: readonly ThirdPartyFinding[]): ThirdPartyCompone
       for (const { region } of items) {
         if (region !== null && !regions.has(region.code)) regions.set(region.code, region);
       }
+      const isTerraform = ({ finding }: { finding: ThirdPartyFinding }) =>
+        finding.kind === 'terraform-resource';
       const evidenceIn = (code: string | null): ThirdPartyEvidence[] =>
         uniqueEvidence(
           items
-            .filter(({ region }) => region === null || region.code === code)
+            .filter(
+              (item) =>
+                item.region?.code === code ||
+                (item.region === null && (code === null || !isTerraform(item))),
+            )
             .map(({ finding }) => finding),
         );
-      if (regions.size === 0) return [{ term, region: null, evidence: evidenceIn(null) }];
-      return [...regions.values()]
+      const unplaced = items.filter((item) => item.region === null && isTerraform(item));
+      const regional = [...regions.values()]
         .sort((left, right) => left.code.localeCompare(right.code))
         .map((region) => ({ term, region, evidence: evidenceIn(region.code) }));
-    });
+      if (regions.size === 0) return [{ term, region: null, evidence: evidenceIn(null) }];
+      return unplaced.length === 0
+        ? regional
+        : [
+            {
+              term,
+              region: null,
+              evidence: uniqueEvidence(unplaced.map(({ finding }) => finding)),
+            },
+            ...regional,
+          ];
+    })
+    .slice(0, MAX_COMPONENTS_PER_PROVIDER);
 }
 
 // --- Rendering ---------------------------------------------------------------
@@ -252,7 +275,8 @@ function providerLine(candidate: ThirdPartyCandidate): string {
   const terms = candidate.components.map(({ term, region }) =>
     region === null ? term : `${term} (${region.code})`,
   );
-  const signals = terms.length === 0 ? '' : `; signals: ${terms.join(', ')}`;
+  const signals =
+    terms.length === 0 ? '' : `; signals: ${capped(terms, MAX_NAMES_PER_LINE).join(', ')}`;
   return `${candidate.provider}: ${items.join(', ')}${signals}`;
 }
 

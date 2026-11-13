@@ -449,7 +449,7 @@ export function matchConfig(input: ConfigInput): ConfigFinding[] {
   if (DOT_DOT_SEGMENT.test(input.path) || hasUnsafeCharacters(input.path)) return [];
   const seen = new Set<string>();
   const matches = [...ciFile(input.path), ...contentMatches(input)].filter((match) => {
-    const key = `${match.kind}\u0000${match.entry.catalogName}\u0000${match.signal}`;
+    const key = `${match.kind}\u0000${match.entry.catalogName}\u0000${match.signal}\u0000${match.component ?? ''}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
