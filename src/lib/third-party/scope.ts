@@ -14,6 +14,8 @@ import { ApiFailure } from '../../api/errors.js';
 import { isPlainRecord } from '../objects.js';
 import { hasUnsafeCharacters } from '../scan/support.js';
 import type { ThirdPartyComponent } from '../scan/third-party-context.js';
+import { operations } from '../../generated/operations.js';
+import { buildUrl } from '../request.js';
 import {
   ABORTED_CODE,
   type ApiAccess,
@@ -25,7 +27,15 @@ import {
   isTransient,
 } from './resolve.js';
 
-export type ScopeReason = 'no-terms' | 'term-missed' | 'too-many' | 'endpoint-unavailable';
+export type ScopeReason =
+  | 'no-terms'
+  | 'term-missed'
+  | 'too-many'
+  | 'endpoint-unavailable'
+  | 'pinned-whole';
+
+/** What `--only <provider>=<id>:...` fixes for the create: these ids, or the whole provider. */
+export type Pin = 'all' | readonly number[];
 
 export interface TermOutcome {
   term: string;
@@ -50,6 +60,12 @@ export interface Scoping {
   /** Distinct leaves kept across every term, the number the cap is judged on. */
   totalLeaves: number;
   trackedComponents: readonly TrackedComponent[];
+  /** The `--only` value that repeats this row exactly: `AWS=248:9208,9108` or `AWS=248:all`. */
+  pin?: string;
+  /** True when the row came from a pin, so no search was made and no pin is owed. */
+  pinned?: boolean;
+  /** Pinned ids the provider tree does not hold; the run is blocked on any. */
+  pinUnknownIds?: readonly number[];
 }
 
 /** Over this many kept leaves the whole provider is the coverage-first answer. */
@@ -222,6 +238,46 @@ async function searchComponents(
 
 class OutOfTime extends Error {}
 
+const PROVIDER_GET = operations['third-party-providers:get'];
+
+const pinText = (provider: string, providerId: number, scoping: Scoping): string =>
+  scoping.scope === 'components'
+    ? `${provider}=${providerId}:${scoping.trackedComponents.map((leaf) => leaf.id).join(',')}`
+    : `${provider}=${providerId}:all`;
+
+/**
+ * A pinned row reads the provider's whole tree once and takes exactly the
+ * pinned ids from it; an id the tree does not hold is reported, never
+ * silently dropped. `all` makes a whole-provider row without any call.
+ */
+async function pinnedScoping(
+  row: ResolvedCandidate & { catalog: { id: number } },
+  pin: Pin,
+  access: ApiAccess,
+): Promise<Scoping> {
+  const base = { terms: [], totalLeaves: 0, pinned: true } as const;
+  if (pin === 'all') {
+    return { ...base, scope: 'whole', scopeReason: 'pinned-whole', trackedComponents: [] };
+  }
+  const url = buildUrl(PROVIDER_GET, { path: { id: row.catalog.id }, query: {} }, access.apiUrl);
+  const payload = await requestJson(access.client, url, PROVIDER_GET.method);
+  const record = isPlainRecord(payload) && isPlainRecord(payload.data) ? payload.data : payload;
+  const tree = isPlainRecord(record) ? record.components : undefined;
+  const leaves = new Map(collectLeaves({ data: tree }).map((leaf) => [leaf.id, leaf]));
+  const trackedComponents = pin.flatMap((id) => {
+    const leaf = leaves.get(id);
+    return leaf === undefined ? [] : [{ id, name: leaf.name, term: '', region: leaf.region }];
+  });
+  const pinUnknownIds = pin.filter((id) => !leaves.has(id));
+  return {
+    ...base,
+    scope: 'components',
+    totalLeaves: trackedComponents.length,
+    trackedComponents,
+    ...(pinUnknownIds.length === 0 ? {} : { pinUnknownIds }),
+  };
+}
+
 async function scopeRow(
   row: ResolvedCandidate,
   providerId: number,
@@ -309,7 +365,12 @@ function trackedFields(
  */
 export async function scopeProposal(
   rows: readonly ResolvedCandidate[],
-  options: { access: ApiAccess; tracked: TrackedProviders; deadline: number },
+  options: {
+    access: ApiAccess;
+    tracked: TrackedProviders;
+    deadline: number;
+    pins?: ReadonlyMap<string, Pin>;
+  },
 ): Promise<ResolvedCandidate[]> {
   const scoped: ResolvedCandidate[] = [];
   let consecutiveFailures = 0;
@@ -318,8 +379,20 @@ export async function scopeProposal(
       scoped.push(row);
       continue;
     }
+    const pin = row.status === 'create' ? options.pins?.get(row.provider) : undefined;
+    if (pin !== undefined) {
+      const scoping = await pinnedScoping(row, pin, options.access);
+      scoped.push({ ...row, ...scoping, pin: pinText(row.provider, row.catalog.id, scoping) });
+      continue;
+    }
     if (row.components.length === 0) {
-      scoped.push({ ...row, ...decideScope([], []), ...trackedFields(row, options.tracked, []) });
+      const scoping = decideScope([], []);
+      scoped.push({
+        ...row,
+        ...scoping,
+        pin: pinText(row.provider, row.catalog.id, scoping),
+        ...trackedFields(row, options.tracked, []),
+      });
       continue;
     }
     const aborted =
@@ -341,6 +414,7 @@ export async function scopeProposal(
       scoped.push({
         ...row,
         ...scoping,
+        pin: pinText(row.provider, row.catalog.id, scoping),
         ...trackedFields(row, options.tracked, scoping.trackedComponents),
       });
     } catch (error) {

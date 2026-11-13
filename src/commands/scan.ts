@@ -240,6 +240,7 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
         selection,
         access,
         confirmFlag,
+        requirePins: confirmFlag && !confirmationAvailable(mode),
         confirm,
         // --confirm skips the prompt that would have printed the proposal; it
         // is still shown before the first create, as the apply contract says.

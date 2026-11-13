@@ -196,6 +196,7 @@ uptimerobot scan --apply --json --agent               # proposal only; exits 2 w
 uptimerobot scan --apply --confirm --only Stripe --only Vercel --json
 uptimerobot scan --apply --confirm --skip Sentry
 uptimerobot scan --apply --confirm --only Vercel=862  # settles an ambiguous row
+uptimerobot scan --apply --confirm --only AWS=248:9208,9108 --json --agent  # creates the pinned components
 uptimerobot scan --apply --include-build-time         # also proposes CI, code host and registries
 ```
 
@@ -205,7 +206,9 @@ For AWS, Google Cloud, Microsoft Azure, Cloudflare and GitHub the create is scop
 
 The whole provider is tracked instead, and the column says why, when a term matched nothing, more than 20 leaves were kept, the components endpoint is not there, or the scan found no term. A components search that fails for any other reason leaves the row unresolved, like a failed catalog search, and the `CATALOG_UNRESOLVED` message then names the component search. An already-tracked row says whether its monitor tracks every component or N of them, and names the found components it does not track.
 
-In the `--json` document each row carries `scope` (`components` or `whole`), `scopeReason` (`no-terms`, `term-missed`, `too-many`, `endpoint-unavailable`), `terms[]` (`term`, `region`, `outcome`, `leaves`), `totalLeaves` and `trackedComponents[]` (`id`, `name`, `term`, `region`); an already-tracked row adds `monitor` and `untracked[]`; a `created` result repeats `trackedComponents`.
+Off a terminal the run that confirms is not the run that showed the proposal, so `--confirm` on a row with component terms needs the row's `pin` from the proposal: `--only AWS=248:9208,9108` creates exactly those components without another search, `--only AWS=248:all` the whole provider, and a pin naming an id the provider tree does not hold blocks the run with `INVALID_INPUT`. At a terminal no pin is needed.
+
+In the `--json` document each row carries `pin`, `scope` (`components` or `whole`), `scopeReason` (`no-terms`, `term-missed`, `too-many`, `endpoint-unavailable`), `terms[]` (`term`, `region`, `outcome`, `leaves`), `totalLeaves` and `trackedComponents[]` (`id`, `name`, `term`, `region`); an already-tracked row adds `monitor` and `untracked[]`; a `created` result repeats `trackedComponents`.
 
 Each proposal row ends in one status: `create`, `already-tracked`, `not-in-catalog`, `ambiguous` (several catalog rows match; pick one with `--only <provider>=<id>`), `unresolved` (the lookup failed; retry), or `over-allowance` (the plan has no slot left; runtime rows keep slots first). A row is accepted only when its catalog name equals the provider's name after lowercasing and dropping punctuation, so `Clerk.io` never stands in for `Clerk`. A provider counts as already tracked when the account's own monitor list, read at the start of the run, names it or the catalog row says so; the list covers the catalog's one-minute cache, so two confirmed runs in a row create each provider once. The list reads at most 10,000 monitors; past that it is partial, the proposal says so, and a provider the list never reached is proposed again, which is safe: the API answers a repeat create with the monitor the account already has.
 

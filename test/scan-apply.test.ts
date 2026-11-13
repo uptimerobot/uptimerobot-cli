@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { type IncomingMessage, type Server, createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -120,6 +120,20 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
       if (options.catalogDown?.includes(url.searchParams.get('search') ?? '') === true)
         return reply(503, 'catalog down');
       return reply(200, { data: catalog[url.searchParams.get('search') ?? ''] ?? [] });
+    }
+    const detail = /^\/v3\/third-party-providers\/(\d+)$/.exec(url.pathname);
+    if (request.method === 'GET' && detail !== null) {
+      // The whole tree is every recorded components answer of the provider, merged.
+      const directory = join(FIXTURES, detail[1]!);
+      if (!existsSync(directory))
+        return reply(404, { code: '026-016', message: 'unknown provider' });
+      const roots = readdirSync(directory).flatMap((name) => {
+        const parsed = JSON.parse(readFileSync(join(directory, name), 'utf8')) as {
+          data: unknown[];
+        };
+        return parsed.data;
+      });
+      return reply(200, { data: { id: Number(detail[1]), name: 'provider', components: roots } });
     }
     const components = /^\/v3\/third-party-providers\/(\d+)\/components$/.exec(url.pathname);
     if (request.method === 'GET' && components !== null) {
@@ -247,10 +261,16 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
     const stub = await startStub();
     const root = await writeRepository(AWS_REPOSITORY);
 
-    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+    const proposed = await runCli(['scan', root, '--apply', '--json'], env(stub));
+    expect(proposed.exitCode).toBe(2);
+    const pin = JSON.parse(proposed.stdout).proposal[0].pin as string;
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', pin],
+      env(stub),
+    );
 
     expect(result.exitCode).toBe(0);
-    const output = JSON.parse(result.stdout);
+    const output = JSON.parse(proposed.stdout);
     expect(output.proposal[0]).toMatchObject({
       provider: 'AWS',
       status: 'create',
@@ -291,7 +311,7 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
         config: { thirdPartyService: { providerId: 248, trackedComponentIds: [9208, 9108] } },
       },
     ]);
-    expect(output.results[0]).toMatchObject({
+    expect(JSON.parse(result.stdout).results[0]).toMatchObject({
       provider: 'AWS',
       status: 'created',
       trackedComponents: [{ id: 9208 }, { id: 9108 }],
@@ -338,7 +358,7 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
     const root = await writeRepository(AWS_REPOSITORY);
 
     const result = await runCli(
-      ['scan', root, '--apply', '--confirm'],
+      ['scan', root, '--apply'],
       env(stub, { UPTIMEROBOT_OUTPUT: 'table' }),
     );
 
@@ -436,11 +456,11 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
     const root = await writeRepository(AWS_REPOSITORY);
 
     const result = await runCli(
-      ['scan', root, '--apply', '--confirm'],
+      ['scan', root, '--apply'],
       env(stub, { UPTIMEROBOT_OUTPUT: 'table' }),
     );
 
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode).toBe(2);
     expect(result.stdout).toContain(
       '| AWS | provider "aws", aws_s3, aws_db, +1 more | runtime | 248, operational, https://status.aws.example/ | Amazon Relational Database Service (Frankfurt), Amazon Simple Storage Service (Frankfurt) | create |',
     );
@@ -459,16 +479,21 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
       'infra/main.tf': `${AWS_TERRAFORM}resource "aws_lambda_function" "fn" {}\n`,
     });
 
-    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+    const result = await runCli(['scan', root, '--apply', '--json'], env(stub));
 
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode).toBe(2);
     const output = JSON.parse(result.stdout);
     expect(output.proposal[0]).toMatchObject({
       provider: 'AWS',
       scope: 'whole',
       scopeReason: 'term-missed',
       trackedComponents: [],
+      pin: 'AWS=248:all',
     });
+    await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'AWS=248:all'],
+      env(stub),
+    );
     expect(output.proposal[0].terms).toContainEqual({
       term: 'AWS Lambda',
       region: 'eu-central-1',
@@ -479,7 +504,7 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
       { type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 248 } } },
     ]);
     const readable = await runCli(
-      ['scan', root, '--apply', '--confirm'],
+      ['scan', root, '--apply'],
       env(await startStub(), { UPTIMEROBOT_OUTPUT: 'table' }),
     );
     expect(readable.stdout).toContain(
@@ -493,7 +518,7 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
       'infra/main.tf': 'resource "aws_s3_bucket" "logs" {}\n',
     });
 
-    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+    const result = await runCli(['scan', root, '--apply', '--json'], env(stub));
 
     const output = JSON.parse(result.stdout);
     expect(output.proposal[0]).toMatchObject({ scope: 'whole', scopeReason: 'too-many' });
@@ -501,7 +526,7 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
       { term: 'Amazon Simple Storage Service', region: null, outcome: 'matched', leaves: 23 },
     ]);
     const readable = await runCli(
-      ['scan', root, '--apply', '--confirm'],
+      ['scan', root, '--apply'],
       env(await startStub(), { UPTIMEROBOT_OUTPUT: 'table' }),
     );
     expect(readable.stdout).toContain(
@@ -623,6 +648,162 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
     expect(searches.length).toBeGreaterThan(2);
     expect(searches.every((term) => COMPONENT_TERMS.includes(term))).toBe(true);
   });
+});
+
+describe('uptimerobot scan --apply pins the components an agent confirms', () => {
+  const componentSearches = (stub: Stub) =>
+    stub.hits.filter((hit) => hit.path.includes('/components?'));
+
+  it('names the pin on every row so the confirm run can repeat the proposal exactly', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      ...AWS_REPOSITORY,
+      'package.json': '{ "dependencies": { "stripe": "17.4.0" } }',
+    });
+
+    const output = JSON.parse(
+      (await runCli(['scan', root, '--apply', '--json'], env(stub))).stdout,
+    );
+
+    expect(
+      output.proposal.map((row: { provider: string; pin?: string }) => [row.provider, row.pin]),
+    ).toEqual([
+      ['AWS', 'AWS=248:9208,9108'],
+      ['Stripe', 'Stripe=801:all'],
+    ]);
+  });
+
+  it('creates exactly the pinned ids without a components search, even when the tree moved', async () => {
+    const stub = await startStub({ componentsBody: { data: [] } });
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'AWS=248:9208,9108'],
+      env(stub),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(componentSearches(stub)).toEqual([]);
+    expect(posts(stub).map((hit) => hit.body)).toEqual([
+      {
+        type: 'THIRD_PARTY_SERVICE',
+        config: { thirdPartyService: { providerId: 248, trackedComponentIds: [9208, 9108] } },
+      },
+    ]);
+    const output = JSON.parse(result.stdout);
+    expect(output.proposal[0]).toMatchObject({
+      scope: 'components',
+      trackedComponents: [
+        { id: 9208, name: 'Amazon Relational Database Service (Frankfurt)' },
+        { id: 9108, name: 'Amazon Simple Storage Service (Frankfurt)' },
+      ],
+    });
+  });
+
+  it('pins the whole provider with :all', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'AWS=248:all'],
+      env(stub),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(componentSearches(stub)).toEqual([]);
+    expect(posts(stub).map((hit) => hit.body)).toEqual([
+      { type: 'THIRD_PARTY_SERVICE', config: { thirdPartyService: { providerId: 248 } } },
+    ]);
+    expect(JSON.parse(result.stdout).proposal[0]).toMatchObject({
+      scope: 'whole',
+      scopeReason: 'pinned-whole',
+    });
+  });
+
+  it('blocks a pin naming an id the provider tree does not hold', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'AWS=248:9208,4242'],
+      env(stub),
+    );
+
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stderr).error).toMatchObject({
+      code: 'INVALID_INPUT',
+      path: 'only',
+      message: expect.stringContaining('4242'),
+    });
+    expect(JSON.parse(result.stdout).confirmation).toBe('blocked');
+    expect(posts(stub)).toEqual([]);
+  });
+
+  it('refuses an off-terminal --confirm on a row with component terms unless its pin is given', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      ...AWS_REPOSITORY,
+      'package.json': '{ "dependencies": { "stripe": "17.4.0" } }',
+    });
+
+    const result = await runCli(['scan', root, '--apply', '--confirm', '--json'], env(stub));
+
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stderr).error).toMatchObject({
+      code: 'INVALID_INPUT',
+      path: 'only',
+      message:
+        'pass --only AWS=248:9208,9108 to create what the proposal showed, or --only AWS=248:all for the whole provider.',
+    });
+    expect(posts(stub)).toEqual([]);
+
+    const pinned = await runCli(
+      [
+        'scan',
+        root,
+        '--apply',
+        '--confirm',
+        '--json',
+        '--only',
+        'AWS=248:9208,9108',
+        '--only',
+        'Stripe',
+      ],
+      env(stub),
+    );
+    expect(pinned.exitCode).toBe(0);
+    expect(posts(stub)).toHaveLength(2);
+  });
+
+  it('rejects a malformed pin before any request', async () => {
+    const stub = await startStub();
+    const root = await writeRepository(AWS_REPOSITORY);
+    for (const only of ['AWS=248:', 'AWS=248:x', 'AWS=248:1,,2', 'AWS=248:-1']) {
+      const result = await runCli(
+        ['scan', root, '--apply', '--confirm', '--json', '--only', only],
+        env(stub),
+      );
+      expect(result.exitCode, only).toBe(2);
+      expect(JSON.parse(result.stderr).error.code, only).toBe('INVALID_INPUT');
+    }
+    expect(stub.hits).toEqual([]);
+  });
+
+  it.runIf(process.platform === 'darwin' || process.platform === 'linux')(
+    'needs no pin at a terminal, where the run that shows is the run that creates',
+    async () => {
+      const stub = await startStub();
+      const root = await writeRepository(AWS_REPOSITORY);
+      const result = await runInteractiveCli(['scan', root, '--apply', '--confirm'], [], {
+        UPTIMEROBOT_AGENT: '0',
+        UPTIMEROBOT_API_KEY: 'u123-secret',
+        UPTIMEROBOT_DEV_API_URL: stub.url,
+      });
+      expect(result.exitCode).toBe(0);
+      expect(posts(stub)).toHaveLength(1);
+    },
+    30_000,
+  );
 });
 
 describe('uptimerobot scan --apply', () => {
@@ -924,7 +1105,16 @@ describe('uptimerobot scan --apply', () => {
     expect(stub.hits).toEqual([]);
 
     const included = await runCli(
-      ['scan', root, '--apply', '--confirm', '--json', '--only', 'GitHub', '--include-build-time'],
+      [
+        'scan',
+        root,
+        '--apply',
+        '--confirm',
+        '--json',
+        '--only',
+        'GitHub=6:6102',
+        '--include-build-time',
+      ],
       env(stub),
     );
     expect(included.exitCode).toBe(0);
