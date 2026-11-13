@@ -123,10 +123,10 @@ export function parseOnly(entry: string): { name: string; id?: number; pin?: Pin
   const id = positiveId(idText);
   if (id === undefined || pinParts.length > 1) return { name };
   if (pinParts.length === 0) return { name, id };
-  const pinText = pinParts[0] ?? '';
-  if (pinText === 'all') return { name, id, pin: 'all' };
-  const ids = pinText.split(',').map(positiveId);
-  return ids.length === 0 || ids.some((item) => item === undefined)
+  const idList = pinParts[0] ?? '';
+  if (idList === 'all') return { name, id, pin: 'all' };
+  const ids = idList.split(',').map(positiveId);
+  return ids.some((item) => item === undefined)
     ? { name }
     : { name, id, pin: ids.filter((item): item is number => item !== undefined) };
 }
@@ -205,31 +205,33 @@ export function pinMismatchError(mismatch: { provider: string; ids: readonly num
   return {
     code: 'INVALID_INPUT',
     expected: 'component ids from the provider tree, or all',
-    message: `--only ${mismatch.provider} pins component ${mismatch.ids.join(', ')}, which the provider tree does not hold. Nothing was created.`,
+    message: `--only ${mismatch.provider} pins ${mismatch.ids.length === 1 ? 'component' : 'components'} ${mismatch.ids.join(', ')}, which the provider tree does not hold. Nothing was created; re-run without the pin to see the current components.`,
     path: 'only',
   };
 }
 
 /**
  * Off a terminal the run that confirms is not the run that showed the
- * proposal, so a row with component terms must be pinned to what was shown;
- * the first unpinned one, with the pin to pass, if any.
+ * proposal, so every `create` row with component terms must be pinned to
+ * what was shown; the unpinned ones, each with the pin to pass, if any.
  */
-export function unpinnedRow(
+export function unpinnedRows(
   rows: readonly ResolvedCandidate[],
-): { provider: string; pin: string; whole: string } | undefined {
-  const row = rows.find(
-    (item) => item.status === 'create' && (item.terms?.length ?? 0) > 0 && item.pin !== undefined,
+): { provider: string; pin: string; whole: string }[] {
+  return rows.flatMap((row) =>
+    row.status === 'create' && (row.terms?.length ?? 0) > 0 && row.pin !== undefined
+      ? [{ provider: row.provider, pin: row.pin, whole: `${row.provider}=${row.catalog.id}:all` }]
+      : [],
   );
-  if (row === undefined || row.status !== 'create' || row.pin === undefined) return undefined;
-  return { provider: row.provider, pin: row.pin, whole: `${row.provider}=${row.catalog.id}:all` };
 }
 
-export function unpinnedError(row: { provider: string; pin: string; whole: string }): CliError {
+export function unpinnedError(rows: readonly { pin: string; whole: string }[]): CliError {
+  const pins = rows.map((row) => `--only ${row.pin}`).join(' ');
+  const wholes = rows.map((row) => `--only ${row.whole}`).join(' ');
   return {
     code: 'INVALID_INPUT',
-    expected: `--only ${row.pin} or --only ${row.whole}`,
-    message: `pass --only ${row.pin} to create what the proposal showed, or --only ${row.whole} for the whole provider.`,
+    expected: rows.map((row) => `--only ${row.pin} or --only ${row.whole}`).join('; '),
+    message: `pass ${pins} to create what the proposal showed, or ${wholes} for the whole provider. Nothing was created.`,
     path: 'only',
   };
 }
@@ -452,7 +454,11 @@ export async function runApply(options: {
   selection: ApplySelection;
   access: ApiAccess;
   confirmFlag: boolean;
-  /** True when no one can see the proposal before the creates: every scoped row must carry its pin. */
+  /**
+   * True when no one can see the proposal before the creates (`--confirm` off
+   * a terminal): every scoped row must then carry its pin. A caller that
+   * leaves it out turns the guard off, so only a terminal flow may.
+   */
   requirePins?: boolean;
   confirm: (proposal: Proposal, toCreate: number) => Promise<Confirmation>;
   onProposal?: (proposal: Proposal) => void;
@@ -471,8 +477,8 @@ export async function runApply(options: {
       blocked: pinMismatchError(pinMismatch),
     };
   }
-  const unpinned = options.requirePins === true ? unpinnedRow(proposal.proposal) : undefined;
-  if (unpinned !== undefined) {
+  const unpinned = options.requirePins === true ? unpinnedRows(proposal.proposal) : [];
+  if (unpinned.length > 0) {
     return { proposal, confirmation: 'blocked', results: [], blocked: unpinnedError(unpinned) };
   }
   options.onProposal?.(proposal);

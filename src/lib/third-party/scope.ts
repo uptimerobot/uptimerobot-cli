@@ -173,22 +173,22 @@ export function decideScope(
 
 class EndpointUnavailable extends Error {}
 
-/** Which call failed and how, so a log of the run names the term and the status. */
+/** Which call failed and how: the subject is the term searched, or the pinned provider tree. */
 function componentSearchFailure(
-  term: string,
+  subject: string,
   error: ApiFailure,
 ): { code: string; message: string } {
   const status = error.cliError.status === undefined ? '' : ` (HTTP ${error.cliError.status})`;
   return {
     code: COMPONENT_SEARCH_FAILED,
-    message: `component search for ${term} failed${status}: ${error.cliError.message}`,
+    message: `component search for ${subject} failed${status}: ${error.cliError.message}`,
   };
 }
 
-/** A search failure, carrying the term it was for. */
+/** A search failure, carrying what it was for: a term, or the pinned provider tree. */
 class ComponentSearchFailed extends Error {
   constructor(
-    readonly term: string,
+    readonly subject: string,
     readonly cause: ApiFailure,
   ) {
     super(cause.cliError.message);
@@ -264,6 +264,12 @@ async function pinnedScoping(
     const payload = await requestJson(access.client, url, PROVIDER_GET.method);
     const record = isPlainRecord(payload) && isPlainRecord(payload.data) ? payload.data : payload;
     const tree = isPlainRecord(record) ? record.components : undefined;
+    if (!Array.isArray(tree)) {
+      throw new ApiFailure(
+        { code: 'INVALID_RESPONSE', message: 'The provider read did not return a component tree.' },
+        1,
+      );
+    }
     leaves = new Map(collectLeaves({ data: tree }).map((leaf) => [leaf.id, leaf]));
   } catch (error) {
     if (!(error instanceof ApiFailure)) throw error;
@@ -442,7 +448,7 @@ export async function scopeProposal(
       scoped.push({
         ...row,
         status: 'unresolved',
-        failure: componentSearchFailure(error.term, error.cause),
+        failure: componentSearchFailure(error.subject, error.cause),
       });
     }
   }

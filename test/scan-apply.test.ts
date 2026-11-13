@@ -39,6 +39,8 @@ interface StubOptions {
   componentsBody?: unknown;
   /** Every provider detail read answers this status instead of the merged fixture tree. */
   providerStatus?: number;
+  /** Every provider detail read answers this body with 200 instead of the merged fixture tree. */
+  providerBody?: unknown;
 }
 
 const row = (id: number, name: string, isTracked = false): Record<string, unknown> => ({
@@ -127,6 +129,7 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
     if (request.method === 'GET' && detail !== null) {
       if (options.providerStatus !== undefined)
         return reply(options.providerStatus, { code: 'DOWN', message: 'provider down' });
+      if (options.providerBody !== undefined) return reply(200, options.providerBody);
       // The whole tree is every recorded components answer of the provider, merged.
       const directory = join(FIXTURES, detail[1]!);
       if (!existsSync(directory))
@@ -757,7 +760,7 @@ describe('uptimerobot scan --apply pins the components an agent confirms', () =>
       code: 'INVALID_INPUT',
       path: 'only',
       message:
-        'pass --only AWS=248:9208,9108 to create what the proposal showed, or --only AWS=248:all for the whole provider.',
+        'pass --only AWS=248:9208,9108 to create what the proposal showed, or --only AWS=248:all for the whole provider. Nothing was created.',
     });
     expect(posts(stub)).toEqual([]);
 
@@ -798,6 +801,39 @@ describe('uptimerobot scan --apply pins the components an agent confirms', () =>
       expect(JSON.parse(result.stderr).error.code, only).toBe('INVALID_INPUT');
     }
     expect(stub.hits).toEqual([]);
+  });
+
+  it('names every unpinned row at once, so one failed run teaches every pin', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      ...AWS_REPOSITORY,
+      'package.json': '{ "devDependencies": { "@octokit/rest": "21.0.0" } }',
+    });
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--include-build-time'],
+      env(stub),
+    );
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stderr).error.message).toBe(
+      'pass --only AWS=248:9208,9108 --only GitHub=6:6102 to create what the proposal showed, or --only AWS=248:all --only GitHub=6:all for the whole provider. Nothing was created.',
+    );
+  });
+
+  it('leaves a pinned row unresolved when the provider read carries no component tree', async () => {
+    const stub = await startStub({ providerBody: { data: { id: 248, name: 'AWS' } } });
+    const root = await writeRepository(AWS_REPOSITORY);
+    const result = await runCli(
+      ['scan', root, '--apply', '--confirm', '--json', '--only', 'AWS=248:9108'],
+      env(stub),
+    );
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout).proposal[0]).toMatchObject({
+      status: 'unresolved',
+      failure: {
+        code: 'COMPONENT_SEARCH_FAILED',
+        message: expect.stringContaining('component tree'),
+      },
+    });
   });
 
   it('sends a duplicated pinned id once', async () => {

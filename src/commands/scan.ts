@@ -133,7 +133,7 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
             code: 'INVALID_INPUT',
             expected:
               '<provider>, <provider>=<catalog id>, <provider>=<catalog id>:<component ids>, or <provider>=<catalog id>:all',
-            message: `--only ${malformed} is not a provider, a catalog id, or a pin.`,
+            message: `--only ${malformed} has an invalid catalog id or pin.`,
             path: 'only',
           },
           2,
