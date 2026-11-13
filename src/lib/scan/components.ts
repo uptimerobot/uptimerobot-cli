@@ -2,7 +2,7 @@
  * The component terms of the five providers that are tracked by component
  * rather than whole. A term is the text `scan --apply` sends to
  * `third-party-providers components --search`, so every one is a built-in
- * string that matches a component name in the catalog; nothing from the
+ * string spelled as the catalog component name; nothing from the
  * repository is ever used as a term. Each rule names the terraform service
  * word (`s3` from `aws_s3_bucket`), the package names, or the signal texts
  * that point at the component. The tables mirror the component scoping
@@ -12,8 +12,10 @@ import type { ThirdPartyFinding } from './third-party.js';
 
 interface ComponentRule {
   readonly term: string;
-  /** The first word after the terraform resource prefix. */
+  /** The first word after the terraform resource prefix, when that word is enough. */
   readonly services?: readonly string[];
+  /** Full terraform resource types, for words that several components share. */
+  readonly resources?: readonly string[];
   /** Exact package names, or a scope with a trailing `*`. */
   readonly packages?: readonly string[];
   /** Substrings of a file, CI, registry or git-host signal. */
@@ -74,9 +76,9 @@ const GOOGLE_CLOUD: readonly ComponentRule[] = [
     packages: ['@google-cloud/bigquery', 'cloud.google.com/go/bigquery', 'google-cloud-bigquery'],
   }),
   rule('Google Cloud SQL', { services: ['sql'] }),
-  rule('Cloud Run', { services: ['cloud'] }),
+  rule('Cloud Run', { resources: ['google_cloud_run_service', 'google_cloud_run_v2_service'] }),
   rule('Google Cloud Functions', { services: ['cloudfunctions', 'cloudfunctions2'] }),
-  rule('Google Kubernetes Engine', { services: ['container'] }),
+  rule('Google Kubernetes Engine', { resources: ['google_container_cluster'] }),
   rule('Cloud Memorystore', { services: ['redis'] }),
   rule('Cloud Build', { signals: ['cloudbuild.yaml'] }),
   rule('Artifact Registry', { services: ['artifact'], signals: ['.pkg.dev'] }),
@@ -84,18 +86,23 @@ const GOOGLE_CLOUD: readonly ComponentRule[] = [
 
 const AZURE: readonly ComponentRule[] = [
   rule('Storage Accounts', { services: ['storage'], packages: ['@azure/storage-blob'] }),
+  rule('App Service', { resources: ['azurerm_linux_web_app', 'azurerm_windows_web_app'] }),
+  rule('Azure Functions', {
+    resources: ['azurerm_linux_function_app', 'azurerm_windows_function_app'],
+  }),
   rule('Azure Cosmos DB', { services: ['cosmosdb'], packages: ['@azure/cosmos'] }),
   rule('Azure SQL Database', { services: ['mssql'] }),
   rule('Azure Kubernetes Service (AKS)', { services: ['kubernetes'] }),
-  rule('Azure Cache for Redis', { services: ['redis'] }),
+  rule('Azure Cache for Redis', { resources: ['azurerm_redis_cache'] }),
   rule('Azure Active Directory (Azure AD)', { packages: ['@azure/identity'] }),
 ];
 
 const CLOUDFLARE: readonly ComponentRule[] = [
+  rule('Workers KV', { resources: ['cloudflare_workers_kv_namespace', 'cloudflare_workers_kv'] }),
   rule('Workers', { services: ['workers'], signals: ['wrangler.toml', 'wrangler.jsonc'] }),
   rule('R2', { services: ['r2'] }),
   rule('Pages', { services: ['pages'] }),
-  rule('Authoritative DNS', { services: ['record', 'zone'] }),
+  rule('Authoritative DNS', { resources: ['cloudflare_record', 'cloudflare_zone'] }),
   rule('Access', { services: ['access'] }),
 ];
 
@@ -115,11 +122,6 @@ export const COMPONENT_RULES: ReadonlyMap<string, readonly ComponentRule[]> = ne
   ['GitHub', GITHUB],
 ]);
 
-/** Every term of every provider, for the test that checks them against the recorded catalog trees. */
-export const COMPONENT_TERMS: readonly string[] = [...COMPONENT_RULES.values()]
-  .flat()
-  .map(({ term }) => term);
-
 function packageMatches(pattern: string, name: string): boolean {
   return pattern.endsWith('*') ? name.startsWith(pattern.slice(0, -1)) : name === pattern;
 }
@@ -133,10 +135,25 @@ const PACKAGE_KINDS: ReadonlySet<ThirdPartyFinding['kind']> = new Set([
   'cargo',
 ]);
 
+/**
+ * The component a terraform resource type points at, resolved where the full
+ * type is still known: the matcher keeps only the first word of the type in
+ * the finding, and this term is the one built-in string that may carry more.
+ */
+export function terraformComponent(provider: string, type: string): string {
+  const word = type.split('_')[1] ?? '';
+  return (
+    COMPONENT_RULES.get(provider)?.find(
+      (item) =>
+        (item.resources?.includes(type) ?? false) || (item.services?.includes(word) ?? false),
+    )?.term ?? ''
+  );
+}
+
 function ruleMatches(item: ComponentRule, finding: ThirdPartyFinding): boolean {
   const { detail } = finding;
   if (finding.kind === 'terraform-resource') {
-    return 'service' in detail && (item.services?.includes(detail.service) ?? false);
+    return 'component' in detail && detail.component === item.term;
   }
   if (PACKAGE_KINDS.has(finding.kind) && 'package' in detail) {
     return item.packages?.some((pattern) => packageMatches(pattern, detail.package)) ?? false;

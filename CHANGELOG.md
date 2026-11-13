@@ -69,8 +69,9 @@ may change in minor releases.
 ### Changed
 
 - The seed context schema is 3: `components` replaces `hints` on each
-  third-party candidate, and terraform findings carry `regionLine` next to
-  `region`.
+  third-party candidate, and terraform findings carry `regionLine` and
+  `component` next to `region`. A terraform file whose blocks for one
+  provider name two different regions reports no region for that provider.
 - An API error message is printed on one line; a message the API broke across
   lines used to print as a second, misleading line.
 - A confirmation prompt whose input ends before an answer (Ctrl-D, a closed

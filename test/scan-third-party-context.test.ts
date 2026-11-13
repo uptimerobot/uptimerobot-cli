@@ -3,6 +3,7 @@ import {
   buildThirdPartyContext,
   formatThirdPartySection,
 } from '../src/lib/scan/third-party-context.js';
+import { terraformComponent } from '../src/lib/scan/components.js';
 import type { ThirdPartyFinding } from '../src/lib/scan/third-party.js';
 
 type Overrides = Partial<Omit<ThirdPartyFinding, 'detail' | 'evidence'>> & {
@@ -51,13 +52,25 @@ describe('buildThirdPartyContext', () => {
         kind: 'terraform-resource',
         file: 'infra/main.tf',
         line: 14,
-        detail: { signal: 'aws_s3', service: 's3', region: 'eu-central-1', regionLine: '9' },
+        detail: {
+          signal: 'aws_s3',
+          service: 's3',
+          component: 'Amazon Simple Storage Service',
+          region: 'eu-central-1',
+          regionLine: '9',
+        },
       }),
       finding('AWS', {
         kind: 'terraform-resource',
         file: 'infra/main.tf',
         line: 20,
-        detail: { signal: 'aws_db', service: 'db', region: 'eu-central-1', regionLine: '9' },
+        detail: {
+          signal: 'aws_db',
+          service: 'db',
+          component: 'Amazon Relational Database Service',
+          region: 'eu-central-1',
+          regionLine: '9',
+        },
       }),
       finding('Stripe', { line: 12, detail: { signal: 'stripe@17.4.0' } }),
     ]);
@@ -259,7 +272,13 @@ describe('component terms', () => {
       kind: 'terraform-resource',
       file,
       line,
-      detail: { signal, service, region, regionLine },
+      detail: {
+        signal,
+        service,
+        component: terraformComponent(provider, `${signal}_x`),
+        region,
+        regionLine,
+      },
     });
   const componentsOf = (findings: ThirdPartyFinding[]) =>
     buildThirdPartyContext(findings).candidates.map((candidate) => [
@@ -433,7 +452,13 @@ describe('formatThirdPartySection', () => {
         kind: 'terraform-resource',
         file: 'infra/main.tf',
         line: 14,
-        detail: { signal: 'aws_s3', region: 'eu-central-1', service: 's3' },
+        detail: {
+          signal: 'aws_s3',
+          region: 'eu-central-1',
+          regionLine: '9',
+          service: 's3',
+          component: 'Amazon Simple Storage Service',
+        },
       }),
       finding('GitHub', {
         kind: 'git-host',

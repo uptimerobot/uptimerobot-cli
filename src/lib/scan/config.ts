@@ -30,6 +30,7 @@
  */
 import type { ScanFinding } from './finding.js';
 import { hasUnsafeCharacters } from './support.js';
+import { terraformComponent } from './components.js';
 import { VENDORS, type VendorClass, type VendorEntry, type VendorSignal } from './vendors.js';
 
 type ConfigSignal = Exclude<VendorSignal, { kind: 'package' | 'hostname' }>;
@@ -49,6 +50,8 @@ export interface ConfigFinding extends ScanFinding {
     class: VendorClass;
     /** The plain service word of a terraform resource type (`s3` of `aws_s3_bucket`). */
     service: string;
+    /** The built-in component term the full resource type names, empty when none does. */
+    component: string;
     /** The plain region word of the same terraform file (`eu-central-1`). */
     region: string;
     /** The line the region was read from, as text like every detail; empty when there is none. */
@@ -69,6 +72,7 @@ interface Match {
   signal: string;
   line: number;
   service?: string;
+  component?: string;
   region?: string;
   regionLine?: number;
   outcome?: 'hint';
@@ -270,6 +274,8 @@ const UNKNOWN_PROVIDER = '';
 function terraform(contents: string): Match[] {
   const matches: Match[] = [];
   const regions = new Map<string, { value: string; line: number }>();
+  /** Provider names whose blocks in this file name two different regions; neither is reported. */
+  const disagreed = new Set<string>();
   let fileRegion: { value: string; line: number } | undefined;
   // A region counts for the provider whose block it sits in, directly: once
   // the block closes the provider is forgotten, and a region after the first
@@ -325,6 +331,7 @@ function terraform(contents: string): Match[] {
           signal: `${item.signal.pattern}${word}`,
           line: index + 1,
           service: word,
+          component: terraformComponent(item.entry.catalogName, type),
         });
       }
       continue;
@@ -335,14 +342,16 @@ function terraform(contents: string): Match[] {
       if (!seenProvider && depth === 0 && fileRegion === undefined) {
         fileRegion = { value, line: index + 1 };
       }
-    } else if (depth === providerDepth && !regions.has(currentProvider)) {
-      regions.set(currentProvider, { value, line: index + 1 });
+    } else if (depth === providerDepth) {
+      const known = regions.get(currentProvider);
+      if (known === undefined) regions.set(currentProvider, { value, line: index + 1 });
+      else if (known.value !== value) disagreed.add(currentProvider);
     }
   }
   return matches.map((match) => {
     const name = match.entry.catalogName;
     if (!REGION_VENDORS.has(name)) return match;
-    const region = regions.get(name) ?? fileRegion;
+    const region = disagreed.has(name) ? undefined : (regions.get(name) ?? fileRegion);
     return region === undefined
       ? match
       : { ...match, region: region.value, regionLine: region.line };
@@ -452,6 +461,7 @@ export function matchConfig(input: ConfigInput): ConfigFinding[] {
       signal: match.signal,
       class: BUILD_TIME_KINDS.has(match.kind) ? 'build-time' : match.entry.class,
       service: match.service ?? '',
+      component: match.component ?? '',
       region: match.region ?? '',
       regionLine: match.regionLine === undefined ? '' : String(match.regionLine),
     },
