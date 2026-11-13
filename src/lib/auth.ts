@@ -149,12 +149,14 @@ export async function resolveApiAccess(options: {
   explicitApiKey: unknown;
   mode: InvocationMode;
   version: string;
+  command?: string;
 }): Promise<ApiAccess> {
   const apiUrl = resolveApiUrl();
   const apiKey = await resolveApiKey(options.explicitApiKey, apiUrl.toString());
   const client = createApiClient({
     apiKey,
     apiUrl,
+    command: options.command,
     environment: isCI() ? 'ci' : 'local',
     mode: options.mode,
     version: options.version,

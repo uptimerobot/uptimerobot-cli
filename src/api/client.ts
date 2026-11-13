@@ -5,6 +5,8 @@ import { apiFailureFrom } from './errors.js';
 export interface ApiClientOptions {
   apiKey: string;
   apiUrl: URL;
+  /** The `x-uptimerobot-command` value, for the flows the API counts per command. */
+  command?: string;
   environment: ExecutionEnvironment;
   fetchImplementation?: typeof fetch;
   mode: InvocationMode;
@@ -59,6 +61,7 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
       headers.set('x-uptimerobot-client', 'cli');
       headers.set('x-uptimerobot-execution-environment', options.environment);
       headers.set('x-uptimerobot-invocation-mode', options.mode);
+      if (options.command !== undefined) headers.set('x-uptimerobot-command', options.command);
 
       let url = input;
       let method = init.method ?? 'GET';

@@ -51,12 +51,18 @@ describe('monitors list', () => {
   });
 
   it('queries monitors with API-key auth and emits structured JSON', async () => {
-    let observedRequest: { authorization?: string; client?: string; mode?: string; url?: string } =
-      {};
+    let observedRequest: {
+      authorization?: string;
+      client?: string;
+      command?: string;
+      mode?: string;
+      url?: string;
+    } = {};
     const server = createServer((request, response) => {
       observedRequest = {
         authorization: request.headers.authorization,
         client: request.headers['x-uptimerobot-client'] as string | undefined,
+        command: request.headers['x-uptimerobot-command'] as string | undefined,
         mode: request.headers['x-uptimerobot-invocation-mode'] as string | undefined,
         url: request.url,
       };
@@ -113,6 +119,7 @@ describe('monitors list', () => {
       },
       stderr: '',
     });
+    expect(observedRequest).not.toHaveProperty('command', expect.any(String));
   });
 
   it('renders an aligned curated table for a human', async () => {

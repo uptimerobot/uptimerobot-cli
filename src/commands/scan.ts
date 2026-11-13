@@ -30,6 +30,7 @@ import {
   malformedOnly,
   parseOnly,
   runApply,
+  THIRD_PARTY_COMMAND,
   unknownSelections,
   unresolvedError,
 } from '../lib/third-party/apply.js';
@@ -186,7 +187,12 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
     mode: InvocationMode,
   ): Promise<ApiAccess> {
     try {
-      return await resolveApiAccess({ explicitApiKey, mode, version: this.config.pjson.version });
+      return await resolveApiAccess({
+        explicitApiKey,
+        mode,
+        version: this.config.pjson.version,
+        command: THIRD_PARTY_COMMAND,
+      });
     } catch (error) {
       if (error instanceof AuthenticationError) {
         return this.fail({ code: error.code, message: error.message }, error.exitCode);
