@@ -34,6 +34,7 @@ export const COLLECTION_COMMAND_IDS = [
   'status-pages:announcements:list',
   'status-pages:list',
   'tags:list',
+  'third-party-providers:components:list',
   'third-party-providers:list',
   'user:alert-contacts',
   'user:all-alert-contacts',
@@ -155,6 +156,13 @@ export const COMMAND_COLUMNS = {
     { format: accessLevel, header: 'ACCESS', key: 'isPasswordSet' },
   ],
   'tags:list': [{ key: 'id' }, { key: 'name', maxWidth: 28 }],
+  'third-party-providers:components:list': [
+    { key: 'id' },
+    { key: 'name', maxWidth: 48 },
+    { key: 'status' },
+    { header: 'REGION', key: 'region.code' },
+    { key: 'global' },
+  ],
   'third-party-providers:list': [
     { key: 'id' },
     { key: 'name', maxWidth: 28 },

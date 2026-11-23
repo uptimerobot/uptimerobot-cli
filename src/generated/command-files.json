@@ -97,6 +97,7 @@
   "commands/status-pages/update.ts",
   "commands/tags/delete.ts",
   "commands/tags/list.ts",
+  "commands/third-party-providers/components/list.ts",
   "commands/third-party-providers/get.ts",
   "commands/third-party-providers/list.ts",
   "commands/third-party-services/maintenances.ts",

@@ -113,6 +113,14 @@ describe('redactSecrets, round four', () => {
     expect(redactClipped(`echo "${'a'.repeat(3000)}"`, 2000)).toContain('aaa');
   });
 
+  it('leaves an @ in the query alone, so a URL with a port keeps its host', () => {
+    const url = 'curl -f http://localhost:8080/health?notify=ops@example.com';
+    expect(redactSecrets(url)).toBe(url);
+    expect(redactSecrets('curl http://admin:p/w@h:8080/x?y=1')).toBe(
+      'curl http://***@h:8080/x?y=1',
+    );
+  });
+
   it('masks a clipped quoted credential whose cut lands right after a backslash', () => {
     const prefix = 'tool --password "hunter2\\';
     const clipped = redactClipped(`${prefix}${'p'.repeat(3000)}"`, prefix.length);

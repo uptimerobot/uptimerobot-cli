@@ -269,7 +269,9 @@ function verifiedMonitor(item: unknown): VerifiedMonitor {
     );
   }
   const row = item;
-  const target = text(row.url);
+  const type = text(row.type);
+  // A heartbeat's url is its push token, a secret by type, not a target.
+  const target = type === 'HEARTBEAT' ? null : text(row.url);
   return {
     createdAt: text(row.createDateTime),
     id: identifier(row.id),
@@ -278,7 +280,7 @@ function verifiedMonitor(item: unknown): VerifiedMonitor {
     tags: tagNames(row.tags),
     // A target can carry `user:pass@`, a `?token=` or a heartbeat push token.
     target: target === null ? null : redactSecrets(target),
-    type: text(row.type),
+    type,
   };
 }
 
