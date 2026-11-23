@@ -16,7 +16,7 @@ const SECRET_LITERALS: readonly RegExp[] = [
   /-----BEGIN[^-\n]*PRIVATE KEY-----/g,
 ];
 /** `scheme://user:pass@`, consumed up to the LAST `@` before whitespace: a password may hold `@` or `/`. */
-const CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:[^\s?#]*@/gi;
+const CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:?#]*:[^\s?#]*@/gi;
 /** `NAME=value`: the value is the whole shell word, quoted fragments and escapes included. */
 const ASSIGNMENT =
   /(^|[\s"'`])(-{0,2}[A-Za-z][\w.-]*)=((?:"(?:\\.|[^"\\])*"|'[^']*'|`[^`]*`|\\.|[^\s"'`\\])*)/g;
@@ -28,7 +28,7 @@ const FLAG = /(^|\s)(--?[A-Za-z][\w.-]*)(?=\s|$)/g;
  */
 const FLAG_VALUE = /\s+(?:"(?:\\.|[^"\\])*"|'[^']*'|\\.|[^\s"'`\\])+/y;
 /** A `scheme://user:pass` with no `@` reached yet, as the clip leaves it. */
-const CUT_CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:[^\s?#]*$/i;
+const CUT_CREDENTIALED_URL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:?#]*:[^\s?#]*$/i;
 /** Short and long option names that carry a credential without saying so in their name. */
 const CREDENTIAL_FLAGS = new Set(['p', 'u', 'user', 'pass', 'passwd', 'pw', 'login', 'auth']);
 /** `-phunter2`, `-uadmin:x!`: the value glued to a one-letter credential flag, punctuation and all. */

@@ -572,7 +572,7 @@ function healthcheckFinding(
   if (probe === undefined) return undefined;
   // The host rules judge the raw host: a redacted value can read as another
   // host when an `@` in the path pulls the real one into the masked part.
-  const host = probeHost(collapsed);
+  const host = probeHost(collapsed, probe);
   return {
     detail: detailOf({ ...extra, command: truncate(redacted, MAX_DETAIL_TEXT), host }),
     evidence: { file, line },
@@ -589,11 +589,24 @@ function healthcheckFinding(
  */
 const RAW_AUTHORITY = /^[a-z][a-z0-9+.-]*:\/\/(?:[^\s/?#]*@)?([^\s/?#@]+)/i;
 
-function probeHost(command: string): string | undefined {
-  const start = SCHEME_URL_PATTERN.exec(command)?.index;
-  if (start === undefined) return hostnameOf(probeUrl(command));
-  const authority = RAW_AUTHORITY.exec(command.slice(start))?.[1];
-  return authority === undefined ? undefined : hostnameOf(authority);
+/**
+ * The raw host of the probe that was reported: redaction can remove a URL
+ * that stood before the probe, so the raw URLs are walked until one reads,
+ * with its credentials dropped, as the reported probe does.
+ */
+function probeHost(command: string, reported: string): string | undefined {
+  // Redaction only replaces a credential prefix with `***`, so the text after
+  // the mask is still present, verbatim, in the raw word the probe came from.
+  const mask = reported.indexOf('***@');
+  const tail = mask === -1 ? reported : reported.slice(mask + 4);
+  const scheme = new RegExp(SCHEME_URL_PATTERN.source, 'gi');
+  for (const match of command.matchAll(scheme)) {
+    const word = command.slice(match.index).split(/\s/, 1)[0] ?? '';
+    const authority = RAW_AUTHORITY.exec(word)?.[1];
+    const host = authority === undefined ? undefined : hostnameOf(authority);
+    if (host !== undefined && word.includes(tail)) return host;
+  }
+  return hostnameOf(probeUrl(reported));
 }
 
 /** The hostname a probe or destination names, read before any redaction; a host is never a secret. */
