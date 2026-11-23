@@ -572,7 +572,7 @@ function healthcheckFinding(
   if (probe === undefined) return undefined;
   // The host rules judge the raw host: a redacted value can read as another
   // host when an `@` in the path pulls the real one into the masked part.
-  const host = probeHost(collapsed, probe);
+  const host = probeHost(collapsed, redacted, probe);
   return {
     detail: detailOf({ ...extra, command: truncate(redacted, MAX_DETAIL_TEXT), host }),
     evidence: { file, line },
@@ -594,16 +594,21 @@ const RAW_AUTHORITY = /^[a-z][a-z0-9+.-]*:\/\/(?:[^\s/?#]*@)?([^\s/?#@]+)/i;
  * that stood before the probe, so the raw URLs are walked until one reads,
  * with its credentials dropped, as the reported probe does.
  */
-function probeHost(command: string, reported: string): string | undefined {
-  // The raw word that produced the reported probe is the one whose own
-  // redaction yields that very probe; a word the redaction emptied, or one
-  // that merely contains the probe's text, never does.
-  for (const word of command.split(/\s+/)) {
-    const start = SCHEME_URL_PATTERN.exec(word)?.index;
-    if (start === undefined) continue;
-    if (probeUrl(redactClipped(word, MAX_REDACTION_TEXT)) !== reported) continue;
-    const authority = RAW_AUTHORITY.exec(word.slice(start))?.[1];
-    return authority === undefined ? undefined : hostnameOf(authority);
+function probeHost(command: string, redacted: string, reported: string): string | undefined {
+  // Redaction keeps the word count (a masked value is one word, `***`), so
+  // the raw word at the position of the redacted word that yields the probe
+  // is the one the probe came from; a masked flag value at another position
+  // never lends its host, however alike its masked text reads.
+  const rawWords = command.split(' ');
+  const redactedWords = redacted.split(' ');
+  if (rawWords.length === redactedWords.length) {
+    const index = redactedWords.findIndex((word) => probeUrl(word) === reported);
+    const raw = index === -1 ? undefined : rawWords[index];
+    const start = raw === undefined ? undefined : SCHEME_URL_PATTERN.exec(raw)?.index;
+    if (raw !== undefined && start !== undefined) {
+      const authority = RAW_AUTHORITY.exec(raw.slice(start))?.[1];
+      return authority === undefined ? undefined : hostnameOf(authority);
+    }
   }
   return hostnameOf(probeUrl(reported));
 }

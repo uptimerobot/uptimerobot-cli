@@ -71,7 +71,12 @@ describe('third-party-providers components list', () => {
 
     const all = await runCli([...args, '--all'], { ...env, UPTIMEROBOT_OUTPUT: 'table' });
     expect(all.exitCode).toBe(0);
-    expect(all.stdout).toContain('9100');
-    expect(all.stdout).not.toContain('PARENT');
+    const rows = all.stdout.split('\n');
+    expect(rows.find((row) => row.startsWith('9100'))).toContain('Amazon Simple Storage Service');
+    const child = rows.find((row) => row.startsWith('9108'));
+    expect(child).toContain('Amazon Simple Storage Service (Frankfurt)');
+    expect(child).toContain('eu-central-1');
+    expect(child).toContain('operational');
+    expect(all.stdout).not.toContain('[object');
   });
 });

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1342,9 +1343,16 @@ describe('init', () => {
       const restoreTerminal = stubTerminal();
       try {
         const { default: Init } = await import('../src/commands/init.js');
+        const inner = globalThis.fetch;
+        let guideAtPost: boolean | undefined;
+        vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+          if (request.method === 'POST')
+            guideAtPost = existsSync(join(repository, SETUP_GUIDE_FILE));
+          return inner(input, init);
+        });
         await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
-        const guideWrite = logged.length;
-        expect(guideWrite).toBeGreaterThan(0);
+        expect(guideAtPost).toBe(true);
         expect(api.posts).toHaveLength(1);
         expect(await readFile(join(repository, SETUP_GUIDE_FILE), 'utf8')).toContain(
           SETUP_BEGIN_PREFIX,
