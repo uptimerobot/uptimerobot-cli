@@ -2,9 +2,20 @@ import ky, { isHTTPError } from 'ky';
 import type { ExecutionEnvironment, InvocationMode } from '../lib/invocation.js';
 import { apiFailureFrom } from './errors.js';
 
+/**
+ * Values of the `x-uptimerobot-command` header. The API reads it for usage
+ * attribution only (server-side metrics tagged by flow); it never changes a
+ * response, so a missing header is a metrics gap, not a behaviour change.
+ */
+export type ApiCommand = 'scan:3rd-party';
+/** The flow that creates third-party services: `scan --apply` and the `init` offer. */
+export const THIRD_PARTY_COMMAND: ApiCommand = 'scan:3rd-party';
+
 export interface ApiClientOptions {
   apiKey: string;
   apiUrl: URL;
+  /** Sent as `x-uptimerobot-command` on every request of this client when set. */
+  command?: ApiCommand;
   environment: ExecutionEnvironment;
   fetchImplementation?: typeof fetch;
   mode: InvocationMode;
@@ -59,6 +70,7 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
       headers.set('x-uptimerobot-client', 'cli');
       headers.set('x-uptimerobot-execution-environment', options.environment);
       headers.set('x-uptimerobot-invocation-mode', options.mode);
+      if (options.command !== undefined) headers.set('x-uptimerobot-command', options.command);
 
       let url = input;
       let method = init.method ?? 'GET';

@@ -906,9 +906,11 @@ describe('init', () => {
     ): {
       paths: string[];
       posts: unknown[];
+      commands: (string | null)[];
     } {
       const paths: string[] = [];
       const posts: unknown[] = [];
+      const commands: (string | null)[] = [];
       const monitors: unknown[] = (options.tracked ?? []).map((providerId, index) => ({
         id: 100 + index,
         type: 'THIRD_PARTY_SERVICE',
@@ -920,6 +922,7 @@ describe('init', () => {
           const request = input instanceof Request ? input : new Request(input, init);
           const url = new URL(request.url);
           paths.push(`${request.method} ${url.pathname}${url.search}`);
+          commands.push(request.headers.get('x-uptimerobot-command'));
           const json = (status: number, body: unknown): Response =>
             new Response(JSON.stringify(body), {
               headers: { 'content-type': 'application/json' },
@@ -960,7 +963,7 @@ describe('init', () => {
           return json(404, {});
         }),
       );
-      return { paths, posts };
+      return { paths, posts, commands };
     }
 
     async function writeManifest(): Promise<void> {
@@ -994,6 +997,8 @@ describe('init', () => {
           },
         });
         expect(logged.filter((line) => line.startsWith('| Provider |'))).toHaveLength(1);
+        expect(api.commands.length).toBeGreaterThan(0);
+        expect(api.commands.every((command) => command === 'scan:3rd-party')).toBe(true);
         expect(vi.mocked(requestConfirmation)).toHaveBeenCalledTimes(1);
         expect(vi.mocked(requestConfirmation).mock.calls[0]?.[0]).toBe(
           'Create 1 third-party service now',
