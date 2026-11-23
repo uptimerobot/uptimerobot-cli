@@ -189,13 +189,25 @@ export const MAX_REGIONS_PER_TERM = 5;
 /** Packages whose name is one service of the provider, unlike a generic SDK or its config module. */
 const SERVICE_PACKAGE =
   /^(?:@aws-sdk\/client-|@google-cloud\/|@azure\/|github\.com\/aws\/aws-sdk-go(?:-v2)?\/service\/|cloud\.google\.com\/go\/|google-cloud-)/;
+/**
+ * Support libraries under the same prefixes that name no service: auth,
+ * credentials, logging, metadata, the shared core. They never make a
+ * scoped create short of anything, so they are not unmapped services.
+ */
+const SUPPORT_PACKAGE =
+  /^(?:cloud\.google\.com\/go\/(?:auth|compute\/metadata|iam|longrunning|internal)|google-cloud-(?:core|appengine-logging|audit-log|iam|resource-manager)|@google-cloud\/(?:common|promisify|projectify|paginator|logging-min)|@azure\/(?:core-|identity|logger|abort-controller|msal)|@aws-sdk\/(?:credential-|types|util-|middleware-|signature-|xml-|smithy-))/;
 
 function unmappedService(finding: ThirdPartyFinding): string | undefined {
   const { detail } = finding;
   if (finding.kind === 'terraform-resource' && 'service' in detail && detail.service !== '') {
     return detail.signal;
   }
-  if ('package' in detail && SERVICE_PACKAGE.test(detail.package)) return detail.package;
+  if (
+    'package' in detail &&
+    SERVICE_PACKAGE.test(detail.package) &&
+    !SUPPORT_PACKAGE.test(detail.package)
+  )
+    return detail.package;
   return undefined;
 }
 

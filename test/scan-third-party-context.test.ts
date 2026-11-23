@@ -592,6 +592,39 @@ describe('component terms', () => {
       }),
     ]).candidates;
     expect(go?.unmappedServices).toEqual(['github.com/aws/aws-sdk-go-v2/service/kinesis']);
+    const support = [
+      ['go', 'cloud.google.com/go/auth'],
+      ['go', 'cloud.google.com/go/compute/metadata'],
+      ['go', 'cloud.google.com/go/iam'],
+      ['pip', 'google-cloud-core'],
+      ['pip', 'google-cloud-appengine-logging'],
+      ['npm', '@google-cloud/common'],
+      ['npm', '@google-cloud/promisify'],
+      ['npm', '@azure/core-http'],
+      ['npm', '@azure/identity'],
+      ['npm', '@azure/logger'],
+      ['npm', '@aws-sdk/credential-providers'],
+      ['npm', '@aws-sdk/types'],
+    ] as const;
+    expect(
+      buildThirdPartyContext(
+        support.map(([kind, name], line) =>
+          finding(
+            name.startsWith('@azure')
+              ? 'Microsoft Azure'
+              : name.includes('aws')
+                ? 'AWS'
+                : 'Google Cloud',
+            {
+              kind,
+              file: 'manifest',
+              line: line + 1,
+              detail: { signal: `${name}@1`, package: name },
+            },
+          ),
+        ),
+      ).candidates.flatMap((candidate) => candidate.unmappedServices),
+    ).toEqual([]);
     expect(
       buildThirdPartyContext([
         finding('Google Cloud', {
