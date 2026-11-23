@@ -257,6 +257,16 @@ describe('scopeProposal', () => {
     expect(aborted[3]?.status).toBe('already-tracked');
   });
 
+  it('names the unmapped service even when it is the only thing the scan found', async () => {
+    const { access, calls } = failingApi(500);
+    const [row] = await scopeProposal(
+      [{ ...createRow('AWS', 248, []), unmappedServices: ['aws_iam'] }],
+      { access, tracked, deadline: Date.now() + 60_000 },
+    );
+    expect(calls).toHaveLength(0);
+    expect(row).toMatchObject({ scope: 'whole', scopeReason: 'unmapped-service' });
+  });
+
   it('tracks the whole provider when a service the repository uses has no component term', async () => {
     const access = answeringApi({ 'AWS Lambda': { data: [{ id: 1, name: 'L', children: [] }] } });
     const [row] = await scopeProposal(

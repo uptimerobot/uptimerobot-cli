@@ -407,10 +407,12 @@ export async function scopeProposal(
     }
     const pin = row.status === 'create' ? options.pins?.get(row.provider) : undefined;
     if (pin === undefined && row.components.length === 0) {
+      // Nothing to ask, but a service without a term still says why the whole provider is tracked.
       const scoping = decideScope([], []);
       scoped.push({
         ...row,
         ...scoping,
+        ...(row.unmappedServices.length > 0 ? { scopeReason: 'unmapped-service' as const } : {}),
         ...(row.status === 'create' ? { pin: pinText(row.provider, row.catalog.id, scoping) } : {}),
         ...trackedFields(row, options.tracked, []),
       });
