@@ -137,7 +137,7 @@ describe('readTrackedProviders', () => {
       monitors: [monitor(1, 801), monitor(3, 1124), monitor(4, 801)],
       partial: false,
     });
-    expect(requests).toEqual(['/v3/monitors?limit=200', '/v3/monitors?limit=200&cursor=p2']);
+    expect(requests).toEqual(['/v3/monitors?limit=200', '/v3/monitors?cursor=p2&limit=200']);
   });
 
   it('refuses a monitor list that is not one instead of reading it as empty', async () => {

@@ -25,6 +25,7 @@ const EXPECTED_COLLECTION_COMMAND_IDS = [
   'status-pages:announcements:list',
   'status-pages:list',
   'tags:list',
+  'third-party-providers:components:list',
   'third-party-providers:list',
   'user:alert-contacts',
   'user:all-alert-contacts',

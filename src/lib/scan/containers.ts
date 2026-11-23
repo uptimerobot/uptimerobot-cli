@@ -566,15 +566,46 @@ function healthcheckFinding(
   // clipped and redacted first, and the probe is read out of that text: a
   // password with a comma or a quote in it would otherwise end the probe
   // early, leaving a prefix of it with no `@` for the URL pattern to find.
-  const redacted = redactClipped(command.replaceAll(/\s+/g, ' ').trim(), MAX_REDACTION_TEXT);
+  const collapsed = command.replaceAll(/\s+/g, ' ').trim();
+  const redacted = redactClipped(collapsed, MAX_REDACTION_TEXT);
   const probe = probeUrl(redacted);
   if (probe === undefined) return undefined;
+  // The host rules judge the raw host: a redacted value can read as another
+  // host when an `@` in the path pulls the real one into the masked part.
+  const host = probeHost(collapsed);
   return {
-    detail: detailOf({ ...extra, command: truncate(redacted, MAX_DETAIL_TEXT) }),
+    detail: detailOf({ ...extra, command: truncate(redacted, MAX_DETAIL_TEXT), host }),
     evidence: { file, line },
     kind,
     value: probe,
   };
+}
+
+/**
+ * The host of the first URL in a raw command, read the way a URL parser does:
+ * the authority ends at the first `/`, `?` or `#`, and the host is what
+ * follows the last `@` in it, so a comma or an `@` in a password never cuts
+ * the host short the way the probe pattern would.
+ */
+const RAW_AUTHORITY = /^[a-z][a-z0-9+.-]*:\/\/(?:[^\s/?#]*@)?([^\s/?#@]+)/i;
+
+function probeHost(command: string): string | undefined {
+  const start = SCHEME_URL_PATTERN.exec(command)?.index;
+  if (start === undefined) return hostnameOf(probeUrl(command));
+  const authority = RAW_AUTHORITY.exec(command.slice(start))?.[1];
+  return authority === undefined ? undefined : hostnameOf(authority);
+}
+
+/** The hostname a probe or destination names, read before any redaction; a host is never a secret. */
+function hostnameOf(value: string | undefined): string | undefined {
+  if (value === undefined || value.startsWith('/')) return undefined;
+  try {
+    const hostname = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`)
+      .hostname;
+    return hostname === '' ? undefined : hostname;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The address a `curl`/`wget` style health probe hits, if it names one. */
@@ -676,6 +707,8 @@ function pairLine(node: unknown, key: string, lineCounter: LineCounter): number 
 
 // --- Shaping ---------------------------------------------------------------
 
+const DESTINATION_KEYS: ReadonlySet<string> = new Set(['destination', 'dest', 'to']);
+
 function detailOf(
   entries: Readonly<Record<string, string | undefined>>,
 ): Record<string, string> | undefined {
@@ -683,10 +716,15 @@ function detailOf(
   // Every detail is repository text bound for the seed file: a rewrite
   // destination carries credentials as readily as a healthcheck command. It
   // is redacted here but not clipped: the host rules read a destination whole,
-  // and the rendering layer clips what it prints.
+  // and the rendering layer clips what it prints. A destination's host is
+  // kept beside it unredacted, so the host rules never judge masked text.
   for (const [key, value] of Object.entries(entries)) {
-    if (value !== undefined && value.length > 0)
-      detail[key] = redactClipped(value, MAX_REDACTION_TEXT);
+    if (value === undefined || value.length === 0) continue;
+    detail[key] = key === 'host' ? value : redactClipped(value, MAX_REDACTION_TEXT);
+    if (DESTINATION_KEYS.has(key)) {
+      const host = hostnameOf(value);
+      if (host !== undefined) detail[`${key}Host`] = host;
+    }
   }
   return Object.keys(detail).length > 0 ? detail : undefined;
 }
