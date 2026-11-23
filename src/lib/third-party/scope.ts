@@ -125,18 +125,14 @@ export function keepsLeaf(leaf: Leaf, region: string | null): boolean {
   return region === null || leaf.global || leaf.region === region;
 }
 
-/**
- * Built by hand until the published contract carries the operation; the step
- * that refreshes `openapi/openapi.yaml` swaps this for `buildUrl(operations[...])`.
- */
+const COMPONENTS_LIST = operations['third-party-providers:components:list'];
+
 function componentsUrl(access: ApiAccess, providerId: number, term: string): URL {
-  const base = access.apiUrl.toString().replace(/\/?$/, '/');
-  const url = new URL(
-    `third-party-providers/${encodeURIComponent(String(providerId))}/components`,
-    base,
+  return buildUrl(
+    COMPONENTS_LIST,
+    { path: { id: providerId }, query: { search: term } },
+    access.apiUrl,
   );
-  url.searchParams.set('search', term);
-  return url;
 }
 
 /** The distinct (term, region) pairs of a candidate, in the scan's order. */
@@ -209,7 +205,7 @@ async function searchComponents(
       const payload = await requestJson(
         access.client,
         componentsUrl(access, providerId, term),
-        'GET',
+        COMPONENTS_LIST.method,
       );
       leaves = collectLeaves(payload);
     } catch (error) {
