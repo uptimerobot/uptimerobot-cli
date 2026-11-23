@@ -221,6 +221,9 @@ describe('renderSetupGuide', () => {
     expect(prose(guide)).toContain(
       prose('settle it with `--only <provider>=<id>` and no `--confirm` first'),
     );
+    expect(prose(guide)).toContain(
+      prose('the components from `trackedComponents[]`, or the `scopeReason`'),
+    );
     expect(prose(guide)).toContain(prose('Never confirm with `--skip`'));
     expect(prose(guide)).toContain(prose('need no base URL'));
     expect(prose(guide)).toContain(prose('**Third-party services** — one row per service created'));
