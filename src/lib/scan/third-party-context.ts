@@ -195,7 +195,7 @@ const SERVICE_PACKAGE =
  * scoped create short of anything, so they are not unmapped services.
  */
 const SUPPORT_PACKAGE =
-  /^(?:cloud\.google\.com\/go\/(?:auth|compute\/metadata|iam|longrunning|internal)|google-cloud-(?:core|appengine-logging|audit-log|iam|resource-manager)|@google-cloud\/(?:common|promisify|projectify|paginator|logging-min)|@azure\/(?:core-|identity|logger|abort-controller|msal)|@aws-sdk\/(?:credential-|types|util-|middleware-|signature-|xml-|smithy-))/;
+  /^(?:cloud\.google\.com\/go\/(?:auth|compute\/metadata|longrunning|internal)|google-cloud-core$|@google-cloud\/(?:common|promisify|projectify|paginator)|@azure\/(?:core-|identity|logger|abort-controller|msal)|@aws-sdk\/(?:credential-|types|util-|middleware-|signature-|xml-|smithy-))/;
 
 function unmappedService(finding: ThirdPartyFinding): string | undefined {
   const { detail } = finding;
