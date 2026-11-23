@@ -1038,6 +1038,29 @@ describe('round two: rejection rules reach every path', () => {
 });
 
 describe('round three', () => {
+  it('judges a probe and a rewrite by the raw host the scanner kept, not the redacted text', () => {
+    const context = seed({
+      containers: [
+        {
+          kind: 'docker-healthcheck',
+          value: 'http://***@example.com',
+          evidence: { file: 'Dockerfile', line: 2 },
+          detail: { host: 'localhost' },
+        },
+        {
+          kind: 'vercel-rewrite',
+          value: '/u',
+          evidence: { file: 'vercel.json', line: 3 },
+          detail: { destination: 'http://***@example.com', destinationHost: '10.0.0.5' },
+        },
+      ],
+    });
+    expect(context.rejected.map((item) => [item.value, item.reason, item.matched])).toEqual([
+      ['http://***@example.com', 'loopback', 'localhost'],
+      ['/u', 'private-network', '10.0.0.5'],
+    ]);
+  });
+
   it('rejects a probe whose path still carries an unresolved variable', () => {
     const rejection = probeRejection('https://api.example.com/$');
 

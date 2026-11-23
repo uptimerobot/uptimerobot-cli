@@ -12,6 +12,8 @@ may change in minor releases.
 
 ### Added
 
+- `uptimerobot third-party-providers components list <id> --search <words> --region <code>`, generated from the published contract, lists the components of one provider that match a search term or a region, each with its `region` and `global` flag.
+- The command generator leaves header parameters out of the flags: the published contract now lists the attribution headers the client sets itself on `monitors create`, and a contract header never becomes something to type.
 - `uptimerobot monitors third-party-service maintenances list <id>` and
   `uptimerobot third-party-services maintenances`, generated from the
   published contract, list the upcoming maintenance windows of one
@@ -68,6 +70,7 @@ may change in minor releases.
 
 ### Fixed
 
+- The host rules judge a healthcheck probe and a rewrite destination by the host the scanner read before redaction, so a URL with a port and an `@` later in it is no longer read as a credentialed URL whose host is the text after the `@`; the redaction itself stops at `?` and `#`. A heartbeat's `target` in `uptimerobot verify` is null by monitor type, not by the shape of its push token. The interactive agent picker depends on `@inquirer/select` alone instead of the whole `@inquirer/prompts` bundle.
 - `uptimerobot init` refuses an outdated setup guide it cannot write before the third-party offer, so a run never ends with services created and no guide; a clipped quoted credential that ends in a backslash is still masked; a compose `CMD-SHELL` healthcheck script is kept as written, so a quoted credential inside it is masked whole.
 - A container health probe's command and URL are redacted like a cron command:
   `user:password@` and a `?token=` style query parameter no longer reach

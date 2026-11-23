@@ -118,7 +118,7 @@ describe('verify', () => {
       root: projectRoot,
     });
 
-    expect(requests).toEqual([`${API_URL}/monitors?limit=200&tags=agent-setup`]);
+    expect(requests).toEqual([`${API_URL}/monitors?tags=agent-setup&limit=200`]);
     expect(output).toMatchObject({ count: 1, tags: ['agent-setup'] });
   });
 
@@ -186,9 +186,9 @@ describe('verify', () => {
     });
 
     expect(requests).toEqual([
-      `${API_URL}/monitors?limit=200&tags=agent-setup`,
-      `${API_URL}/monitors?limit=200&tags=agent-setup&cursor=84`,
-      `${API_URL}/monitors?limit=200&tags=agent-setup&cursor=91`,
+      `${API_URL}/monitors?tags=agent-setup&limit=200`,
+      `${API_URL}/monitors?cursor=84&tags=agent-setup&limit=200`,
+      `${API_URL}/monitors?cursor=91&tags=agent-setup&limit=200`,
     ]);
     expect({ count: output.count, ids: output.monitors.map((entry) => entry.id) }).toEqual({
       count: 3,
@@ -329,7 +329,7 @@ describe('verify', () => {
       { root: projectRoot },
     );
 
-    expect(requests).toEqual([`${API_URL}/monitors?limit=200&tags=production%2Cstaging`]);
+    expect(requests).toEqual([`${API_URL}/monitors?tags=production%2Cstaging&limit=200`]);
     expect(output.tags).toEqual(['production', 'staging']);
     expect(logged.join('\n')).toBe(JSON.stringify(output));
   });
@@ -386,6 +386,7 @@ describe('verify', () => {
     expect(printed).not.toContain('hunter2');
     expect(printed).not.toContain('abc12345');
     expect(printed).not.toContain('9f8e7d6c5b4a39281706f5e4d3c2b1a0');
+    expect(printed).not.toContain('heartbeat.example');
     expect(printed).toContain('https://***@example.com/health?token=***');
   });
 
