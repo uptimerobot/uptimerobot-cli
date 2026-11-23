@@ -96,6 +96,7 @@ function candidate(
       },
     ],
     components: [],
+    componentsTruncated: false,
     ...overrides,
   };
 }
@@ -608,6 +609,7 @@ describe('resolveCandidates', () => {
       searchTerm: 'stripe',
       class: 'runtime',
       components: [],
+      componentsTruncated: false,
       evidence: [{ file: 'package.json', line: 3 }],
       regionDefaulted: false,
     });

@@ -78,6 +78,9 @@ may change in minor releases.
 - The seed context schema is 3: `hints` is removed from each third-party
   candidate, replaced by `components`, and terraform findings carry
   `regionLine` and `component` next to `region`.
+  Each candidate also carries `componentsTruncated`: a term seen in more
+  than five regions keeps the first five, never loses a term, and the
+  Markdown line says more regions than listed.
 - A terraform file whose provider blocks for one provider name two different
   regions reports no region for that provider's resources, not the first one.
 - An API error message is printed on one line; a message the API broke across

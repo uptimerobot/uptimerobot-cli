@@ -132,6 +132,7 @@ describe('buildThirdPartyContext', () => {
             ],
           },
         ],
+        componentsTruncated: false,
       },
       {
         provider: 'Stripe',
@@ -141,6 +142,7 @@ describe('buildThirdPartyContext', () => {
           { file: 'package.json', line: 12, kind: 'npm', signal: 'stripe@17.4.0', app: '.' },
         ],
         components: [],
+        componentsTruncated: false,
       },
     ]);
     expect(context.skipped).toEqual([]);
@@ -453,22 +455,69 @@ describe('component terms', () => {
     ]);
   });
 
-  it('keeps at most twenty component entries per provider', () => {
-    const findings = Array.from({ length: 25 }, (_, index) =>
-      tf(
-        'AWS',
-        `infra/r${index}.tf`,
-        1,
-        'aws_s3',
-        's3',
-        `us-east-${String(index + 1).padStart(2, '0')}`,
-        '1',
+  it('keeps at most five regions per term, never a whole term, and marks the candidate truncated', () => {
+    const findings = [
+      ...Array.from({ length: 25 }, (_, index) =>
+        tf(
+          'AWS',
+          `infra/r${index}.tf`,
+          1,
+          'aws_s3',
+          's3',
+          `us-east-${String(index + 1).padStart(2, '0')}`,
+          '1',
+        ),
       ),
+      tf('AWS', 'infra/real.tf', 3, 'aws_sqs', 'sqs', 'eu-west-1', '1'),
+      tf('AWS', 'infra/real.tf', 4, 'aws_lambda', 'lambda', 'eu-west-1', '1'),
+    ];
+    const [candidate] = buildThirdPartyContext(findings).candidates;
+    expect(candidate?.componentsTruncated).toBe(true);
+    expect(candidate?.components.map(({ term }) => term)).toEqual([
+      'Amazon Simple Queue Service',
+      ...Array<string>(5).fill('Amazon Simple Storage Service'),
+      'AWS Lambda',
+    ]);
+    expect(buildThirdPartyContext(findings.slice(-2)).candidates[0]?.componentsTruncated).toBe(
+      false,
     );
-    expect(componentsByProvider(findings)[0]?.[1]).toHaveLength(20);
     const section = formatThirdPartySection(buildThirdPartyContext(findings)).join('\n');
-    expect(section).toContain('(us-east-20)');
+    expect(section).toContain('(us-east-05)');
+    expect(section).toContain('more regions than listed');
     expect(section).not.toContain('us-east-21');
+  });
+
+  it('matches a pip package under every spelling the manifest allows', () => {
+    const spellings = [
+      'google-cloud-storage',
+      'google_cloud_storage',
+      'Google-Cloud-Storage',
+      'google.cloud.storage',
+      'google-cloud-storage[protobuf]',
+    ];
+    for (const name of spellings) {
+      expect(
+        componentsByProvider([
+          finding('Google Cloud', {
+            kind: 'pip',
+            file: 'requirements.txt',
+            detail: { signal: `${name}==2.0`, package: name },
+          }),
+        ]),
+        name,
+      ).toEqual([
+        [
+          'Google Cloud',
+          [{ term: 'Google Cloud Storage', region: null, evidence: ['requirements.txt:1'] }],
+        ],
+      ]);
+    }
+  });
+
+  it('names the SES component from the v2 resource type too', () => {
+    expect(terraformComponent('AWS', 'aws_sesv2_email_identity')).toBe(
+      'Amazon Simple Email Service',
+    );
   });
 
   it('gives an unmapped signal of a scoped provider no term, and a provider outside the five an empty list', () => {

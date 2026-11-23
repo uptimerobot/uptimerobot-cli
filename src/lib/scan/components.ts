@@ -15,6 +15,7 @@
  * `git remote: <host>`, `FROM <registry>`, the bare config file name).
  */
 import type { ThirdPartyFinding } from './third-party.js';
+import { type PackageEcosystem, normalizePackageName } from './vendors.js';
 
 type ComponentRule = {
   readonly term: string;
@@ -42,7 +43,7 @@ const AWS: readonly ComponentRule[] = [
     packages: ['@aws-sdk/client-sns'],
   }),
   rule('Amazon Simple Email Service', {
-    services: ['ses'],
+    services: ['ses', 'sesv2'],
     packages: ['@aws-sdk/client-ses', '@aws-sdk/client-sesv2'],
   }),
   rule('Amazon DynamoDB', { services: ['dynamodb'], packages: ['@aws-sdk/client-dynamodb'] }),
@@ -128,11 +129,14 @@ export const COMPONENT_RULES: ReadonlyMap<string, readonly ComponentRule[]> = ne
   ['GitHub', GITHUB],
 ]);
 
+const isPackageKind = (kind: ThirdPartyFinding['kind']): kind is PackageEcosystem =>
+  PACKAGE_KINDS.has(kind);
+
 function packageMatches(pattern: string, name: string): boolean {
   return pattern.endsWith('*') ? name.startsWith(pattern.slice(0, -1)) : name === pattern;
 }
 
-const PACKAGE_KINDS: ReadonlySet<ThirdPartyFinding['kind']> = new Set([
+const PACKAGE_KINDS: ReadonlySet<string> = new Set<PackageEcosystem>([
   'npm',
   'pip',
   'go',
@@ -158,8 +162,10 @@ function ruleMatches(item: ComponentRule, finding: ThirdPartyFinding): boolean {
   if (finding.kind === 'terraform-resource') {
     return 'component' in detail && detail.component === item.term;
   }
-  if (PACKAGE_KINDS.has(finding.kind) && 'package' in detail) {
-    return item.packages?.some((pattern) => packageMatches(pattern, detail.package)) ?? false;
+  if (isPackageKind(finding.kind) && 'package' in detail) {
+    // The manifest keeps the declared spelling; the rule names the normalized one.
+    const name = normalizePackageName(finding.kind, detail.package);
+    return item.packages?.some((pattern) => packageMatches(pattern, name)) ?? false;
   }
   return item.signals?.some((text) => detail.signal.includes(text)) ?? false;
 }

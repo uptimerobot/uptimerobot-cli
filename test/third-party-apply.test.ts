@@ -30,6 +30,7 @@ function candidate(
       },
     ],
     components: [],
+    componentsTruncated: false,
   };
 }
 
