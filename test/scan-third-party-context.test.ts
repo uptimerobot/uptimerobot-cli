@@ -558,6 +558,58 @@ describe('component terms', () => {
       tf('AWS', 'infra/main.tf', 9, 'aws_s3', 's3', 'eu-central-1', '1'),
     ]).candidates;
     expect(aws?.unmappedServices).toEqual(['@aws-sdk/client-kinesis', 'aws_iam']);
+    const [go] = buildThirdPartyContext([
+      finding('AWS', {
+        kind: 'go',
+        file: 'go.mod',
+        detail: {
+          signal: 'github.com/aws/aws-sdk-go-v2/service/kinesis@v1.0.0',
+          package: 'github.com/aws/aws-sdk-go-v2/service/kinesis',
+        },
+      }),
+      finding('AWS', {
+        kind: 'go',
+        file: 'go.mod',
+        line: 2,
+        detail: {
+          signal: 'github.com/aws/aws-sdk-go-v2/config@v1.0.0',
+          package: 'github.com/aws/aws-sdk-go-v2/config',
+        },
+      }),
+      finding('Google Cloud', {
+        kind: 'pip',
+        file: 'requirements.txt',
+        detail: { signal: 'google-cloud-tasks==2.0', package: 'google-cloud-tasks' },
+      }),
+      finding('Google Cloud', {
+        kind: 'go',
+        file: 'go.mod',
+        line: 3,
+        detail: {
+          signal: 'cloud.google.com/go/scheduler@v1.0.0',
+          package: 'cloud.google.com/go/scheduler',
+        },
+      }),
+    ]).candidates;
+    expect(go?.unmappedServices).toEqual(['github.com/aws/aws-sdk-go-v2/service/kinesis']);
+    expect(
+      buildThirdPartyContext([
+        finding('Google Cloud', {
+          kind: 'pip',
+          file: 'requirements.txt',
+          detail: { signal: 'google-cloud-tasks==2.0', package: 'google-cloud-tasks' },
+        }),
+        finding('Google Cloud', {
+          kind: 'go',
+          file: 'go.mod',
+          line: 3,
+          detail: {
+            signal: 'cloud.google.com/go/scheduler@v1.0.0',
+            package: 'cloud.google.com/go/scheduler',
+          },
+        }),
+      ]).candidates[0]?.unmappedServices,
+    ).toEqual(['cloud.google.com/go/scheduler', 'google-cloud-tasks']);
     expect(aws?.components.map(({ term }) => term)).toEqual(['Amazon Simple Storage Service']);
     const [stripe] = buildThirdPartyContext([finding('Stripe')]).candidates;
     expect(stripe?.unmappedServices).toEqual([]);

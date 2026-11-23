@@ -186,8 +186,9 @@ export const MAX_REGIONS_PER_TERM = 5;
  * count for every region. A terraform resource without a region stays its
  * own `null` entry, since its file either names no region or spans several.
  */
-/** Packages whose name is one service of the provider, unlike a generic SDK. */
-const SERVICE_PACKAGE = /^(?:@aws-sdk\/client-|@google-cloud\/|@azure\/)/;
+/** Packages whose name is one service of the provider, unlike a generic SDK or its config module. */
+const SERVICE_PACKAGE =
+  /^(?:@aws-sdk\/client-|@google-cloud\/|@azure\/|github\.com\/aws\/aws-sdk-go(?:-v2)?\/service\/|cloud\.google\.com\/go\/|google-cloud-)/;
 
 function unmappedService(finding: ThirdPartyFinding): string | undefined {
   const { detail } = finding;
