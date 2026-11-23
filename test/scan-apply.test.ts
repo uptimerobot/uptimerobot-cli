@@ -477,6 +477,7 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
     expect(result.stdout).toContain(
       '- AWS, Amazon Relational Database Service (Frankfurt): infra/main.tf:5 (aws_db), region eu-central-1 from infra/main.tf:2',
     );
+    expect(result.stdout).toContain('- AWS pin: --only AWS=248:9208,9108');
   });
 
   it('tracks the whole provider and says which term missed when one term matches nothing', async () => {

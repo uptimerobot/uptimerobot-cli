@@ -620,7 +620,12 @@ function componentLines(row: ResolvedCandidate): string[] {
     return plain(`- ${row.provider}, ${leaf.name}: ${[...evidence, ...region].join(', ')}`);
   });
   const more = leaves.length - lines.length;
-  return more > 0 ? [...lines, `- ${row.provider}: +${more} more components, see --json`] : lines;
+  const folded =
+    more > 0 ? [...lines, `- ${row.provider}: +${more} more components, see --json`] : lines;
+  // The pin repeats this exact row on a confirm run; a person reads it here, an agent in the JSON.
+  return row.pin === undefined
+    ? folded
+    : [...folded, `- ${row.provider} pin: --only ${onlyArgument(row.pin)}`];
 }
 
 function evidenceCell(row: ResolvedCandidate): string {
