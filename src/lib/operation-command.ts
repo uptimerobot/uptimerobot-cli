@@ -336,8 +336,10 @@ Canonical command: ${options.canonicalCommand}`
       // --raw is the untouched API response, so derived fields stay out of it.
       // A table has no second level, so the component tree is flattened for it
       // alone; JSON keeps the parents and their children as the API sent them.
+      // --all promises every API field, so the tree stays whole under it.
       const flatten =
         operation.commandId === 'third-party-providers:components:list' &&
+        flags.all !== true &&
         (outputFormat === 'table' || outputFormat === 'plain');
       const curated = flatten
         ? flattenComponentTree(normalizeResult(payload))

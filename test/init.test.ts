@@ -1333,6 +1333,47 @@ describe('init', () => {
       }
     });
 
+    it('writes the guide before any service is created, so a write failure costs nothing on the account', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      const api = stubApi();
+      const { requestConfirmation } = await import('../src/lib/invocation.js');
+      vi.mocked(requestConfirmation).mockResolvedValue(true);
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+        await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+        const guideWrite = logged.length;
+        expect(guideWrite).toBeGreaterThan(0);
+        expect(api.posts).toHaveLength(1);
+        expect(await readFile(join(repository, SETUP_GUIDE_FILE), 'utf8')).toContain(
+          SETUP_BEGIN_PREFIX,
+        );
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('refuses a directory at the guide path before any service is created', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      await mkdir(join(repository, SETUP_GUIDE_FILE));
+      const api = stubApi();
+      const { requestConfirmation } = await import('../src/lib/invocation.js');
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+        await expect(
+          Init.run(['--no-launch', '--no-agent'], { root: projectRoot }),
+        ).rejects.toMatchObject({ cliError: { code: 'SETUP_GUIDE_WRITE_FAILED' } });
+        expect(catalogCalls(api.paths)).toEqual([]);
+        expect(api.posts).toEqual([]);
+        expect(vi.mocked(requestConfirmation)).not.toHaveBeenCalled();
+      } finally {
+        restoreTerminal();
+      }
+    });
+
     it.runIf(process.platform === 'darwin' || process.platform === 'linux')(
       'refuses an outdated guide it cannot write before any service is created',
       async () => {

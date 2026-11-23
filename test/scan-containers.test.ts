@@ -683,12 +683,17 @@ describe('scanContainers — round three', () => {
     const root = await temporaryRepo({
       Dockerfile:
         'FROM x\nHEALTHCHECK CMD TOKEN=https://auth.example.com/session curl http://127.0.0.1:8080/health\n',
+      'a/Dockerfile':
+        'FROM x\nHEALTHCHECK CMD TOKEN=https://auth.example.com/http://127.0.0.1:8080/health curl http://127.0.0.1:8080/health\n',
     });
 
-    const [finding] = await scanContainers(root);
+    const findings = await scanContainers(root);
 
-    expect(finding?.value).toBe('http://127.0.0.1:8080/health');
-    expect(finding?.detail?.host).toBe('127.0.0.1');
+    for (const finding of findings) {
+      expect(finding.value).toBe('http://127.0.0.1:8080/health');
+      expect(finding.detail?.host).toBe('127.0.0.1');
+    }
+    expect(findings).toHaveLength(2);
   });
 
   it('keeps a CMD-SHELL script as written so a quoted credential inside it is still masked', async () => {

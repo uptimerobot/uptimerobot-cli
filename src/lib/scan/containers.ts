@@ -595,16 +595,15 @@ const RAW_AUTHORITY = /^[a-z][a-z0-9+.-]*:\/\/(?:[^\s/?#]*@)?([^\s/?#@]+)/i;
  * with its credentials dropped, as the reported probe does.
  */
 function probeHost(command: string, reported: string): string | undefined {
-  // Redaction only replaces a credential prefix with `***`, so the text after
-  // the mask is still present, verbatim, in the raw word the probe came from.
-  const mask = reported.indexOf('***@');
-  const tail = mask === -1 ? reported : reported.slice(mask + 4);
-  const scheme = new RegExp(SCHEME_URL_PATTERN.source, 'gi');
-  for (const match of command.matchAll(scheme)) {
-    const word = command.slice(match.index).split(/\s/, 1)[0] ?? '';
-    const authority = RAW_AUTHORITY.exec(word)?.[1];
-    const host = authority === undefined ? undefined : hostnameOf(authority);
-    if (host !== undefined && word.includes(tail)) return host;
+  // The raw word that produced the reported probe is the one whose own
+  // redaction yields that very probe; a word the redaction emptied, or one
+  // that merely contains the probe's text, never does.
+  for (const word of command.split(/\s+/)) {
+    const start = SCHEME_URL_PATTERN.exec(word)?.index;
+    if (start === undefined) continue;
+    if (probeUrl(redactClipped(word, MAX_REDACTION_TEXT)) !== reported) continue;
+    const authority = RAW_AUTHORITY.exec(word.slice(start))?.[1];
+    return authority === undefined ? undefined : hostnameOf(authority);
   }
   return hostnameOf(probeUrl(reported));
 }
