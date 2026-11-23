@@ -147,6 +147,7 @@ describe('uptimerobot scan', () => {
             },
           ],
           componentsTruncated: false,
+          unmappedServices: [],
         },
         {
           provider: 'Stripe',
@@ -157,6 +158,7 @@ describe('uptimerobot scan', () => {
           ],
           components: [],
           componentsTruncated: false,
+          unmappedServices: [],
         },
       ],
       totals: { skipped: 1, unknown: 1 },

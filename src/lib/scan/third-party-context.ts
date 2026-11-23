@@ -10,7 +10,7 @@
  * and protocol clients are listed by name once, with their first location, so
  * the reader can see what was deliberately left out.
  */
-import { componentTerm } from './components.js';
+import { COMPONENT_RULES, componentTerm } from './components.js';
 import type { ScanEvidence } from './finding.js';
 import type { ThirdPartyFinding } from './third-party.js';
 import { VENDORS, type VendorClass } from './vendors.js';
@@ -52,6 +52,13 @@ export interface ThirdPartyCandidate {
   components: readonly ThirdPartyComponent[];
   /** True when a term was seen in more regions than {@link MAX_REGIONS_PER_TERM} and the rest were dropped. */
   componentsTruncated: boolean;
+  /**
+   * Signals of a scoped provider that name a service the component table has
+   * no term for (`aws_iam`, `@aws-sdk/client-kinesis`), so a scoped create
+   * would leave that service out. A generic SDK or a provider block names no
+   * service and is not listed.
+   */
+  unmappedServices: readonly string[];
 }
 
 export type ThirdPartyMentionReason = 'framework' | 'protocol-client' | 'unmapped' | 'hint';
@@ -179,18 +186,36 @@ export const MAX_REGIONS_PER_TERM = 5;
  * count for every region. A terraform resource without a region stays its
  * own `null` entry, since its file either names no region or spans several.
  */
+/** Packages whose name is one service of the provider, unlike a generic SDK. */
+const SERVICE_PACKAGE = /^(?:@aws-sdk\/client-|@google-cloud\/|@azure\/)/;
+
+function unmappedService(finding: ThirdPartyFinding): string | undefined {
+  const { detail } = finding;
+  if (finding.kind === 'terraform-resource' && 'service' in detail && detail.service !== '') {
+    return detail.signal;
+  }
+  if ('package' in detail && SERVICE_PACKAGE.test(detail.package)) return detail.package;
+  return undefined;
+}
+
 function componentsOf(findings: readonly ThirdPartyFinding[]): {
   components: ThirdPartyComponent[];
   componentsTruncated: boolean;
+  unmappedServices: string[];
 } {
   let componentsTruncated = false;
+  const unmapped = new Set<string>();
   const byTerm = new Map<
     string,
     { finding: ThirdPartyFinding; region: ComponentRegion | null }[]
   >();
   for (const finding of findings) {
     const term = componentTerm(finding);
-    if (term === undefined) continue;
+    if (term === undefined) {
+      const service = COMPONENT_RULES.has(finding.value) ? unmappedService(finding) : undefined;
+      if (service !== undefined) unmapped.add(service);
+      continue;
+    }
     const items = byTerm.get(term) ?? [];
     items.push({ finding, region: regionOf(finding) });
     byTerm.set(term, items);
@@ -234,7 +259,7 @@ function componentsOf(findings: readonly ThirdPartyFinding[]): {
             ...regional,
           ];
     });
-  return { components, componentsTruncated };
+  return { components, componentsTruncated, unmappedServices: [...unmapped].sort() };
 }
 
 // --- Rendering ---------------------------------------------------------------
