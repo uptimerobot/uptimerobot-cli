@@ -475,7 +475,9 @@ function judgeProbeUrl(finding: ScanFinding): Verdict {
       },
     };
   }
-  const host = hostOf(finding.value);
+  // The scanner keeps the raw host beside a redacted value; the value itself
+  // is the fallback for findings that carry none.
+  const host = finding.detail?.host ?? hostOf(finding.value);
   // A probe nothing can parse is not an address and must not slip past the
   // host rules as "nothing to reject".
   if (host === undefined) {
@@ -521,7 +523,7 @@ function judgeRedirect(
 
   const destination = detail.destination ?? detail.dest ?? detail.to;
   if (destination === undefined || !ABSOLUTE_URL.test(destination)) return { target };
-  const host = hostOf(destination);
+  const host = detail.destinationHost ?? detail.destHost ?? detail.toHost ?? hostOf(destination);
   if (host === undefined) return { target };
 
   const rejection = classifyHost(host);
