@@ -558,6 +558,112 @@ describe('component terms', () => {
       tf('AWS', 'infra/main.tf', 9, 'aws_s3', 's3', 'eu-central-1', '1'),
     ]).candidates;
     expect(aws?.unmappedServices).toEqual(['@aws-sdk/client-kinesis', 'aws_iam']);
+    const [go] = buildThirdPartyContext([
+      finding('AWS', {
+        kind: 'go',
+        file: 'go.mod',
+        detail: {
+          signal: 'github.com/aws/aws-sdk-go-v2/service/kinesis@v1.0.0',
+          package: 'github.com/aws/aws-sdk-go-v2/service/kinesis',
+        },
+      }),
+      finding('AWS', {
+        kind: 'go',
+        file: 'go.mod',
+        line: 2,
+        detail: {
+          signal: 'github.com/aws/aws-sdk-go-v2/config@v1.0.0',
+          package: 'github.com/aws/aws-sdk-go-v2/config',
+        },
+      }),
+      finding('Google Cloud', {
+        kind: 'pip',
+        file: 'requirements.txt',
+        detail: { signal: 'google-cloud-tasks==2.0', package: 'google-cloud-tasks' },
+      }),
+      finding('Google Cloud', {
+        kind: 'go',
+        file: 'go.mod',
+        line: 3,
+        detail: {
+          signal: 'cloud.google.com/go/scheduler@v1.0.0',
+          package: 'cloud.google.com/go/scheduler',
+        },
+      }),
+    ]).candidates;
+    expect(go?.unmappedServices).toEqual(['github.com/aws/aws-sdk-go-v2/service/kinesis']);
+    const support = [
+      ['go', 'cloud.google.com/go/auth'],
+      ['go', 'cloud.google.com/go/compute/metadata'],
+      ['pip', 'google-cloud-core'],
+      ['npm', '@google-cloud/common'],
+      ['npm', '@google-cloud/promisify'],
+      ['npm', '@azure/core-http'],
+      ['npm', '@azure/identity'],
+      ['npm', '@azure/logger'],
+      ['npm', '@aws-sdk/credential-providers'],
+      ['npm', '@aws-sdk/types'],
+    ] as const;
+    expect(
+      buildThirdPartyContext(
+        support.map(([kind, name], line) =>
+          finding(
+            name.startsWith('@azure')
+              ? 'Microsoft Azure'
+              : name.includes('aws')
+                ? 'AWS'
+                : 'Google Cloud',
+            {
+              kind,
+              file: 'manifest',
+              line: line + 1,
+              detail: { signal: `${name}@1`, package: name },
+            },
+          ),
+        ),
+      ).candidates.flatMap((candidate) => candidate.unmappedServices),
+    ).toEqual([]);
+    expect(
+      buildThirdPartyContext([
+        finding('Google Cloud', {
+          kind: 'pip',
+          file: 'requirements.txt',
+          detail: {
+            signal: 'google-cloud-resource-manager==1',
+            package: 'google-cloud-resource-manager',
+          },
+        }),
+        finding('Google Cloud', {
+          kind: 'pip',
+          file: 'requirements.txt',
+          line: 2,
+          detail: { signal: 'google-cloud-iam==1', package: 'google-cloud-iam' },
+        }),
+        finding('Google Cloud', {
+          kind: 'go',
+          file: 'go.mod',
+          detail: { signal: 'cloud.google.com/go/iam@v1', package: 'cloud.google.com/go/iam' },
+        }),
+      ]).candidates[0]?.unmappedServices,
+    ).toEqual(['cloud.google.com/go/iam', 'google-cloud-iam', 'google-cloud-resource-manager']);
+    expect(
+      buildThirdPartyContext([
+        finding('Google Cloud', {
+          kind: 'pip',
+          file: 'requirements.txt',
+          detail: { signal: 'google-cloud-tasks==2.0', package: 'google-cloud-tasks' },
+        }),
+        finding('Google Cloud', {
+          kind: 'go',
+          file: 'go.mod',
+          line: 3,
+          detail: {
+            signal: 'cloud.google.com/go/scheduler@v1.0.0',
+            package: 'cloud.google.com/go/scheduler',
+          },
+        }),
+      ]).candidates[0]?.unmappedServices,
+    ).toEqual(['cloud.google.com/go/scheduler', 'google-cloud-tasks']);
     expect(aws?.components.map(({ term }) => term)).toEqual(['Amazon Simple Storage Service']);
     const [stripe] = buildThirdPartyContext([finding('Stripe')]).candidates;
     expect(stripe?.unmappedServices).toEqual([]);

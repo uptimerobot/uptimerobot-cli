@@ -14,6 +14,8 @@ import { ApiFailure } from '../../api/errors.js';
 import { isPlainRecord } from '../objects.js';
 import { hasUnsafeCharacters } from '../scan/support.js';
 import type { ThirdPartyComponent } from '../scan/third-party-context.js';
+import { operations } from '../../generated/operations.js';
+import { buildUrl } from '../request.js';
 import {
   ABORTED_CODE,
   type ApiAccess,
@@ -31,7 +33,11 @@ export type ScopeReason =
   | 'too-many'
   | 'components-truncated'
   | 'unmapped-service'
-  | 'endpoint-unavailable';
+  | 'endpoint-unavailable'
+  | 'pinned-whole';
+
+/** What `--only <provider>=<id>:...` fixes for the create: these ids, or the whole provider. */
+export type Pin = 'all' | readonly number[];
 
 export interface TermOutcome {
   term: string;
@@ -56,6 +62,10 @@ export interface Scoping {
   /** Distinct leaves kept across every term, the number the cap is judged on. */
   totalLeaves: number;
   trackedComponents: readonly TrackedComponent[];
+  /** The `--only` value that repeats this row exactly: `AWS=248:9208,9108` or `AWS=248:all`. */
+  pin?: string;
+  /** Pinned ids the provider tree does not hold; the run is blocked on any. */
+  pinUnknownIds?: readonly number[];
 }
 
 /** Over this many kept leaves the whole provider is the coverage-first answer. */
@@ -117,18 +127,14 @@ export function keepsLeaf(leaf: Leaf, region: string | null): boolean {
   return region === null || leaf.global || leaf.region === region;
 }
 
-/**
- * Built by hand until the published contract carries the operation; the step
- * that refreshes `openapi/openapi.yaml` swaps this for `buildUrl(operations[...])`.
- */
+const COMPONENTS_LIST = operations['third-party-providers:components:list'];
+
 function componentsUrl(access: ApiAccess, providerId: number, term: string): URL {
-  const base = access.apiUrl.toString().replace(/\/?$/, '/');
-  const url = new URL(
-    `third-party-providers/${encodeURIComponent(String(providerId))}/components`,
-    base,
+  return buildUrl(
+    COMPONENTS_LIST,
+    { path: { id: providerId }, query: { search: term } },
+    access.apiUrl,
   );
-  url.searchParams.set('search', term);
-  return url;
 }
 
 /** The distinct (term, region) pairs of a candidate, in the scan's order. */
@@ -165,22 +171,22 @@ export function decideScope(
 
 class EndpointUnavailable extends Error {}
 
-/** Which call failed and how, so a log of the run names the term and the status. */
+/** Which call failed and how: the subject is the term searched, or the pinned provider tree. */
 function componentSearchFailure(
-  term: string,
+  subject: string,
   error: ApiFailure,
 ): { code: string; message: string } {
   const status = error.cliError.status === undefined ? '' : ` (HTTP ${error.cliError.status})`;
   return {
     code: COMPONENT_SEARCH_FAILED,
-    message: `component search for ${term} failed${status}: ${error.cliError.message}`,
+    message: `component search for ${subject} failed${status}: ${error.cliError.message}`,
   };
 }
 
-/** A search failure, carrying the term it was for. */
+/** A search failure, carrying what it was for: a term, or the pinned provider tree. */
 class ComponentSearchFailed extends Error {
   constructor(
-    readonly term: string,
+    readonly subject: string,
     readonly cause: ApiFailure,
   ) {
     super(cause.cliError.message);
@@ -201,7 +207,7 @@ async function searchComponents(
       const payload = await requestJson(
         access.client,
         componentsUrl(access, providerId, term),
-        'GET',
+        COMPONENTS_LIST.method,
       );
       leaves = collectLeaves(payload);
     } catch (error) {
@@ -227,6 +233,66 @@ async function searchComponents(
 }
 
 class OutOfTime extends Error {}
+
+const PROVIDER_GET = operations['third-party-providers:get'];
+
+const pinText = (provider: string, providerId: number, scoping: Scoping): string =>
+  scoping.scope === 'components'
+    ? `${provider}=${providerId}:${scoping.trackedComponents.map((leaf) => leaf.id).join(',')}`
+    : `${provider}=${providerId}:all`;
+
+/**
+ * A pinned row reads the provider's whole tree once and takes exactly the
+ * pinned ids from it; an id the tree does not hold is reported, never
+ * silently dropped. `all` makes a whole-provider row without any call.
+ */
+async function pinnedScoping(
+  row: ResolvedCandidate & { catalog: { id: number } },
+  pin: Pin,
+  access: ApiAccess,
+): Promise<{ scoping: Scoping; kept: TrackedComponent[] }> {
+  // No terms: a pinned row made no search, so no pin is owed on the confirm run.
+  const base = { terms: [], totalLeaves: 0 } as const;
+  if (pin === 'all') {
+    return {
+      scoping: { ...base, scope: 'whole', scopeReason: 'pinned-whole', trackedComponents: [] },
+      kept: [],
+    };
+  }
+  const url = buildUrl(PROVIDER_GET, { path: { id: row.catalog.id }, query: {} }, access.apiUrl);
+  let leaves: Map<number, Leaf>;
+  try {
+    const payload = await requestJson(access.client, url, PROVIDER_GET.method);
+    const record = isPlainRecord(payload) && isPlainRecord(payload.data) ? payload.data : payload;
+    const tree = isPlainRecord(record) ? record.components : undefined;
+    if (!Array.isArray(tree)) {
+      throw new ApiFailure(
+        { code: 'INVALID_RESPONSE', message: 'The provider read did not return a component tree.' },
+        1,
+      );
+    }
+    leaves = new Map(collectLeaves({ data: tree }).map((leaf) => [leaf.id, leaf]));
+  } catch (error) {
+    if (!(error instanceof ApiFailure)) throw error;
+    throw new ComponentSearchFailed(`the pinned ${row.provider} tree`, error);
+  }
+  const ids = [...new Set(pin)];
+  const trackedComponents = ids.flatMap((id) => {
+    const leaf = leaves.get(id);
+    return leaf === undefined ? [] : [{ id, name: leaf.name, term: '', region: leaf.region }];
+  });
+  const pinUnknownIds = ids.filter((id) => !leaves.has(id));
+  return {
+    scoping: {
+      ...base,
+      scope: 'components',
+      totalLeaves: trackedComponents.length,
+      trackedComponents,
+      ...(pinUnknownIds.length === 0 ? {} : { pinUnknownIds }),
+    },
+    kept: trackedComponents,
+  };
+}
 
 /** Transient failures in a row across every search of the run; a success resets it. */
 interface FailureCounter {
@@ -325,7 +391,12 @@ function trackedFields(
  */
 export async function scopeProposal(
   rows: readonly ResolvedCandidate[],
-  options: { access: ApiAccess; tracked: TrackedProviders; deadline: number },
+  options: {
+    access: ApiAccess;
+    tracked: TrackedProviders;
+    deadline: number;
+    pins?: ReadonlyMap<string, Pin>;
+  },
 ): Promise<ResolvedCandidate[]> {
   const scoped: ResolvedCandidate[] = [];
   const failures: FailureCounter = { consecutive: 0 };
@@ -334,13 +405,15 @@ export async function scopeProposal(
       scoped.push(row);
       continue;
     }
-    if (row.components.length === 0) {
+    const pin = row.status === 'create' ? options.pins?.get(row.provider) : undefined;
+    if (pin === undefined && row.components.length === 0) {
       // Nothing to ask, but a service without a term still says why the whole provider is tracked.
       const scoping = decideScope([], []);
       scoped.push({
         ...row,
         ...scoping,
         ...(row.unmappedServices.length > 0 ? { scopeReason: 'unmapped-service' as const } : {}),
+        ...(row.status === 'create' ? { pin: pinText(row.provider, row.catalog.id, scoping) } : {}),
         ...trackedFields(row, options.tracked, []),
       });
       continue;
@@ -368,14 +441,16 @@ export async function scopeProposal(
       continue;
     }
     try {
-      const { scoping, kept } = await scopeRow(
-        row,
-        row.catalog.id,
-        options.access,
-        options.deadline,
-        failures,
-      );
-      scoped.push({ ...row, ...scoping, ...trackedFields(row, options.tracked, kept) });
+      const { scoping, kept } =
+        pin === undefined
+          ? await scopeRow(row, row.catalog.id, options.access, options.deadline, failures)
+          : await pinnedScoping(row, pin, options.access);
+      scoped.push({
+        ...row,
+        ...scoping,
+        ...(row.status === 'create' ? { pin: pinText(row.provider, row.catalog.id, scoping) } : {}),
+        ...trackedFields(row, options.tracked, kept),
+      });
     } catch (error) {
       if (error instanceof OutOfTime) {
         scoped.push(
@@ -402,7 +477,7 @@ export async function scopeProposal(
       scoped.push({
         ...row,
         status: 'unresolved',
-        failure: componentSearchFailure(error.term, error.cause),
+        failure: componentSearchFailure(error.subject, error.cause),
       });
     }
   }

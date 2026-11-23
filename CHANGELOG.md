@@ -32,6 +32,12 @@ may change in minor releases.
     `trackedComponents`; an already-tracked row carries `monitor` and
     `untracked[]` and its Components cell says what the monitor covers, or
     that coverage is unknown when the monitor list never showed the monitor.
+  - `--only <provider>=<id>:<ids>` pins the components a confirm run creates
+    (`AWS=248:9208,9108`), `:all` pins the whole provider; every `create` row
+    carries its `pin`. Off a terminal, `--confirm` on a row with component
+    terms without its pin is `INVALID_INPUT` and prints the pin to pass; a
+    pin naming an id the provider tree does not hold blocks the run. The
+    setup guide tells the agent to confirm with the printed pin.
   - The `CATALOG_UNRESOLVED` message reads "The component search failed for
     X" when every unresolved row failed there; it still reads "The catalog
     could not resolve X" otherwise.

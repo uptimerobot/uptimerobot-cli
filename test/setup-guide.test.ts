@@ -216,9 +216,13 @@ describe('renderSetupGuide', () => {
       ),
     );
     expect(prose(guide)).toContain(
-      prose(
-        'one `--only <provider>=<id>` per approved row, with the catalog id from its `proposal[]` row',
-      ),
+      prose('one `--only` per approved row, copied from its `pin` in `proposal[]`'),
+    );
+    expect(prose(guide)).toContain(
+      prose('settle it with `--only <provider>=<id>` and no `--confirm` first'),
+    );
+    expect(prose(guide)).toContain(
+      prose('the components from `trackedComponents[]`, or the `scopeReason`'),
     );
     expect(prose(guide)).toContain(prose('Never confirm with `--skip`'));
     expect(prose(guide)).toContain(prose('need no base URL'));

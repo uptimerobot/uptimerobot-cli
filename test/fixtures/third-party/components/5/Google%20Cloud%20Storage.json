@@ -1,0 +1,21 @@
+{
+  "data": [
+    {
+      "id": 5100,
+      "name": "Google Cloud Storage",
+      "status": "operational",
+      "region": null,
+      "global": false,
+      "children": [
+        {
+          "id": 5101,
+          "name": "Google Cloud Storage (europe-west3)",
+          "status": "operational",
+          "region": { "code": "europe-west3", "name": "europe-west3" },
+          "global": false
+        }
+      ]
+    }
+  ],
+  "regionLike": false
+}

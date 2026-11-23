@@ -34,6 +34,7 @@ import {
 import {
   COMPONENT_SEARCH_FAILED,
   MAX_TRACKED_COMPONENTS,
+  type Pin,
   type ScopeReason,
   type Scoping,
   type TrackedComponent,
@@ -104,18 +105,63 @@ function normalizeName(name: string): string {
   return name.trim().toLowerCase();
 }
 
-/** Splits `Name=<id>` into its parts; a bare name has no id, a malformed id is reported as none. */
-export function parseOnly(entry: string): { name: string; id?: number } {
+const positiveId = (text: string): number | undefined => {
+  const id = Number(text);
+  return /^\d+$/.test(text) && Number.isSafeInteger(id) && id > 0 ? id : undefined;
+};
+
+/**
+ * Splits `Name=<id>[:<ids>|:all]` into its parts; a bare name has no id, a
+ * malformed id or pin is reported as none. The pin is what the confirm run
+ * creates: the component ids the proposal showed, or the whole provider.
+ */
+export function parseOnly(entry: string): { name: string; id?: number; pin?: Pin } {
   const equals = entry.lastIndexOf('=');
   if (equals === -1) return { name: normalizeName(entry) };
-  const id = Number(entry.slice(equals + 1));
   const name = normalizeName(entry.slice(0, equals));
-  return Number.isSafeInteger(id) && id > 0 ? { name, id } : { name };
+  const [idText = '', ...pinParts] = entry.slice(equals + 1).split(':');
+  const id = positiveId(idText);
+  if (id === undefined || pinParts.length > 1) return { name };
+  if (pinParts.length === 0) return { name, id };
+  const idList = pinParts[0] ?? '';
+  if (idList === 'all') return { name, id, pin: 'all' };
+  const ids = idList.split(',').map(positiveId);
+  return ids.some((item) => item === undefined)
+    ? { name }
+    : { name, id, pin: ids.filter((item): item is number => item !== undefined) };
 }
 
-/** The first `--only` entry with an `=` but no usable id, if any. */
+/** The first `--only` entry with an `=` but no usable id or pin, if any. */
 export function malformedOnly(only: readonly string[]): string | undefined {
   return only.find((entry) => entry.includes('=') && parseOnly(entry).id === undefined);
+}
+
+/** The pins of `--only`, by the exact provider name of the row they settle. */
+function pinsFor(
+  rows: readonly ResolvedCandidate[],
+  only: readonly string[],
+): ReadonlyMap<string, Pin> {
+  const pins = new Map<string, Pin>();
+  for (const entry of only) {
+    const { name, pin } = parseOnly(entry);
+    const row = rows.find((item) => normalizeName(item.provider) === name);
+    if (row !== undefined && pin !== undefined) pins.set(row.provider, pin);
+  }
+  return pins;
+}
+
+/** Two `--only` entries that pin one provider differently: the run cannot honour both. */
+export function conflictingPins(only: readonly string[]): string | undefined {
+  const seen = new Map<string, string>();
+  for (const entry of only) {
+    const { name, pin } = parseOnly(entry);
+    if (pin === undefined) continue;
+    const text = pin === 'all' ? 'all' : [...new Set(pin)].join(',');
+    const previous = seen.get(name);
+    if (previous !== undefined && previous !== text) return name;
+    seen.set(name, text);
+  }
+  return undefined;
 }
 
 /** The `--only` and `--skip` names that match no candidate: a typo would otherwise be a silent no-op. */
@@ -155,6 +201,59 @@ export function mismatchedOnly(
     if (resolved.length > 0 && !resolved.includes(id)) return { entry, resolved };
   }
   return undefined;
+}
+
+/** The first pinned row whose ids the provider tree does not hold: the user named a component that is not there. */
+export function mismatchedPin(
+  rows: readonly ResolvedCandidate[],
+): { provider: string; ids: readonly number[] } | undefined {
+  for (const row of rows) {
+    if (row.status !== 'create') continue;
+    const ids = row.pinUnknownIds ?? [];
+    if (ids.length > 0) return { provider: row.provider, ids };
+  }
+  return undefined;
+}
+
+export function pinMismatchError(mismatch: { provider: string; ids: readonly number[] }): CliError {
+  return {
+    code: 'INVALID_INPUT',
+    expected: 'component ids from the provider tree, or all',
+    message: `--only ${mismatch.provider} pins ${mismatch.ids.length === 1 ? 'component' : 'components'} ${mismatch.ids.join(', ')}, which the provider tree does not hold. Nothing was created; re-run without the pin to see the current components.`,
+    path: 'only',
+  };
+}
+
+/**
+ * Off a terminal the run that confirms is not the run that showed the
+ * proposal, so every `create` row with component terms must be pinned to
+ * what was shown; the unpinned ones, each with the pin to pass, if any.
+ */
+export function unpinnedRows(
+  rows: readonly ResolvedCandidate[],
+): { provider: string; pin: string; whole: string }[] {
+  return rows.flatMap((row) =>
+    row.status === 'create' && (row.terms?.length ?? 0) > 0 && row.pin !== undefined
+      ? [{ provider: row.provider, pin: row.pin, whole: `${row.provider}=${row.catalog.id}:all` }]
+      : [],
+  );
+}
+
+/** A `--only` value as it is typed in a shell: quoted when the provider name has a space. */
+const onlyArgument = (value: string): string =>
+  /[^\w=:,.-]/.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
+
+export function unpinnedError(rows: readonly { pin: string; whole: string }[]): CliError {
+  const pins = rows.map((row) => `--only ${onlyArgument(row.pin)}`).join(' ');
+  const wholes = rows.map((row) => `--only ${onlyArgument(row.whole)}`).join(' ');
+  return {
+    code: 'INVALID_INPUT',
+    expected: rows
+      .map((row) => `--only ${onlyArgument(row.pin)} or --only ${onlyArgument(row.whole)}`)
+      .join('; '),
+    message: `pass ${pins} to create what the proposal showed, or ${wholes} for the whole provider. Nothing was created.`,
+    path: 'only',
+  };
 }
 
 export function onlyMismatchError(mismatch: { entry: string; resolved: number[] }): CliError {
@@ -250,10 +349,13 @@ export async function prepareProposal(
   });
   const allowance = await readAllowance(access);
   // Scoped after the allowance, so a row that gets no slot costs no component search.
-  const proposal = await scopeProposal(
-    applyAllowance(applyOnlyChoices(resolved, selection.only, tracked), allowance),
-    { access, tracked, deadline },
-  );
+  const settled = applyAllowance(applyOnlyChoices(resolved, selection.only, tracked), allowance);
+  const proposal = await scopeProposal(settled, {
+    access,
+    tracked,
+    deadline,
+    pins: pinsFor(settled, selection.only),
+  });
   const proposed = proposal.filter((row) => row.status === 'create').length;
   return {
     proposal,
@@ -372,6 +474,12 @@ export async function runApply(options: {
   selection: ApplySelection;
   access: ApiAccess;
   confirmFlag: boolean;
+  /**
+   * True when no one can see the proposal before the creates (`--confirm` off
+   * a terminal): every scoped row must then carry its pin. A caller that
+   * leaves it out turns the guard off, so only a terminal flow may.
+   */
+  requirePins?: boolean;
   confirm: (proposal: Proposal, toCreate: number) => Promise<Confirmation>;
   onProposal?: (proposal: Proposal) => void;
 }): Promise<ApplyRun> {
@@ -379,6 +487,19 @@ export async function runApply(options: {
   const mismatch = mismatchedOnly(proposal.proposal, options.selection.only);
   if (mismatch !== undefined) {
     return { proposal, confirmation: 'blocked', results: [], blocked: onlyMismatchError(mismatch) };
+  }
+  const pinMismatch = mismatchedPin(proposal.proposal);
+  if (pinMismatch !== undefined) {
+    return {
+      proposal,
+      confirmation: 'blocked',
+      results: [],
+      blocked: pinMismatchError(pinMismatch),
+    };
+  }
+  const unpinned = options.requirePins === true ? unpinnedRows(proposal.proposal) : [];
+  if (unpinned.length > 0) {
+    return { proposal, confirmation: 'blocked', results: [], blocked: unpinnedError(unpinned) };
   }
   options.onProposal?.(proposal);
   const toCreate = proposal.allowance.proposed;
@@ -451,6 +572,7 @@ const SCOPE_REASONS: Record<
   'unmapped-service': ({ unmappedServices }) =>
     `${(unmappedServices ?? []).join(', ')} has no component in the table; tracking the whole provider`,
   'endpoint-unavailable': () => 'component search unavailable; tracking the whole provider',
+  'pinned-whole': () => 'pinned to the whole provider',
 };
 
 function foldNames(names: readonly string[]): string {
@@ -503,7 +625,12 @@ function componentLines(row: ResolvedCandidate): string[] {
     return plain(`- ${row.provider}, ${leaf.name}: ${[...evidence, ...region].join(', ')}`);
   });
   const more = leaves.length - lines.length;
-  return more > 0 ? [...lines, `- ${row.provider}: +${more} more components, see --json`] : lines;
+  const folded =
+    more > 0 ? [...lines, `- ${row.provider}: +${more} more components, see --json`] : lines;
+  // The pin repeats this exact row on a confirm run; a person reads it here, an agent in the JSON.
+  return row.pin === undefined
+    ? folded
+    : [...folded, `- ${row.provider} pin: --only ${onlyArgument(row.pin)}`];
 }
 
 function evidenceCell(row: ResolvedCandidate): string {
