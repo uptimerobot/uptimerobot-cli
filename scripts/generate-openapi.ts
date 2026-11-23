@@ -196,8 +196,11 @@ function collectOperations(document: OpenApiDocument): OperationDefinition[] {
       if (!operation) continue;
 
       const commandId = commandIdFor(method, path);
+      // A header is never a flag: the API client sets every one it sends
+      // (authorization, attribution), so a contract that lists one, even as
+      // required, asks nothing of the person at the terminal.
       const parameters = [...(pathItem.parameters ?? []), ...(operation.parameters ?? [])]
-        .filter((parameter) => parameter.name && parameter.in)
+        .filter((parameter) => parameter.name && parameter.in && parameter.in !== 'header')
         .map((parameter) => ({
           ...(parameter.schema?.default !== undefined ? { default: parameter.schema.default } : {}),
           ...(parameter.description ? { description: parameter.description } : {}),
