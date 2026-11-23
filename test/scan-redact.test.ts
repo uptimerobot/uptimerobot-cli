@@ -121,6 +121,14 @@ describe('redactSecrets, round four', () => {
     );
   });
 
+  it('never reads a host and query as a username', () => {
+    const url = 'https://api.example.com?notify=ops:team@example.net';
+    expect(redactSecrets(`curl ${url}`)).toBe(`curl ${url}`);
+    expect(redactSecrets('curl https://api.example.com#x:y@z')).toBe(
+      'curl https://api.example.com#x:y@z',
+    );
+  });
+
   it('masks a clipped quoted credential whose cut lands right after a backslash', () => {
     const prefix = 'tool --password "hunter2\\';
     const clipped = redactClipped(`${prefix}${'p'.repeat(3000)}"`, prefix.length);

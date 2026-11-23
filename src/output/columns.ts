@@ -36,6 +36,7 @@ export const COLLECTION_COMMAND_IDS = [
   'tags:list',
   'third-party-providers:components:list',
   'third-party-providers:list',
+  'third-party-services:maintenances',
   'user:alert-contacts',
   'user:all-alert-contacts',
 ] as const satisfies readonly OperationCommandId[];
@@ -159,6 +160,7 @@ export const COMMAND_COLUMNS = {
   'third-party-providers:components:list': [
     { key: 'id' },
     { key: 'name', maxWidth: 48 },
+    { key: 'parent', maxWidth: 40 },
     { key: 'status' },
     { header: 'REGION', key: 'region.code' },
     { key: 'global' },
@@ -169,6 +171,14 @@ export const COMMAND_COLUMNS = {
     { key: 'state' },
     { header: 'TRACKED', key: 'isTracked' },
     { header: 'STATUS PAGE', key: 'statusPageUrl', maxWidth: 40 },
+  ],
+  'third-party-services:maintenances': [
+    { key: 'id' },
+    { header: 'SERVICE', key: 'serviceId' },
+    { key: 'impact' },
+    { key: 'title', maxWidth: 48 },
+    { header: 'FROM', key: 'scheduledFor' },
+    { header: 'UNTIL', key: 'scheduledUntil' },
   ],
   'user:alert-contacts': ALERT_CONTACT_COLUMNS,
   'user:all-alert-contacts': [

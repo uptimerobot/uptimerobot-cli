@@ -679,6 +679,18 @@ describe('scanContainers — round three', () => {
     expect(rewrite?.detail?.destinationHost).toBe('10.0.0.5');
   });
 
+  it('keeps the host of the probe it reports, not of a URL the redaction removed before it', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        'FROM x\nHEALTHCHECK CMD TOKEN=https://auth.example.com/session curl http://127.0.0.1:8080/health\n',
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).toBe('http://127.0.0.1:8080/health');
+    expect(finding?.detail?.host).toBe('127.0.0.1');
+  });
+
   it('keeps a CMD-SHELL script as written so a quoted credential inside it is still masked', async () => {
     const root = await temporaryRepo({
       'docker-compose.yml': [
