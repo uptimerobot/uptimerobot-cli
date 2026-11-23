@@ -146,6 +146,7 @@ describe('uptimerobot scan', () => {
               ],
             },
           ],
+          componentsTruncated: false,
         },
         {
           provider: 'Stripe',
@@ -155,6 +156,7 @@ describe('uptimerobot scan', () => {
             { file: 'package.json', line: 3, kind: 'npm', signal: 'stripe@17.4.0', app: '.' },
           ],
           components: [],
+          componentsTruncated: false,
         },
       ],
       totals: { skipped: 1, unknown: 1 },

@@ -172,13 +172,13 @@ The scan reads dependency manifests (`package.json`, `requirements*.txt`, `pypro
 
 ### Runtime (proposed by default)
 
-- AWS: boto3@1.35.80 (requirements.txt:2), infra/main.tf:1 (provider "aws"); signals: eu-central-1, s3
+- AWS: boto3@1.35.80 (requirements.txt:2), infra/main.tf:1 (provider "aws"), infra/main.tf:4 (aws_s3); signals: Amazon Simple Storage Service (eu-central-1)
 - Stripe: stripe@17.4.0 (package.json:9)
 - Vercel: vercel.json
 
 ### Build-time (optional, affects deploys, not users)
 
-- GitHub: git remote: github.com, .github/workflows/ci.yml
+- GitHub: git remote: github.com, .github/workflows/ci.yml; signals: Actions, Git Operations
 
 ### Skipped
 

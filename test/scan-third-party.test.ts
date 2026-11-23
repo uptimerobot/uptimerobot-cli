@@ -2,6 +2,8 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { COMPONENT_RULES } from '../src/lib/scan/components.js';
+import { buildThirdPartyContext } from '../src/lib/scan/third-party-context.js';
 import {
   type ThirdPartyFinding,
   isSecretFile,
@@ -460,5 +462,73 @@ describe('scanThirdParty', () => {
 
   it('returns nothing for a missing directory', async () => {
     expect(await scanThirdParty(join(tmpdir(), 'uptimerobot-cli-does-not-exist'))).toEqual([]);
+  });
+});
+
+describe('every component rule reaches a candidate through the scan', () => {
+  const PREFIX: Record<string, string> = {
+    AWS: 'aws_',
+    'Google Cloud': 'google_',
+    'Microsoft Azure': 'azurerm_',
+    Cloudflare: 'cloudflare_',
+    GitHub: '',
+  };
+  const PROVIDER: Record<string, string> = {
+    AWS: 'aws',
+    'Google Cloud': 'google',
+    'Microsoft Azure': 'azurerm',
+    Cloudflare: 'cloudflare',
+  };
+  /** A registry substring needs a real host around it. */
+  const REGISTRY_HOSTS: Record<string, string> = {
+    '.dkr.ecr.': '123456789012.dkr.ecr.eu-central-1.amazonaws.com',
+    '.pkg.dev': 'europe-west3-docker.pkg.dev',
+  };
+  /** One repository per rule, built from its first signal of each kind. */
+  const cases = [...COMPONENT_RULES.entries()].flatMap(([provider, rules]) =>
+    rules.flatMap((rule) => {
+      const files: Record<string, string>[] = [];
+      const resource =
+        rule.resources?.[0] ?? (rule.services?.[0] && `${PREFIX[provider]}${rule.services[0]}_x`);
+      if (resource !== undefined)
+        files.push({
+          'infra/main.tf': `provider "${PROVIDER[provider]}" {}\nresource "${resource}" "r" {}\n`,
+        });
+      for (const pkg of rule.packages ?? []) {
+        const name = pkg.endsWith('*') ? `${pkg.slice(0, -1)}rest` : pkg;
+        if (name.startsWith('cloud.google.com/'))
+          files.push({ 'go.mod': `module x\n\nrequire ${name} v1.0.0\n` });
+        else if (name.startsWith('google-cloud-'))
+          files.push({ 'requirements.txt': `${name}==1.0\n` });
+        else files.push({ 'package.json': JSON.stringify({ dependencies: { [name]: '1.0.0' } }) });
+      }
+      for (const signal of rule.signals ?? []) {
+        if (signal.endsWith('.toml') || signal.endsWith('.jsonc') || signal.endsWith('.yaml'))
+          files.push({ [signal]: '' });
+        else if (signal.startsWith('ci: '))
+          files.push({ [`${signal.slice(4)}ci.yml`]: 'on: push\n' });
+        else if (signal.startsWith('git remote: '))
+          files.push({
+            '.git/config': `[remote "origin"]\n\turl = https://${signal.slice(12)}/o/r.git\n`,
+          });
+        else
+          files.push({
+            Dockerfile: `FROM ${REGISTRY_HOSTS[signal] ?? signal}/image:1\n`,
+          });
+      }
+      return files.map((repo) => ({ provider, term: rule.term, repo }));
+    }),
+  );
+
+  it.each(cases)('$provider: $term', async ({ provider, term, repo }) => {
+    const root = await writeRepository(repo);
+    const findings = await scanThirdParty(root);
+    const candidate = buildThirdPartyContext(findings).candidates.find(
+      (c) => c.provider === provider,
+    );
+    expect(
+      candidate?.components.map((item) => item.term),
+      JSON.stringify(repo),
+    ).toContain(term);
   });
 });

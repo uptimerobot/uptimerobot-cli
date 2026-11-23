@@ -50,6 +50,8 @@ export interface ThirdPartyCandidate {
   evidence: readonly ThirdPartyEvidence[];
   /** Empty for every provider outside the five tracked by component. */
   components: readonly ThirdPartyComponent[];
+  /** True when a term was seen in more regions than {@link MAX_REGIONS_PER_TERM} and the rest were dropped. */
+  componentsTruncated: boolean;
 }
 
 export type ThirdPartyMentionReason = 'framework' | 'protocol-client' | 'unmapped' | 'hint';
@@ -126,7 +128,7 @@ export function buildThirdPartyContext(findings: readonly ThirdPartyFinding[]): 
         ? 'runtime'
         : 'build-time',
       evidence: uniqueEvidence(vendorSignals),
-      components: componentsOf(vendorSignals),
+      ...componentsOf(vendorSignals),
     });
   }
 
@@ -167,8 +169,8 @@ function regionOf(finding: ThirdPartyFinding): ComponentRegion | null {
   return { code: detail.region, declaredAt: { file: finding.evidence.file, line } };
 }
 
-/** Component entries kept per provider; a repository of many fake regions stops here. */
-const MAX_COMPONENTS_PER_PROVIDER = 20;
+/** Regions kept per term; a repository of many fake regions stops here, and never costs a term. */
+export const MAX_REGIONS_PER_TERM = 5;
 
 /**
  * Groups the findings that name a component by term. A term with no region
@@ -177,7 +179,11 @@ const MAX_COMPONENTS_PER_PROVIDER = 20;
  * count for every region. A terraform resource without a region stays its
  * own `null` entry, since its file either names no region or spans several.
  */
-function componentsOf(findings: readonly ThirdPartyFinding[]): ThirdPartyComponent[] {
+function componentsOf(findings: readonly ThirdPartyFinding[]): {
+  components: ThirdPartyComponent[];
+  componentsTruncated: boolean;
+} {
+  let componentsTruncated = false;
   const byTerm = new Map<
     string,
     { finding: ThirdPartyFinding; region: ComponentRegion | null }[]
@@ -189,7 +195,7 @@ function componentsOf(findings: readonly ThirdPartyFinding[]): ThirdPartyCompone
     items.push({ finding, region: regionOf(finding) });
     byTerm.set(term, items);
   }
-  return [...byTerm.entries()]
+  const components = [...byTerm.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .flatMap(([term, items]): ThirdPartyComponent[] => {
       const regions = new Map<string, ComponentRegion>();
@@ -209,8 +215,12 @@ function componentsOf(findings: readonly ThirdPartyFinding[]): ThirdPartyCompone
             .map(({ finding }) => finding),
         );
       const unplaced = items.filter((item) => item.region === null && isTerraform(item));
-      const regional = [...regions.values()]
-        .sort((left, right) => left.code.localeCompare(right.code))
+      const sorted = [...regions.values()].sort((left, right) =>
+        left.code.localeCompare(right.code),
+      );
+      if (sorted.length > MAX_REGIONS_PER_TERM) componentsTruncated = true;
+      const regional = sorted
+        .slice(0, MAX_REGIONS_PER_TERM)
         .map((region) => ({ term, region, evidence: evidenceIn(region.code) }));
       if (regions.size === 0) return [{ term, region: null, evidence: evidenceIn(null) }];
       return unplaced.length === 0
@@ -223,8 +233,8 @@ function componentsOf(findings: readonly ThirdPartyFinding[]): ThirdPartyCompone
             },
             ...regional,
           ];
-    })
-    .slice(0, MAX_COMPONENTS_PER_PROVIDER);
+    });
+  return { components, componentsTruncated };
 }
 
 // --- Rendering ---------------------------------------------------------------
@@ -275,8 +285,9 @@ function providerLine(candidate: ThirdPartyCandidate): string {
   const terms = candidate.components.map(({ term, region }) =>
     region === null ? term : `${term} (${region.code})`,
   );
+  const more = candidate.componentsTruncated ? ', more regions than listed' : '';
   const signals =
-    terms.length === 0 ? '' : `; signals: ${capped(terms, MAX_NAMES_PER_LINE).join(', ')}`;
+    terms.length === 0 ? '' : `; signals: ${capped(terms, MAX_NAMES_PER_LINE).join(', ')}${more}`;
   return `${candidate.provider}: ${items.join(', ')}${signals}`;
 }
 
