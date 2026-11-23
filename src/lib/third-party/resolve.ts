@@ -28,12 +28,23 @@ import { PAGE_SIZE, pageThrough } from '../paginate.js';
 import { buildUrl } from '../request.js';
 import type { ThirdPartyCandidate } from '../scan/third-party-context.js';
 import { normalizeCatalogName } from '../scan/vendors.js';
+import type { Scoping } from './scope.js';
 
 export type { ApiAccess } from '../auth.js';
 
-/** The provider ids of the account's third-party services, and whether the list was cut short. */
+/** One third-party service monitor of the account, as far as scoping needs it. */
+export interface TrackedMonitor {
+  monitorId: number;
+  providerId: number;
+  /** `null` tracks every component. */
+  trackedComponentIds: readonly number[] | null;
+  needsReview: boolean;
+}
+
+/** The account's third-party services by provider id, and whether the list was cut short. */
 export interface TrackedProviders {
   providerIds: readonly number[];
+  monitors: readonly TrackedMonitor[];
   partial: boolean;
 }
 
@@ -69,7 +80,11 @@ export type ResolvedCandidate =
       catalog: CatalogRow;
       /** True when other rows start with the provider's name and a space (`Datadog EU` beside `Datadog`). */
       regionDefaulted: boolean;
-    })
+      /** The account's monitor for the provider, on an `already-tracked` row that was scoped. */
+      monitor?: TrackedMonitor;
+      /** Kept leaf names the monitor's list does not hold, on an `already-tracked` row. */
+      untracked?: readonly string[];
+    } & Partial<Scoping>)
   | (ThirdPartyCandidate & { status: 'ambiguous'; choices: readonly CatalogChoice[] })
   | (ThirdPartyCandidate & { status: 'not-in-catalog'; seen: readonly string[] })
   | (ThirdPartyCandidate & { status: 'unresolved'; failure: ResolutionFailure });
@@ -85,12 +100,29 @@ const USER_ME = operations['user:me'];
 /** Names kept on a `not-in-catalog` row, enough to explain the miss without a repro. */
 const MAX_SEEN_NAMES = 10;
 /** Consecutive transient failures after which the remaining candidates are left unresolved. */
-const MAX_CONSECUTIVE_FAILURES = 3;
+export const MAX_CONSECUTIVE_FAILURES = 3;
 /** Wall-clock budget for the searches; each retried 429 can cost ten seconds. */
-const DEFAULT_TIME_BUDGET_MS = 60_000;
+export const DEFAULT_TIME_BUDGET_MS = 60_000;
 export const ABORTED_CODE = 'ABORTED_AFTER_FAILURES';
 export const TIME_BUDGET_CODE = 'ABORTED_AFTER_TIME_BUDGET';
 const TRANSIENT_STATUSES = new Set([408, 429]);
+
+function trackedMonitor(item: unknown): TrackedMonitor | undefined {
+  if (!isPlainRecord(item) || typeof item.id !== 'number') return undefined;
+  const providerId = trackedProviderId(item);
+  if (providerId === undefined) return undefined;
+  const config = isPlainRecord(item.config) ? item.config : {};
+  const service = isPlainRecord(config.thirdPartyService) ? config.thirdPartyService : {};
+  const ids = service.trackedComponentIds;
+  return {
+    monitorId: item.id,
+    providerId,
+    trackedComponentIds: Array.isArray(ids)
+      ? ids.filter((id): id is number => typeof id === 'number')
+      : null,
+    needsReview: service.needsReview === true,
+  };
+}
 
 function trackedProviderId(item: unknown): number | undefined {
   if (!isPlainRecord(item) || item.type !== 'THIRD_PARTY_SERVICE') return undefined;
@@ -102,6 +134,8 @@ function trackedProviderId(item: unknown): number | undefined {
 /** Pages the account's monitors and keeps the provider id of every third-party service. */
 export async function readTrackedProviders(access: ApiAccess): Promise<TrackedProviders> {
   const providerIds = new Set<number>();
+  const monitors: TrackedMonitor[] = [];
+  const seenMonitors = new Set<number>();
   const { truncated } = await pageThrough({
     fetchPage: (cursor) =>
       requestJson(
@@ -111,12 +145,15 @@ export async function readTrackedProviders(access: ApiAccess): Promise<TrackedPr
       ),
     onItems: (items) => {
       for (const item of items) {
-        const id = trackedProviderId(item);
-        if (id !== undefined) providerIds.add(id);
+        const monitor = trackedMonitor(item);
+        if (monitor === undefined || seenMonitors.has(monitor.monitorId)) continue;
+        seenMonitors.add(monitor.monitorId);
+        providerIds.add(monitor.providerId);
+        monitors.push(monitor);
       }
     },
   });
-  return { providerIds: [...providerIds], partial: truncated };
+  return { providerIds: [...providerIds], monitors, partial: truncated };
 }
 
 function searchRow(item: unknown): CatalogChoice | undefined {
@@ -195,10 +232,12 @@ export interface ResolveOptions {
   tracked: TrackedProviders;
   /** Milliseconds the searches may take in all; the rest are left unresolved. */
   timeBudgetMs?: number;
+  /** An absolute deadline shared with the component searches; wins over `timeBudgetMs`. */
+  deadline?: number;
 }
 
 /** A failure a retry may clear, which counts toward the abort; a 400 is this term's alone. */
-function isTransient(error: ApiFailure): boolean {
+export function isTransient(error: ApiFailure): boolean {
   const status = error.cliError.status;
   if (status === undefined) return true;
   return TRANSIENT_STATUSES.has(status) || status >= 500;
@@ -237,7 +276,8 @@ export async function resolveCandidates(
       : []),
   ];
   const resolved: ResolvedCandidate[] = [];
-  const deadline = Date.now() + (options.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS);
+  const deadline =
+    options.deadline ?? Date.now() + (options.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS);
   let consecutiveFailures = 0;
   for (const candidate of ordered) {
     const aborted =

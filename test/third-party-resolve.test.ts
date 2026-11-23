@@ -97,6 +97,7 @@ function candidate(
     ],
     components: [],
     componentsTruncated: false,
+    unmappedServices: [],
     ...overrides,
   };
 }
@@ -114,7 +115,7 @@ function thirdPartyMonitor(id: number, providerId: number): Record<string, unkno
 const statuses = (resolved: readonly ResolvedCandidate[]): [string, string][] =>
   resolved.map((item) => [item.provider, item.status]);
 
-const NONE = { providerIds: [], partial: false };
+const NONE = { providerIds: [], monitors: [], partial: false };
 
 describe('readTrackedProviders', () => {
   it('collects provider ids of third-party monitors across pages', async () => {
@@ -127,8 +128,15 @@ describe('readTrackedProviders', () => {
         ok({ data: [thirdPartyMonitor(3, 1124), thirdPartyMonitor(4, 801)] }),
       ],
     });
+    const monitor = (monitorId: number, providerId: number) => ({
+      monitorId,
+      providerId,
+      trackedComponentIds: null,
+      needsReview: false,
+    });
     expect(await readTrackedProviders(access)).toEqual({
       providerIds: [801, 1124],
+      monitors: [monitor(1, 801), monitor(3, 1124), monitor(4, 801)],
       partial: false,
     });
     expect(requests).toEqual(['/v3/monitors?limit=200', '/v3/monitors?cursor=p2&limit=200']);
@@ -146,7 +154,11 @@ describe('readTrackedProviders', () => {
   it('stops on a cursor it has already followed and calls the set partial', async () => {
     const loop = ok({ data: [thirdPartyMonitor(1, 801)], nextCursor: 'again' });
     const { access, requests } = stubApi({ monitors: [loop, loop, loop] });
-    expect(await readTrackedProviders(access)).toEqual({ providerIds: [801], partial: true });
+    expect(await readTrackedProviders(access)).toMatchObject({
+      providerIds: [801],
+      monitors: [{ monitorId: 1, providerId: 801 }],
+      partial: true,
+    });
     expect(requests).toHaveLength(2);
   });
 
@@ -195,7 +207,11 @@ describe('readTrackedProviders', () => {
         }),
       ],
     });
-    expect(await readTrackedProviders(access)).toEqual({ providerIds: [7], partial: false });
+    expect(await readTrackedProviders(access)).toMatchObject({
+      providerIds: [7],
+      monitors: [{ providerId: 7 }],
+      partial: false,
+    });
   });
 
   it('throws the API failure so the command can map it', async () => {
@@ -281,7 +297,7 @@ describe('resolveCandidates', () => {
     const resolved = await resolveCandidates([candidate('Stripe')], {
       access,
       includeBuildTime: false,
-      tracked: { providerIds: [801], partial: false },
+      tracked: { providerIds: [801], monitors: [], partial: false },
     });
     expect(statuses(resolved)).toEqual([['Stripe', 'already-tracked']]);
   });
@@ -329,7 +345,7 @@ describe('resolveCandidates', () => {
     const resolved = await resolveCandidates([candidate('Vercel'), candidate('Stripe')], {
       access,
       includeBuildTime: false,
-      tracked: { providerIds: [803], partial: false },
+      tracked: { providerIds: [803], monitors: [], partial: false },
     });
     expect(resolved[0]).toMatchObject({ status: 'ambiguous' });
     const ambiguous = resolved[0];
@@ -624,6 +640,7 @@ describe('resolveCandidates', () => {
       class: 'runtime',
       components,
       componentsTruncated: true,
+      unmappedServices: [],
       evidence: [{ file: 'package.json', line: 3 }],
       regionDefaulted: false,
     });

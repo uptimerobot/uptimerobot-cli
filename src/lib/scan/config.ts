@@ -132,7 +132,10 @@ const MAX_LINE_LENGTH = 4096;
 
 const TF_PROVIDER = /^\s*provider\s+"([a-z0-9_-]{1,64})"/;
 const TF_RESOURCE = /^\s*(?:resource|data)\s+"([a-z0-9_]{1,128})"/;
-const TF_REGION = /^\s*region\s*=\s*"([^"\n]{0,64})"/;
+/** A complete quoted literal, a trailing comment allowed; any other expression is unreadable. */
+const TF_REGION = /^\s*region\s*=\s*"([^"\n]{0,64})"\s*(?:(?:#|\/\/).*)?$/;
+/** Any `region =` line, so a value the scan cannot read still counts against the block. */
+const TF_REGION_LINE = /^\s*region\s*=/;
 const DOCKER_FROM = /^\s*from\s+(?:--platform=\S+\s+)?(\S+)/i;
 const COMPOSE_IMAGE = /^\s*(?:-\s+)?image:\s*["']?([^\s"'#]+)/;
 const GIT_URL = /^\s*url\s*=\s*(\S+)/;
@@ -276,6 +279,14 @@ function terraform(contents: string): Match[] {
   const regions = new Map<string, { value: string; line: number }>();
   /** Provider names whose blocks in this file name two different regions; neither is reported. */
   const disagreed = new Set<string>();
+  /** Providers with a block that named no region at all; a literal from an aliased block must not stand in. */
+  const silent = new Set<string>();
+  let blockNamedRegion = false;
+  const closeProviderBlock = (): void => {
+    if (currentProvider !== undefined && !blockNamedRegion) silent.add(currentProvider);
+    currentProvider = undefined;
+    providerDepth = -1;
+  };
   let fileRegion: { value: string; line: number } | undefined;
   // A region counts for the provider whose block it sits in, directly: once
   // the block closes the provider is forgotten, and a region after the first
@@ -297,15 +308,13 @@ function terraform(contents: string): Match[] {
     if (opener !== -1) inBlockComment = !raw.includes('*/', opener);
     depth += pendingDelta;
     pendingDelta = braceDelta(line);
-    if (providerDepth !== -1 && depth < providerDepth) {
-      currentProvider = undefined;
-      providerDepth = -1;
-    }
+    if (providerDepth !== -1 && depth < providerDepth) closeProviderBlock();
     const provider = TF_PROVIDER.exec(line)?.[1];
     if (provider !== undefined) {
       const entry = entryFor('terraform-provider', provider);
       currentProvider = entry?.catalogName ?? UNKNOWN_PROVIDER;
       providerDepth = depth + 1;
+      blockNamedRegion = false;
       seenProvider = true;
       if (entry !== undefined) {
         matches.push({
@@ -337,23 +346,37 @@ function terraform(contents: string): Match[] {
       continue;
     }
     const value = TF_REGION.exec(line)?.[1];
-    if (value === undefined || !REGION.test(value)) continue;
+    if (value === undefined || !REGION.test(value)) {
+      // A region the scan cannot read (`var.region`, an interpolation) in a
+      // provider block: no literal from another block of that provider may
+      // stand in for it, so the provider keeps no region in this file.
+      if (TF_REGION_LINE.test(line) && currentProvider !== undefined && depth === providerDepth) {
+        disagreed.add(currentProvider);
+        blockNamedRegion = true;
+      }
+      continue;
+    }
     if (currentProvider === undefined) {
       if (!seenProvider && depth === 0 && fileRegion === undefined) {
         fileRegion = { value, line: index + 1 };
       }
     } else if (depth === providerDepth) {
+      blockNamedRegion = true;
       const known = regions.get(currentProvider);
       if (known === undefined) regions.set(currentProvider, { value, line: index + 1 });
       else if (known.value !== value) disagreed.add(currentProvider);
     }
   }
+  closeProviderBlock();
   return matches.map((match) => {
     const name = match.entry.catalogName;
     if (!REGION_VENDORS.has(name)) return match;
     // Two blocks of one provider with different regions: neither one, and not
     // the file default either, since the file plainly spans regions.
-    const region = disagreed.has(name) ? undefined : (regions.get(name) ?? fileRegion);
+    // A block of the provider that named no region takes it from the
+    // environment, so a literal from an aliased block must not stand in.
+    const unknown = disagreed.has(name) || (silent.has(name) && regions.has(name));
+    const region = unknown ? undefined : (regions.get(name) ?? fileRegion);
     return region === undefined
       ? match
       : { ...match, region: region.value, regionLine: region.line };

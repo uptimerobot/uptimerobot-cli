@@ -1,0 +1,13 @@
+{
+  "data": [
+    {
+      "id": 9400,
+      "name": "Amazon CloudFront",
+      "status": "operational",
+      "region": null,
+      "global": true,
+      "children": []
+    }
+  ],
+  "regionLike": false
+}

@@ -1,0 +1,94 @@
+{
+  "data": [
+    {
+      "id": 9200,
+      "name": "Amazon Relational Database Service",
+      "status": "operational",
+      "region": null,
+      "global": false,
+      "children": [
+        {
+          "id": 9201,
+          "name": "Amazon Relational Database Service (N. Virginia)",
+          "status": "operational",
+          "region": {
+            "code": "us-east-1",
+            "name": "N. Virginia"
+          },
+          "global": false
+        },
+        {
+          "id": 9202,
+          "name": "Amazon Relational Database Service (Ohio)",
+          "status": "operational",
+          "region": {
+            "code": "us-east-2",
+            "name": "Ohio"
+          },
+          "global": false
+        },
+        {
+          "id": 9203,
+          "name": "Amazon Relational Database Service (N. California)",
+          "status": "operational",
+          "region": {
+            "code": "us-west-1",
+            "name": "N. California"
+          },
+          "global": false
+        },
+        {
+          "id": 9204,
+          "name": "Amazon Relational Database Service (Oregon)",
+          "status": "operational",
+          "region": {
+            "code": "us-west-2",
+            "name": "Oregon"
+          },
+          "global": false
+        },
+        {
+          "id": 9205,
+          "name": "Amazon Relational Database Service (Ireland)",
+          "status": "operational",
+          "region": {
+            "code": "eu-west-1",
+            "name": "Ireland"
+          },
+          "global": false
+        },
+        {
+          "id": 9206,
+          "name": "Amazon Relational Database Service (London)",
+          "status": "operational",
+          "region": {
+            "code": "eu-west-2",
+            "name": "London"
+          },
+          "global": false
+        },
+        {
+          "id": 9207,
+          "name": "Amazon Relational Database Service (Paris)",
+          "status": "operational",
+          "region": {
+            "code": "eu-west-3",
+            "name": "Paris"
+          },
+          "global": false
+        },
+        {
+          "id": 9208,
+          "name": "Amazon Relational Database Service (Frankfurt)",
+          "status": "operational",
+          "region": {
+            "code": "eu-central-1",
+            "name": "Frankfurt"
+          },
+          "global": false
+        }
+      ]
+    }
+  ],
+  "regionLike": false
+}
