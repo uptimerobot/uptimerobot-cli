@@ -172,13 +172,13 @@ The scan reads dependency manifests (`package.json`, `requirements*.txt`, `pypro
 
 ### Runtime (proposed by default)
 
-- AWS: boto3@1.35.80 (requirements.txt:2), infra/main.tf:1 (provider "aws"); signals: eu-central-1, s3
+- AWS: boto3@1.35.80 (requirements.txt:2), infra/main.tf:1 (provider "aws"), infra/main.tf:4 (aws_s3); signals: Amazon Simple Storage Service (eu-central-1)
 - Stripe: stripe@17.4.0 (package.json:9)
 - Vercel: vercel.json
 
 ### Build-time (optional, affects deploys, not users)
 
-- GitHub: git remote: github.com, .github/workflows/ci.yml
+- GitHub: git remote: github.com, .github/workflows/ci.yml; signals: Actions, Git Operations
 
 ### Skipped
 
@@ -186,7 +186,7 @@ The scan reads dependency manifests (`package.json`, `requirements*.txt`, `pypro
 - pg (protocol client, self-hosted or unknown)
 ```
 
-The JSON output carries the same data under `thirdParty` (`candidates`, `skipped`, `unknown`, `totals`), and the seed context schema is 2.
+The JSON output carries the same data under `thirdParty` (`candidates`, `skipped`, `unknown`, `totals`), and the seed context schema is 3.
 
 `uptimerobot scan --apply` turns the runtime candidates into third-party services. It needs an API key like every other authenticated command and fails with the usual authentication error before any request when none resolves. It reads the account's third-party services and allowance, searches the catalog once per provider, prints a proposal, asks, then creates:
 

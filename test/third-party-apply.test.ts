@@ -29,7 +29,8 @@ function candidate(
         app: '.',
       },
     ],
-    hints: [],
+    components: [],
+    componentsTruncated: false,
   };
 }
 

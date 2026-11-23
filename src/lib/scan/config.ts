@@ -30,6 +30,7 @@
  */
 import type { ScanFinding } from './finding.js';
 import { hasUnsafeCharacters } from './support.js';
+import { terraformComponent } from './components.js';
 import { VENDORS, type VendorClass, type VendorEntry, type VendorSignal } from './vendors.js';
 
 type ConfigSignal = Exclude<VendorSignal, { kind: 'package' | 'hostname' }>;
@@ -49,8 +50,12 @@ export interface ConfigFinding extends ScanFinding {
     class: VendorClass;
     /** The plain service word of a terraform resource type (`s3` of `aws_s3_bucket`). */
     service: string;
+    /** The built-in component term the full resource type names, empty when none does. */
+    component: string;
     /** The plain region word of the same terraform file (`eu-central-1`). */
     region: string;
+    /** The line the region was read from, as text like every detail; empty when there is none. */
+    regionLine: string;
   };
 }
 
@@ -67,7 +72,9 @@ interface Match {
   signal: string;
   line: number;
   service?: string;
+  component?: string;
   region?: string;
+  regionLine?: number;
   outcome?: 'hint';
 }
 
@@ -266,8 +273,10 @@ const UNKNOWN_PROVIDER = '';
 
 function terraform(contents: string): Match[] {
   const matches: Match[] = [];
-  const regions = new Map<string, string>();
-  let fileRegion = '';
+  const regions = new Map<string, { value: string; line: number }>();
+  /** Provider names whose blocks in this file name two different regions; neither is reported. */
+  const disagreed = new Set<string>();
+  let fileRegion: { value: string; line: number } | undefined;
   // A region counts for the provider whose block it sits in, directly: once
   // the block closes the provider is forgotten, and a region after the first
   // provider block belongs to no one. An unknown provider still owns its block.
@@ -322,6 +331,7 @@ function terraform(contents: string): Match[] {
           signal: `${item.signal.pattern}${word}`,
           line: index + 1,
           service: word,
+          component: terraformComponent(item.entry.catalogName, type) ?? '',
         });
       }
       continue;
@@ -329,15 +339,24 @@ function terraform(contents: string): Match[] {
     const value = TF_REGION.exec(line)?.[1];
     if (value === undefined || !REGION.test(value)) continue;
     if (currentProvider === undefined) {
-      if (!seenProvider && depth === 0 && fileRegion === '') fileRegion = value;
-    } else if (depth === providerDepth && !regions.has(currentProvider)) {
-      regions.set(currentProvider, value);
+      if (!seenProvider && depth === 0 && fileRegion === undefined) {
+        fileRegion = { value, line: index + 1 };
+      }
+    } else if (depth === providerDepth) {
+      const known = regions.get(currentProvider);
+      if (known === undefined) regions.set(currentProvider, { value, line: index + 1 });
+      else if (known.value !== value) disagreed.add(currentProvider);
     }
   }
   return matches.map((match) => {
     const name = match.entry.catalogName;
     if (!REGION_VENDORS.has(name)) return match;
-    return { ...match, region: regions.get(name) ?? fileRegion };
+    // Two blocks of one provider with different regions: neither one, and not
+    // the file default either, since the file plainly spans regions.
+    const region = disagreed.has(name) ? undefined : (regions.get(name) ?? fileRegion);
+    return region === undefined
+      ? match
+      : { ...match, region: region.value, regionLine: region.line };
   });
 }
 
@@ -430,7 +449,7 @@ export function matchConfig(input: ConfigInput): ConfigFinding[] {
   if (DOT_DOT_SEGMENT.test(input.path) || hasUnsafeCharacters(input.path)) return [];
   const seen = new Set<string>();
   const matches = [...ciFile(input.path), ...contentMatches(input)].filter((match) => {
-    const key = `${match.kind}\u0000${match.entry.catalogName}\u0000${match.signal}`;
+    const key = `${match.kind}\u0000${match.entry.catalogName}\u0000${match.signal}\u0000${match.component ?? ''}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -444,7 +463,9 @@ export function matchConfig(input: ConfigInput): ConfigFinding[] {
       signal: match.signal,
       class: BUILD_TIME_KINDS.has(match.kind) ? 'build-time' : match.entry.class,
       service: match.service ?? '',
+      component: match.component ?? '',
       region: match.region ?? '',
+      regionLine: match.regionLine === undefined ? '' : String(match.regionLine),
     },
   }));
 }

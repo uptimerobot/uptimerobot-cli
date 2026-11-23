@@ -95,7 +95,8 @@ function candidate(
         app: '.',
       },
     ],
-    hints: [],
+    components: [],
+    componentsTruncated: false,
     ...overrides,
   };
 }
@@ -598,16 +599,31 @@ describe('resolveCandidates', () => {
 
   it('keeps every candidate field on the resolved row', async () => {
     const { access } = stubApi({ searches: { stripe: [rows(row(801, 'Stripe'))] } });
-    const [resolved] = await resolveCandidates([candidate('Stripe', { hints: ['s3'] })], {
-      access,
-      includeBuildTime: false,
-      tracked: NONE,
-    });
+    const components = [
+      {
+        term: 'Stripe Checkout',
+        region: { code: 'eu-central-1', declaredAt: { file: 'infra/main.tf', line: 2 } },
+        evidence: [
+          {
+            file: 'infra/main.tf',
+            line: 9,
+            kind: 'terraform-resource' as const,
+            signal: 'stripe_x',
+            app: '.',
+          },
+        ],
+      },
+    ];
+    const [resolved] = await resolveCandidates(
+      [candidate('Stripe', { components, componentsTruncated: true })],
+      { access, includeBuildTime: false, tracked: NONE },
+    );
     expect(resolved).toMatchObject({
       provider: 'Stripe',
       searchTerm: 'stripe',
       class: 'runtime',
-      hints: ['s3'],
+      components,
+      componentsTruncated: true,
       evidence: [{ file: 'package.json', line: 3 }],
       regionDefaulted: false,
     });
