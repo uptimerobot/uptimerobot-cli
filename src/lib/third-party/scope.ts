@@ -335,7 +335,14 @@ export async function scopeProposal(
       continue;
     }
     if (row.components.length === 0) {
-      scoped.push({ ...row, ...decideScope([], []), ...trackedFields(row, options.tracked, []) });
+      // Nothing to ask, but a service without a term still says why the whole provider is tracked.
+      const scoping = decideScope([], []);
+      scoped.push({
+        ...row,
+        ...scoping,
+        ...(row.unmappedServices.length > 0 ? { scopeReason: 'unmapped-service' as const } : {}),
+        ...trackedFields(row, options.tracked, []),
+      });
       continue;
     }
     const aborted =
