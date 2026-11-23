@@ -487,6 +487,27 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
     );
   });
 
+  it('tracks the whole provider and names the service when the repository uses one the table has no term for', async () => {
+    const stub = await startStub();
+    const root = await writeRepository({
+      ...AWS_REPOSITORY,
+      'infra/main.tf': `${AWS_TERRAFORM}resource "aws_iam_role" "r" {}\n`,
+    });
+
+    const output = JSON.parse(
+      (await runCli(['scan', root, '--apply', '--json'], env(stub))).stdout,
+    );
+    const readable = await runCli(
+      ['scan', root, '--apply'],
+      env(await startStub(), { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+
+    expect(output.proposal[0]).toMatchObject({ scope: 'whole', scopeReason: 'unmapped-service' });
+    expect(readable.stdout).toContain(
+      'aws_iam has no component in the table; tracking the whole provider',
+    );
+  });
+
   it('tracks the whole provider when a term with no region matches more than twenty leaves', async () => {
     const stub = await startStub();
     const root = await writeRepository({

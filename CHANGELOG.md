@@ -23,7 +23,8 @@ may change in minor releases.
   - The whole provider is tracked, with a reason, when a term matched nothing
     (`term-missed`), more than 20 distinct leaves were kept (`too-many`), the
     endpoint is missing (`endpoint-unavailable`), the scan dropped regions
-    of a term (`components-truncated`) or the scan found no term
+    of a term (`components-truncated`), the repository uses a service the
+    component table has no term for (`unmapped-service`) or the scan found no term
     (`no-terms`). Any other failed search leaves the row `unresolved` with
     `COMPONENT_SEARCH_FAILED`, exit 1 `CATALOG_UNRESOLVED`.
   - The `--json` row carries `scope`, `scopeReason`, `terms[]`, `totalLeaves`
