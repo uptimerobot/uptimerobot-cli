@@ -595,9 +595,7 @@ describe('component terms', () => {
     const support = [
       ['go', 'cloud.google.com/go/auth'],
       ['go', 'cloud.google.com/go/compute/metadata'],
-      ['go', 'cloud.google.com/go/iam'],
       ['pip', 'google-cloud-core'],
-      ['pip', 'google-cloud-appengine-logging'],
       ['npm', '@google-cloud/common'],
       ['npm', '@google-cloud/promisify'],
       ['npm', '@azure/core-http'],
@@ -625,6 +623,29 @@ describe('component terms', () => {
         ),
       ).candidates.flatMap((candidate) => candidate.unmappedServices),
     ).toEqual([]);
+    expect(
+      buildThirdPartyContext([
+        finding('Google Cloud', {
+          kind: 'pip',
+          file: 'requirements.txt',
+          detail: {
+            signal: 'google-cloud-resource-manager==1',
+            package: 'google-cloud-resource-manager',
+          },
+        }),
+        finding('Google Cloud', {
+          kind: 'pip',
+          file: 'requirements.txt',
+          line: 2,
+          detail: { signal: 'google-cloud-iam==1', package: 'google-cloud-iam' },
+        }),
+        finding('Google Cloud', {
+          kind: 'go',
+          file: 'go.mod',
+          detail: { signal: 'cloud.google.com/go/iam@v1', package: 'cloud.google.com/go/iam' },
+        }),
+      ]).candidates[0]?.unmappedServices,
+    ).toEqual(['cloud.google.com/go/iam', 'google-cloud-iam', 'google-cloud-resource-manager']);
     expect(
       buildThirdPartyContext([
         finding('Google Cloud', {
