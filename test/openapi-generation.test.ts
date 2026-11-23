@@ -112,6 +112,16 @@ describe('OpenAPI command generation', () => {
     expect(result.stdout).toBe('Generated 6 commands.\n');
   });
 
+  it('never turns a header parameter into a flag, since the client sets every header itself', async () => {
+    const output = await mkdtemp(join(tmpdir(), 'uptimerobot-openapi-header-'));
+    await runGenerator(['--input', fixture, '--output', output]);
+
+    const operations = await readFile(join(output, 'generated/operations.ts'), 'utf8');
+
+    expect(operations).not.toContain('x-uptimerobot-client');
+    expect(operations).not.toContain('"in": "header"');
+  });
+
   it('generates typed flags for an ordinary object request body', async () => {
     const output = await mkdtemp(join(tmpdir(), 'uptimerobot-openapi-request-body-'));
     const result = await runGenerator(['--input', ordinaryRequestFixture, '--output', output]);
@@ -155,7 +165,7 @@ describe('OpenAPI command generation', () => {
       thirdPartyServiceCommands,
     }).toEqual({
       bulkUpdate: true,
-      commandCount: 102,
+      commandCount: 105,
       genericMonitorCreate: true,
       monitorCreateCommands: [
         'api',
@@ -169,15 +179,18 @@ describe('OpenAPI command generation', () => {
         'udp',
         'visual-comparison',
       ],
-      result: { exitCode: 0, stderr: '', stdout: 'Generated 102 commands.\n' },
+      result: { exitCode: 0, stderr: '', stdout: 'Generated 105 commands.\n' },
       thirdPartyServiceCommands: [
         'monitors/create/third-party-service',
         'monitors/third-party-service/incidents/activity-log',
         'monitors/third-party-service/incidents/get',
         'monitors/third-party-service/incidents/list',
+        'monitors/third-party-service/maintenances/list',
         'monitors/third-party-service/status',
+        'third-party-providers/components/list',
         'third-party-providers/get',
         'third-party-providers/list',
+        'third-party-services/maintenances',
       ],
     });
   });

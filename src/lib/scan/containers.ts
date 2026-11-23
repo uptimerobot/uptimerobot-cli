@@ -15,7 +15,7 @@
  */
 
 import { readFile, readdir, realpath, stat } from 'node:fs/promises';
-import { join, relative, resolve, sep } from 'node:path';
+import { basename, join, relative, resolve, sep } from 'node:path';
 import { LineCounter, isMap, isNode, isScalar, isSeq, parseDocument } from 'yaml';
 import type { ScanFinding } from './finding.js';
 import { redactClipped } from './redact.js';
@@ -72,7 +72,7 @@ const COMPOSE_PATTERN = /^(docker-)?compose(\..+)?\.ya?ml$/i;
 const DOCKERFILE_PATTERN = /^dockerfile(\..+)?$|\.dockerfile$/i;
 
 /** A probed address, stopping at whatever ends an argument in a shell command. */
-const SCHEME_URL_PATTERN = /https?:\/\/[^\s"'`,;|&<>()[\]{}\\]+/i;
+const SCHEME_URL_PATTERN = /https?:\/\/(?:\[[^\]\s"'`]*\]|[^\s"'`,;|&<>()[\]{}\\])+/i;
 const HOST_PORT_PATTERN = /[a-z0-9][a-z0-9.-]*:\d{2,5}(?:\/[^\s"'`,;|&<>()[\]{}\\]*)?/i;
 
 const VARIABLE_PATTERN = /^\$\{?([A-Za-z_][A-Za-z0-9_]*)/;
@@ -164,9 +164,11 @@ async function collectSources(
         // Dot-directories are tooling, VCS, build caches and agent worktrees,
         // never deployment config; the named set covers the non-dotted ones.
         const skipped = entry.name.startsWith('.') || SKIPPED_DIRECTORIES.has(entry.name);
-        if (!skipped && current.depth < limits.maxDepth) {
-          queue.push({ depth: current.depth + 1, path: absolute });
-        }
+        if (skipped) continue;
+        // A directory the depth limit keeps closed may hold a Dockerfile, so the
+        // walk is partial from here on, whatever it finds elsewhere.
+        if (current.depth >= limits.maxDepth) onTruncated?.();
+        else queue.push({ depth: current.depth + 1, path: absolute });
         continue;
       }
       // Symlinked directories are never traversed: they invite cycles, and a
@@ -203,6 +205,8 @@ function classify(name: string): SourceKind | undefined {
 async function isContainedFile(root: string, absolute: string): Promise<boolean> {
   const target = await realpath(absolute).catch(() => undefined);
   if (target === undefined || !(target === root || target.startsWith(root + sep))) return false;
+  // The alias was classified by name; the file it opens must pass the same exclusion.
+  if (DOTENV_PATTERN.test(basename(target))) return false;
   const stats = await stat(target).catch(() => undefined);
   return stats?.isFile() ?? false;
 }
@@ -395,11 +399,20 @@ function longFormPort(
 /** Flattens both `test` spellings: an exec array or a shell string. */
 function composeTestCommand(test: unknown): string {
   if (isSeq(test)) {
-    return test.items
+    const parts = test.items
       .map((item) => scalarText(item))
-      .filter((part): part is string => part !== undefined)
-      .filter((part) => part !== 'CMD' && part !== 'CMD-SHELL' && part !== 'NONE')
-      .join(' ');
+      .filter((part): part is string => part !== undefined);
+    // CMD-SHELL carries one shell script whose own quotes the redactor reads;
+    // re-quoting it would escape them and split a quoted credential at a space.
+    if (parts[0] === 'CMD-SHELL') return parts.slice(1).join(' ');
+    return (
+      parts
+        .filter((part) => part !== 'CMD' && part !== 'NONE')
+        // An argument with a space inside stays one word for the redactor, which
+        // would otherwise mask only the part before the space.
+        .map((part) => (/\s/.test(part) ? `"${part.replaceAll('"', '\\"')}"` : part))
+        .join(' ')
+    );
   }
   return scalarText(test) ?? '';
 }
@@ -553,15 +566,59 @@ function healthcheckFinding(
   // clipped and redacted first, and the probe is read out of that text: a
   // password with a comma or a quote in it would otherwise end the probe
   // early, leaving a prefix of it with no `@` for the URL pattern to find.
-  const redacted = redactClipped(command.replaceAll(/\s+/g, ' ').trim(), MAX_REDACTION_TEXT);
+  const collapsed = command.replaceAll(/\s+/g, ' ').trim();
+  const redacted = redactClipped(collapsed, MAX_REDACTION_TEXT);
   const probe = probeUrl(redacted);
   if (probe === undefined) return undefined;
+  // The host rules judge the raw host: a redacted value can read as another
+  // host when an `@` in the path pulls the real one into the masked part.
+  const host = probeHost(collapsed, probe);
   return {
-    detail: detailOf({ ...extra, command: truncate(redacted, MAX_DETAIL_TEXT) }),
+    detail: detailOf({ ...extra, command: truncate(redacted, MAX_DETAIL_TEXT), host }),
     evidence: { file, line },
     kind,
     value: probe,
   };
+}
+
+/**
+ * The host of the first URL in a raw command, read the way a URL parser does:
+ * the authority ends at the first `/`, `?` or `#`, and the host is what
+ * follows the last `@` in it, so a comma or an `@` in a password never cuts
+ * the host short the way the probe pattern would.
+ */
+const RAW_AUTHORITY = /^[a-z][a-z0-9+.-]*:\/\/(?:[^\s/?#]*@)?([^\s/?#@]+)/i;
+
+/**
+ * The raw host of the probe that was reported: redaction can remove a URL
+ * that stood before the probe, so the raw URLs are walked until one reads,
+ * with its credentials dropped, as the reported probe does.
+ */
+function probeHost(command: string, reported: string): string | undefined {
+  // Redaction only replaces a credential prefix with `***`, so the text after
+  // the mask is still present, verbatim, in the raw word the probe came from.
+  const mask = reported.indexOf('***@');
+  const tail = mask === -1 ? reported : reported.slice(mask + 4);
+  const scheme = new RegExp(SCHEME_URL_PATTERN.source, 'gi');
+  for (const match of command.matchAll(scheme)) {
+    const word = command.slice(match.index).split(/\s/, 1)[0] ?? '';
+    const authority = RAW_AUTHORITY.exec(word)?.[1];
+    const host = authority === undefined ? undefined : hostnameOf(authority);
+    if (host !== undefined && word.includes(tail)) return host;
+  }
+  return hostnameOf(probeUrl(reported));
+}
+
+/** The hostname a probe or destination names, read before any redaction; a host is never a secret. */
+function hostnameOf(value: string | undefined): string | undefined {
+  if (value === undefined || value.startsWith('/')) return undefined;
+  try {
+    const hostname = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`)
+      .hostname;
+    return hostname === '' ? undefined : hostname;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The address a `curl`/`wget` style health probe hits, if it names one. */
@@ -663,6 +720,8 @@ function pairLine(node: unknown, key: string, lineCounter: LineCounter): number 
 
 // --- Shaping ---------------------------------------------------------------
 
+const DESTINATION_KEYS: ReadonlySet<string> = new Set(['destination', 'dest', 'to']);
+
 function detailOf(
   entries: Readonly<Record<string, string | undefined>>,
 ): Record<string, string> | undefined {
@@ -670,10 +729,15 @@ function detailOf(
   // Every detail is repository text bound for the seed file: a rewrite
   // destination carries credentials as readily as a healthcheck command. It
   // is redacted here but not clipped: the host rules read a destination whole,
-  // and the rendering layer clips what it prints.
+  // and the rendering layer clips what it prints. A destination's host is
+  // kept beside it unredacted, so the host rules never judge masked text.
   for (const [key, value] of Object.entries(entries)) {
-    if (value !== undefined && value.length > 0)
-      detail[key] = redactClipped(value, MAX_REDACTION_TEXT);
+    if (value === undefined || value.length === 0) continue;
+    detail[key] = key === 'host' ? value : redactClipped(value, MAX_REDACTION_TEXT);
+    if (DESTINATION_KEYS.has(key)) {
+      const host = hostnameOf(value);
+      if (host !== undefined) detail[`${key}Host`] = host;
+    }
   }
   return Object.keys(detail).length > 0 ? detail : undefined;
 }

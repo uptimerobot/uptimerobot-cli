@@ -117,6 +117,7 @@ describe('scanContainers — Dockerfile', () => {
         detail: {
           command:
             '--interval=30s --timeout=3s --retries=3 CMD curl -fsS http://localhost:3000/healthz || exit 1',
+          host: 'localhost',
         },
         evidence: { file: 'Dockerfile', line: 11 },
         kind: 'docker-healthcheck',
@@ -272,7 +273,11 @@ describe('scanContainers — Compose', () => {
 
     expect(findings).toEqual([
       {
-        detail: { command: 'curl -f http://api.internal:3000/health', service: 'api' },
+        detail: {
+          command: 'curl -f http://api.internal:3000/health',
+          host: 'api.internal',
+          service: 'api',
+        },
         evidence: { file: 'docker-compose.yml', line: 16 },
         kind: 'compose-healthcheck',
         value: 'http://api.internal:3000/health',
@@ -280,6 +285,7 @@ describe('scanContainers — Compose', () => {
       {
         detail: {
           command: 'wget -q --spider http://0.0.0.0:443/ping || exit 1',
+          host: '0.0.0.0',
           service: 'edge',
         },
         evidence: { file: 'docker-compose.yml', line: 33 },
@@ -311,7 +317,7 @@ describe('scanContainers — Vercel and Netlify', () => {
 
     expect(findings).toEqual([
       {
-        detail: { destination: 'https://api.example.com/$1' },
+        detail: { destination: 'https://api.example.com/$1', destinationHost: 'api.example.com' },
         evidence: { file: 'apps/web/vercel.json', line: 3 },
         kind: 'vercel-rewrite',
         value: '/api/(.*)',
@@ -366,7 +372,7 @@ describe('scanContainers — Vercel and Netlify', () => {
         value: '/old-docs/*',
       },
       {
-        detail: { status: '200', to: 'https://api.example.com/:splat' },
+        detail: { status: '200', to: 'https://api.example.com/:splat', toHost: 'api.example.com' },
         evidence: { file: 'apps/web/netlify.toml', line: 17 },
         kind: 'netlify-redirect',
         value: '/api/*',
@@ -614,5 +620,108 @@ describe('a destination keeps its host for classification', () => {
     const [finding] = await scanContainers(root);
 
     expect(finding?.detail?.destination).toBe(destination);
+  });
+});
+
+describe('scanContainers — round three', () => {
+  it('keeps a bracketed IPv6 authority in a healthcheck probe', async () => {
+    const root = await temporaryRepo({
+      Dockerfile: 'FROM x\nHEALTHCHECK CMD curl http://[::1]:8080/health\n',
+      'app/Dockerfile': 'FROM x\nHEALTHCHECK CMD curl http://host:8080/health\n',
+    });
+
+    const findings = await scanContainers(root);
+
+    expect(findingsIn(findings, 'Dockerfile')[0]?.value).toBe('http://[::1]:8080/health');
+    expect(findingsIn(findings, 'app/Dockerfile')[0]?.value).toBe('http://host:8080/health');
+  });
+
+  it('reports a scan the depth limit cut short as truncated', async () => {
+    const root = await temporaryRepo({ 'a/b/Dockerfile': 'FROM x\nEXPOSE 80\n' });
+    let truncated = false;
+
+    const findings = await scanContainers(root, {
+      maxDepth: 1,
+      onTruncated: () => {
+        truncated = true;
+      },
+    });
+
+    expect(findings).toEqual([]);
+    expect(truncated).toBe(true);
+  });
+
+  it('never reads a dotenv file through a symlink named like a Dockerfile', async () => {
+    const root = await temporaryRepo({ '.env': 'EXPOSE 80\n' });
+    await symlink(join(root, '.env'), join(root, 'Dockerfile'));
+
+    const findings = await scanContainers(root);
+
+    expect(findings).toEqual([]);
+    expect(readPaths.some((path) => path.endsWith('.env'))).toBe(false);
+  });
+
+  it('keeps the raw host of a probe and of a rewrite destination for the host rules', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        'FROM x\nHEALTHCHECK CMD curl -f http://admin:p,x@10.0.0.5:8080/u/alice@example.com\n',
+      'vercel.json': JSON.stringify({
+        rewrites: [{ source: '/u', destination: 'http://10.0.0.5:8080/u/alice@example.com' }],
+      }),
+    });
+
+    const findings = await scanContainers(root);
+
+    const probe = findingsIn(findings, 'Dockerfile')[0];
+    expect(probe?.value).not.toContain('p,x');
+    expect(probe?.detail?.host).toBe('10.0.0.5');
+    const rewrite = findingsIn(findings, 'vercel.json')[0];
+    expect(rewrite?.detail?.destinationHost).toBe('10.0.0.5');
+  });
+
+  it('keeps the host of the probe it reports, not of a URL the redaction removed before it', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        'FROM x\nHEALTHCHECK CMD TOKEN=https://auth.example.com/session curl http://127.0.0.1:8080/health\n',
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).toBe('http://127.0.0.1:8080/health');
+    expect(finding?.detail?.host).toBe('127.0.0.1');
+  });
+
+  it('keeps a CMD-SHELL script as written so a quoted credential inside it is still masked', async () => {
+    const root = await temporaryRepo({
+      'docker-compose.yml': [
+        'services:',
+        '  api:',
+        '    healthcheck:',
+        '      test: ["CMD-SHELL", "curl --user \\"admin:alpha hunter2\\" http://localhost:3000/health"]',
+        '',
+      ].join('\n'),
+    });
+    const [finding] = await scanContainers(root);
+    expect(finding?.value).toBe('http://localhost:3000/health');
+    expect(finding?.detail?.command).not.toContain('hunter2');
+    expect(finding?.detail?.command).not.toContain('alpha');
+  });
+
+  it('keeps a credential with a space inside one exec-array argument out of the command', async () => {
+    const root = await temporaryRepo({
+      'docker-compose.yml': [
+        'services:',
+        '  api:',
+        '    healthcheck:',
+        '      test: ["CMD", "curl", "-u", "admin:alpha hunter2", "http://localhost:3000/health"]',
+        '',
+      ].join('\n'),
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).toBe('http://localhost:3000/health');
+    expect(finding?.detail?.command).not.toContain('hunter2');
+    expect(finding?.detail?.command).not.toContain('alpha');
   });
 });

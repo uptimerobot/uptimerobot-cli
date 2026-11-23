@@ -1,6 +1,6 @@
 import { emitKeypressEvents } from 'node:readline';
 import { createInterface } from 'node:readline/promises';
-import { select } from '@inquirer/prompts';
+import select from '@inquirer/select';
 
 export type ExecutionEnvironment = 'ci' | 'local';
 export type InvocationMode = 'agent' | 'human';
@@ -103,7 +103,7 @@ export async function promptSelection<T extends string>(
     // telling the user how to choose non-interactively.
     //
     // Matched on the name rather than the class, because the class lives in
-    // `@inquirer/core` — a transitive dependency of `@inquirer/prompts`, not
+    // `@inquirer/core` — a transitive dependency of `@inquirer/select`, not
     // one this package declares. Importing it to get an `instanceof` would
     // mean depending on something we never asked for, and it would break the
     // day the prompts package bumps its own dependency.

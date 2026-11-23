@@ -463,23 +463,31 @@ function judgeComposePort(finding: ScanFinding): Verdict {
 /** A healthcheck names a whole address, so the host test applies directly. */
 function judgeProbeUrl(finding: ScanFinding): Verdict {
   const target = 'url' as const;
-  const host = hostOf(finding.value);
-  // A probe nothing can parse is not an address: an unresolved `${PORT}` or
-  // a bare `$` must not slip past the host rules as "nothing to reject".
+  // A `$` anywhere is an unresolved variable, whether or not the rest still
+  // parses: `https://api.example.com/$` names no real path.
+  if (finding.value.includes('$')) {
+    return {
+      target,
+      rejection: {
+        reason: 'unresolved-variable',
+        matched: finding.value,
+        message: `"${finding.value}" carries an unresolved variable, so no single URL answers it.`,
+      },
+    };
+  }
+  // The scanner keeps the raw host beside a redacted value; the value itself
+  // is the fallback for findings that carry none.
+  const host = finding.detail?.host ?? hostOf(finding.value);
+  // A probe nothing can parse is not an address and must not slip past the
+  // host rules as "nothing to reject".
   if (host === undefined) {
     return {
       target,
-      rejection: finding.value.includes('$')
-        ? {
-            reason: 'unresolved-variable',
-            matched: finding.value,
-            message: `"${finding.value}" carries an unresolved variable, so no single URL answers it.`,
-          }
-        : {
-            reason: 'not-an-endpoint',
-            matched: finding.value,
-            message: `"${finding.value}" is not a URL a monitor could reach.`,
-          },
+      rejection: {
+        reason: 'not-an-endpoint',
+        matched: finding.value,
+        message: `"${finding.value}" is not a URL a monitor could reach.`,
+      },
     };
   }
 
@@ -515,7 +523,7 @@ function judgeRedirect(
 
   const destination = detail.destination ?? detail.dest ?? detail.to;
   if (destination === undefined || !ABSOLUTE_URL.test(destination)) return { target };
-  const host = hostOf(destination);
+  const host = detail.destinationHost ?? detail.destHost ?? detail.toHost ?? hostOf(destination);
   if (host === undefined) return { target };
 
   const rejection = classifyHost(host);
@@ -1138,7 +1146,9 @@ function candidateLine(candidate: ScanCandidate): string {
 }
 
 function citation(evidence: ScanEvidence): string {
-  return `${evidence.file}:${evidence.line}`;
+  // A file name is repository input like any value, and one with a newline in
+  // it would open a heading of its own.
+  return `${inline(evidence.file)}:${evidence.line}`;
 }
 
 function detailSuffix(detail: Readonly<Record<string, string>> | undefined): string {

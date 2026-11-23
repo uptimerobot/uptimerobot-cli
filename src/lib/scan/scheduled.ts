@@ -184,7 +184,11 @@ async function collectFiles(
         const skipped =
           (entry.name.startsWith('.') && entry.name !== '.github') ||
           SKIPPED_DIRECTORIES.has(entry.name);
-        if (skipped || depth + 1 > limits.maxDepth) continue;
+        if (skipped) continue;
+        if (depth + 1 > limits.maxDepth) {
+          cut = true;
+          continue;
+        }
         await walk(absolute, depth + 1);
         continue;
       }

@@ -13,6 +13,24 @@ const DEFAULT_HEARTBEAT_HOST = 'https://heartbeat.uptimerobot.com';
  * response without `heartbeatUrl` falls back to composing `<host>/m<id>-<token>`
  * from `id` and the token in `url`, the same way the API builds it.
  */
+/**
+ * A provider's component tree as rows: a matching child under its parent's
+ * name, a childless top-level component as itself. The search answers only
+ * the leaves that matched, and a table has no second level to show them on.
+ */
+export function flattenComponentTree(payload: unknown): unknown {
+  if (!isPlainRecord(payload) || !Array.isArray(payload.items)) return payload;
+  const items = payload.items.flatMap((item) => {
+    if (!isPlainRecord(item) || !Array.isArray(item.children) || item.children.length === 0) {
+      return [item];
+    }
+    return item.children.map((child) =>
+      isPlainRecord(child) ? { ...child, parent: item.name } : child,
+    );
+  });
+  return { ...payload, items };
+}
+
 export function withDerivedFields(payload: unknown, env = process.env): unknown {
   if (Array.isArray(payload)) return payload.map((item) => withDerivedFields(item, env));
   if (!isPlainRecord(payload)) return payload;

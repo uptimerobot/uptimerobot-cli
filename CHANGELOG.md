@@ -12,6 +12,12 @@ may change in minor releases.
 
 ### Added
 
+- `uptimerobot third-party-providers components list <id> --search <words> --region <code>`, generated from the published contract, lists the components of one provider that match a search term or a region: one row per matching leaf with its parent's name, `region` and `global` flag. `uptimerobot third-party-services maintenances` is curated with service, impact, title, from and until columns.
+- The command generator leaves header parameters out of the flags: the published contract now lists the attribution headers the client sets itself on `monitors create`, and a contract header never becomes something to type.
+- `uptimerobot monitors third-party-service maintenances list <id>` and
+  `uptimerobot third-party-services maintenances`, generated from the
+  published contract, list the upcoming maintenance windows of one
+  third-party service and across all of them.
 - `uptimerobot init` prepares a repository for a coding agent: it scans the
   working tree, writes `uptimerobot-scan.md` and `uptimerobot-setup.md`,
   plants a managed block in `AGENTS.md` for the detected or chosen agent
@@ -64,6 +70,8 @@ may change in minor releases.
 
 ### Fixed
 
+- The host rules judge a healthcheck probe and a rewrite destination by the host the scanner read before redaction, so a URL with a port and an `@` later in it is no longer read as a credentialed URL whose host is the text after the `@`; the redaction itself stops at `?` and `#`. A heartbeat's `target` in `uptimerobot verify` is null by monitor type, not by the shape of its push token. The interactive agent picker depends on `@inquirer/select` alone instead of the whole `@inquirer/prompts` bundle.
+- `uptimerobot init` refuses an outdated setup guide it cannot write before the third-party offer, so a run never ends with services created and no guide; a clipped quoted credential that ends in a backslash is still masked; a compose `CMD-SHELL` healthcheck script is kept as written, so a quoted credential inside it is masked whole.
 - A container health probe's command and URL are redacted like a cron command:
   `user:password@` and a `?token=` style query parameter no longer reach
   `uptimerobot-scan.md`.
@@ -88,6 +96,23 @@ may change in minor releases.
   `uptimerobot-scan.md` is a symlink whose target directory is missing. Before,
   the services were created and the seed write then failed with
   `SEED_CONTEXT_WRITE_FAILED`, so the outcome was never recorded.
+- `uptimerobot init` refuses a foreign `uptimerobot-setup.md` with
+  `SETUP_GUIDE_EXISTS` before it offers to create third-party services, so a
+  refusal never follows a create.
+- `scan --apply --json` carries `truncated`, and the readable output warns when
+  a scan budget stopped discovery, so "Nothing to create." no longer passes
+  for a complete scan. A directory the depth limit kept closed now counts as
+  truncation for the container and scheduled scans.
+- Scan redaction masks `--user=admin:x` like `--user admin:x`, a whole
+  `NAME='a'"b c"` assignment, a quoted credential the clip cut open, and a
+  compose exec-array argument holding a space; a bracketed IPv6 healthcheck
+  such as `http://[::1]:8080/health` is kept; a healthcheck such as
+  `https://host/$` is rejected as an unresolved variable; a file name with a
+  newline in it cannot forge a heading in `uptimerobot-scan.md`; a `Dockerfile`
+  symlink to a dotenv file is never read.
+- The setup guide asks for a yes on the completed targets of host-less rows,
+  keeps the heartbeat push URL out of a checked-in crontab, and pages the
+  tagged monitor list to the end before writing the report.
 
 ## [1.3.0] - 2026-11-10
 

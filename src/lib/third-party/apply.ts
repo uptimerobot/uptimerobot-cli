@@ -77,6 +77,8 @@ export interface ApplyOutput {
   tracked: TrackedProviders;
   confirmation: Confirmation;
   results: readonly CreateResult[];
+  /** True when a scan budget stopped discovery, so a provider may be missing from the proposal. */
+  truncated: boolean;
 }
 
 const CREATE = operations['monitors:create:third-party-service'];
@@ -361,6 +363,7 @@ export function buildApplyOutput(context: SeedContext, run: ApplyRun): ApplyOutp
     tracked: run.proposal.tracked,
     confirmation: run.confirmation,
     results: run.results,
+    truncated: context.summary.truncated,
   };
 }
 

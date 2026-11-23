@@ -109,7 +109,7 @@ describe('monitors list', () => {
         authorization: 'Bearer u123-secret',
         client: 'cli',
         mode: 'human',
-        url: '/v3/monitors?customField=environment%3Aproduction&customField=region%3Aeu&limit=50&status=down',
+        url: '/v3/monitors?status=down&limit=50&customField=environment%3Aproduction&customField=region%3Aeu',
       },
       stderr: '',
     });

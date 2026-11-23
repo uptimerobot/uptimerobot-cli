@@ -905,6 +905,65 @@ paths:
         or limit. All filters use AND logic when combined.
       operationId: MonitorsController_list
       parameters:
+        - name: cursor
+          required: false
+          in: query
+          description: Cursor to paginate through monitors
+          schema:
+            type: number
+        - name: tags
+          required: false
+          in: query
+          description: >-
+            Comma-separated list of tag names to filter monitors. Uses OR logic
+            (matches any specified tag). Case-sensitive.
+          schema:
+            example: production,staging
+            type: string
+        - name: url
+          required: false
+          in: query
+          description: >-
+            Filter monitors by URL. Case-insensitive partial match on the
+            monitor URL.
+          schema:
+            example: example.com
+            type: string
+        - name: name
+          required: false
+          in: query
+          description: >-
+            Filter monitors by name. Case-insensitive partial match on the
+            monitor friendly name.
+          schema:
+            example: Production API
+            type: string
+        - name: status
+          required: false
+          in: query
+          description: >-
+            Comma-separated list of status values to filter monitors. Uses OR
+            logic (matches any specified status). Case-insensitive. Allowed
+            values: PAUSED, STARTED, UP, LOOKS_DOWN, DOWN.
+          schema:
+            example: UP,DOWN
+            type: string
+        - name: groupId
+          required: false
+          in: query
+          description: Filter monitors by monitor group ID.
+          schema:
+            example: 100
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: >-
+            Maximum number of monitors to return per page. Default: 50, Min: 1,
+            Max: 200.
+          schema:
+            example: 50
+            type: number
         - name: customField
           required: false
           in: query
@@ -917,65 +976,6 @@ paths:
             type: array
             items:
               type: string
-        - name: limit
-          required: false
-          in: query
-          description: >-
-            Maximum number of monitors to return per page. Default: 50, Min: 1,
-            Max: 200.
-          schema:
-            example: 50
-            type: number
-        - name: groupId
-          required: false
-          in: query
-          description: Filter monitors by monitor group ID.
-          schema:
-            example: 100
-            type: number
-        - name: status
-          required: false
-          in: query
-          description: >-
-            Comma-separated list of status values to filter monitors. Uses OR
-            logic (matches any specified status). Case-insensitive. Allowed
-            values: PAUSED, STARTED, UP, LOOKS_DOWN, DOWN.
-          schema:
-            example: UP,DOWN
-            type: string
-        - name: name
-          required: false
-          in: query
-          description: >-
-            Filter monitors by name. Case-insensitive partial match on the
-            monitor friendly name.
-          schema:
-            example: Production API
-            type: string
-        - name: url
-          required: false
-          in: query
-          description: >-
-            Filter monitors by URL. Case-insensitive partial match on the
-            monitor URL.
-          schema:
-            example: example.com
-            type: string
-        - name: tags
-          required: false
-          in: query
-          description: >-
-            Comma-separated list of tag names to filter monitors. Uses OR logic
-            (matches any specified tag). Case-sensitive.
-          schema:
-            example: production,staging
-            type: string
-        - name: cursor
-          required: false
-          in: query
-          description: Cursor to paginate through monitors
-          schema:
-            type: number
       responses:
         '200':
           description: ''
@@ -1003,7 +1003,17 @@ paths:
         body is documented as one schema per monitor type — pick the one
         matching the `type` you are creating.
       operationId: MonitorsController_create
-      parameters: []
+      parameters:
+        - name: x-uptimerobot-client
+          required: true
+          in: header
+          schema:
+            type: string
+        - name: x-uptimerobot-command
+          required: true
+          in: header
+          schema:
+            type: string
       requestBody:
         required: true
         description: >-
@@ -1525,6 +1535,44 @@ paths:
       security:
         - bearer: []
       summary: Get the incident history of a third party service
+      tags:
+        - Monitors
+  /monitors/{id}/third-party-service/maintenances:
+    get:
+      description: >-
+        Returns the maintenance windows the provider a third party service
+        monitor tracks has announced, earliest start first: windows in progress
+        now and windows starting within the next 30 days. Responses are cached
+        for 60 seconds, so a window that ended within the last minute can still
+        appear; `window` is worked out from scheduledFor/scheduledUntil when the
+        response is built (announced or in_progress). Nothing scheduled returns
+        an empty array with a 200, never an error.
+      operationId: MonitorsController_getThirdPartyServiceMaintenances
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: number
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorDependencyMaintenancesDto'
+        default:
+          description: >-
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+      security:
+        - bearer: []
+      summary: Get the upcoming maintenance windows of a third party service
       tags:
         - Monitors
   /monitors/{id}/third-party-service/incidents/{incidentId}:
@@ -3209,6 +3257,41 @@ paths:
       summary: Delete a tag
       tags:
         - Tags
+  /third-party-services/maintenances:
+    get:
+      description: >-
+        Returns the maintenance windows announced by every provider the caller
+        tracks with a third party service monitor, in one list ordered by start
+        (earliest first): windows in progress now and windows starting within
+        the next 30 days. Ended windows are never returned. Each row names the
+        third party service monitor it belongs to (monitorId, friendlyName).
+        `window` is worked out at request time from scheduledFor/scheduledUntil
+        (announced or in_progress). If one provider cannot be read it is left
+        out; if none can, the request fails. Nothing scheduled returns an empty
+        array with a 200, never an error.
+      operationId: ThirdPartyServicesController_getMaintenances
+      parameters: []
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyMaintenancesDto'
+        default:
+          description: >-
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+      security:
+        - bearer: []
+      summary: Get the upcoming maintenance windows across all third party services
+      tags:
+        - Third-party services
   /third-party-providers:
     get:
       description: >-
@@ -3226,6 +3309,7 @@ paths:
           schema:
             minLength: 1
             maxLength: 100
+            pattern: NO_CONTROL_CHARACTERS
             example: github
             type: string
       responses:
@@ -3283,6 +3367,63 @@ paths:
       security:
         - bearer: []
       summary: Get a third-party provider
+      tags:
+        - Third-party providers
+  /third-party-providers/{id}/components:
+    get:
+      description: >-
+        Returns the component tree of one third-party provider reduced to the
+        components that match search and region, each leaf under its parent.
+        regionLike tells whether the search term looks like a region rather than
+        a component name. Results are cached for a minute.
+      operationId: ThirdPartyProvidersController_searchComponents
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: The numeric id of the third-party provider.
+          schema:
+            example: '7'
+            type: string
+        - name: search
+          required: false
+          in: query
+          description: >-
+            Words matched against component names, parent component names,
+            region names and region codes. Every word must match.
+          schema:
+            maxLength: 200
+            example: lambda oregon
+            type: string
+        - name: region
+          required: false
+          in: query
+          description: >-
+            Keep only the components of this exact region code. Global
+            components are never returned for a region.
+          schema:
+            maxLength: 64
+            example: eu-west-1
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThirdPartyProviderComponentsDto'
+        default:
+          description: >-
+            An error response. `code` is a stable error code; see "Error codes"
+            in the API description. Fall back to the HTTP status for a code you
+            do not know.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseDto'
+      security:
+        - bearer: []
+      summary: Search the components of a third-party provider
       tags:
         - Third-party providers
 info:
@@ -3408,6 +3549,13 @@ info:
     on, and nothing was changed. Narrow the filter by group or tag and repeat
     the call. |
 
+    | `009-042` | 400 | responseTimeThresholdMode "auto" is not available for
+    this monitor or account. Keep the monitor on "manual" or "off". |
+
+    | `009-043` | 400 | Threshold values were sent together with
+    responseTimeThresholdMode "auto" or "off". Send the mode alone, or switch to
+    "manual" to set values. |
+
     | `013-002` | 403 | The plan of the account allows no more status pages.
     Delete one or upgrade the plan. |
 
@@ -3416,6 +3564,16 @@ info:
 
     | `013-008` | 403 | Manual monitor sorting on status pages is temporarily
     turned off. Choose another sort order. |
+
+    | `013-009` | 400 | customSettings.monitorNames names monitors that are not
+    on the status page. The message lists them. |
+
+    | `013-010` | 400 | A memberMoves entry is invalid: its group or tag is not
+    on the page, the monitor is not in it, or the position is out of range. The
+    message says which. |
+
+    | `013-011` | 400 | customSettings has an unknown key or a value of the
+    wrong type or range. The message names the key. |
 
     | `021-001` | 409 | An integration with the same settings already exists. |
 
@@ -3438,6 +3596,8 @@ info:
     create a third party service. |
 
     | `026-009` | 400 | The third party service config is invalid. |
+
+    | `026-016` | 404 | No third party service provider has this ID. |
 
     | `026-017` | 400 | Third party services cannot be created through this
     endpoint. |
@@ -3517,9 +3677,14 @@ components:
             - 009-034
             - 009-036
             - 009-039
+            - 009-042
+            - 009-043
             - 013-006
             - 013-002
             - 013-008
+            - 013-009
+            - 013-010
+            - 013-011
             - 009-019
             - 009-020
             - 021-001
@@ -3530,6 +3695,7 @@ components:
             - 026-006
             - 026-008
             - 026-009
+            - 026-016
             - 026-017
             - 026-018
             - 026-019
@@ -4582,6 +4748,64 @@ components:
                 nullable: true
               responseTimeThreshold:
                 type: number
+              responseTimeThresholdMode:
+                description: >-
+                  How the slow-response threshold is set: 'off', 'manual' or
+                  'auto'. Derived from the auto-threshold rows, never from the
+                  threshold value. Present on the single-monitor and list reads;
+                  absent on responses that embed monitors (groups, maintenance
+                  windows, incidents, bulk results), where absent means not
+                  loaded, not 'off'.
+                type: string
+                enum:
+                  - 'off'
+                  - manual
+                  - auto
+              autoThresholds:
+                description: >-
+                  Per-region auto state, keyed by region code. Present together
+                  with responseTimeThresholdMode and empty ({}) unless the
+                  monitor is in auto mode. thresholdMs mirrors
+                  regionalData.THRESHOLD; manualFallback is the value the region
+                  keeps on a switch to manual without an explicit value.
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum:
+                        - learning
+                        - ready
+                        - stale
+                    thresholdMs:
+                      type: integer
+                      nullable: true
+                    usualMs:
+                      type: integer
+                      nullable: true
+                    daysCollected:
+                      type: integer
+                    readyAt:
+                      nullable: true
+                    computedAt:
+                      nullable: true
+                    cappedByTimeout:
+                      type: boolean
+                    cappedBelowUsual:
+                      type: boolean
+                    manualFallback:
+                      type: integer
+                  required:
+                    - status
+                    - thresholdMs
+                    - usualMs
+                    - daysCollected
+                    - readyAt
+                    - computedAt
+                    - cappedByTimeout
+                    - cappedBelowUsual
+                    - manualFallback
               config:
                 type: object
                 properties:
@@ -5827,6 +6051,76 @@ components:
               - updates
       required:
         - data
+    MonitorDependencyMaintenancesDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              serviceId:
+                type: integer
+              remoteId:
+                type: string
+                nullable: true
+              url:
+                type: string
+                nullable: true
+              title:
+                type: string
+              description:
+                type: string
+                nullable: true
+              impact:
+                type: string
+                nullable: true
+              window:
+                type: string
+                enum:
+                  - announced
+                  - in_progress
+                  - past
+              scheduledFor:
+                type: string
+              scheduledUntil:
+                type: string
+              affectedComponents:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+                    externalId:
+                      type: string
+                      nullable: true
+                    parentId:
+                      type: integer
+                      nullable: true
+                  required:
+                    - id
+                    - name
+                    - externalId
+                    - parentId
+            required:
+              - id
+              - serviceId
+              - remoteId
+              - url
+              - title
+              - description
+              - impact
+              - window
+              - scheduledFor
+              - scheduledUntil
+              - affectedComponents
+      required:
+        - data
     MonitorThirdPartyServiceIncidentDetailDto:
       type: object
       properties:
@@ -6027,6 +6321,63 @@ components:
           nullable: true
         responseTimeThreshold:
           type: number
+        responseTimeThresholdMode:
+          description: >-
+            How the slow-response threshold is set: 'off', 'manual' or 'auto'.
+            Derived from the auto-threshold rows, never from the threshold
+            value. Present on the single-monitor and list reads; absent on
+            responses that embed monitors (groups, maintenance windows,
+            incidents, bulk results), where absent means not loaded, not 'off'.
+          type: string
+          enum:
+            - 'off'
+            - manual
+            - auto
+        autoThresholds:
+          description: >-
+            Per-region auto state, keyed by region code. Present together with
+            responseTimeThresholdMode and empty ({}) unless the monitor is in
+            auto mode. thresholdMs mirrors regionalData.THRESHOLD;
+            manualFallback is the value the region keeps on a switch to manual
+            without an explicit value.
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              status:
+                type: string
+                enum:
+                  - learning
+                  - ready
+                  - stale
+              thresholdMs:
+                type: integer
+                nullable: true
+              usualMs:
+                type: integer
+                nullable: true
+              daysCollected:
+                type: integer
+              readyAt:
+                nullable: true
+              computedAt:
+                nullable: true
+              cappedByTimeout:
+                type: boolean
+              cappedBelowUsual:
+                type: boolean
+              manualFallback:
+                type: integer
+            required:
+              - status
+              - thresholdMs
+              - usualMs
+              - daysCollected
+              - readyAt
+              - computedAt
+              - cappedByTimeout
+              - cappedBelowUsual
+              - manualFallback
         config:
           type: object
           properties:
@@ -6843,8 +7194,9 @@ components:
           minimum: 0
           maximum: 3
           description: >-
-            Number of retries on application errors (HTTP 4xx/5xx). 0-3.
-            Connection errors always retry 3 times regardless of this setting.
+            Number of retries on application errors (HTTP 4xx/5xx). 0-3. When
+            not set, UptimeRobot applies its default, currently 3. Connection
+            errors always retry 3 times regardless of this setting.
           example: 1
     CreateHttpMonitorDto:
       type: object
@@ -6911,6 +7263,21 @@ components:
             Response time threshold in milliseconds. When provided, the value is
             applied to all active regions as regionData.THRESHOLD. Always
             returns 0 — use regionData.THRESHOLD for per-region control.
+        responseTimeThresholdMode:
+          type: string
+          enum:
+            - 'off'
+            - manual
+            - auto
+          example: auto
+          description: >-
+            How the slow-response threshold is set. 'auto' learns a per-region
+            threshold from the last 28 days of response times
+            (responseTimeThreshold and regionData.THRESHOLD must then be
+            omitted); 'manual' restores the values the monitor had before auto,
+            or the ones sent; 'off' clears every threshold. Read back as
+            responseTimeThresholdMode, with per-region details in
+            autoThresholds.
         groupId:
           type: number
           example: 0
@@ -7104,6 +7471,21 @@ components:
             Response time threshold in milliseconds. When provided, the value is
             applied to all active regions as regionData.THRESHOLD. Always
             returns 0 — use regionData.THRESHOLD for per-region control.
+        responseTimeThresholdMode:
+          type: string
+          enum:
+            - 'off'
+            - manual
+            - auto
+          example: auto
+          description: >-
+            How the slow-response threshold is set. 'auto' learns a per-region
+            threshold from the last 28 days of response times
+            (responseTimeThreshold and regionData.THRESHOLD must then be
+            omitted); 'manual' restores the values the monitor had before auto,
+            or the ones sent; 'off' clears every threshold. Read back as
+            responseTimeThresholdMode, with per-region details in
+            autoThresholds.
         groupId:
           type: number
           example: 0
@@ -7333,6 +7715,21 @@ components:
             Response time threshold in milliseconds. When provided, the value is
             applied to all active regions as regionData.THRESHOLD. Always
             returns 0 — use regionData.THRESHOLD for per-region control.
+        responseTimeThresholdMode:
+          type: string
+          enum:
+            - 'off'
+            - manual
+            - auto
+          example: auto
+          description: >-
+            How the slow-response threshold is set. 'auto' learns a per-region
+            threshold from the last 28 days of response times
+            (responseTimeThreshold and regionData.THRESHOLD must then be
+            omitted); 'manual' restores the values the monitor had before auto,
+            or the ones sent; 'off' clears every threshold. Read back as
+            responseTimeThresholdMode, with per-region details in
+            autoThresholds.
         groupId:
           type: number
           example: 0
@@ -7442,6 +7839,21 @@ components:
             Response time threshold in milliseconds. When provided, the value is
             applied to all active regions as regionData.THRESHOLD. Always
             returns 0 — use regionData.THRESHOLD for per-region control.
+        responseTimeThresholdMode:
+          type: string
+          enum:
+            - 'off'
+            - manual
+            - auto
+          example: auto
+          description: >-
+            How the slow-response threshold is set. 'auto' learns a per-region
+            threshold from the last 28 days of response times
+            (responseTimeThreshold and regionData.THRESHOLD must then be
+            omitted); 'manual' restores the values the monitor had before auto,
+            or the ones sent; 'off' clears every threshold. Read back as
+            responseTimeThresholdMode, with per-region details in
+            autoThresholds.
         groupId:
           type: number
           example: 0
@@ -7558,6 +7970,21 @@ components:
             Response time threshold in milliseconds. When provided, the value is
             applied to all active regions as regionData.THRESHOLD. Always
             returns 0 — use regionData.THRESHOLD for per-region control.
+        responseTimeThresholdMode:
+          type: string
+          enum:
+            - 'off'
+            - manual
+            - auto
+          example: auto
+          description: >-
+            How the slow-response threshold is set. 'auto' learns a per-region
+            threshold from the last 28 days of response times
+            (responseTimeThreshold and regionData.THRESHOLD must then be
+            omitted); 'manual' restores the values the monitor had before auto,
+            or the ones sent; 'off' clears every threshold. Read back as
+            responseTimeThresholdMode, with per-region details in
+            autoThresholds.
         groupId:
           type: number
           example: 0
@@ -7736,6 +8163,21 @@ components:
             Response time threshold in milliseconds. When provided, the value is
             applied to all active regions as regionData.THRESHOLD. Always
             returns 0 — use regionData.THRESHOLD for per-region control.
+        responseTimeThresholdMode:
+          type: string
+          enum:
+            - 'off'
+            - manual
+            - auto
+          example: auto
+          description: >-
+            How the slow-response threshold is set. 'auto' learns a per-region
+            threshold from the last 28 days of response times
+            (responseTimeThreshold and regionData.THRESHOLD must then be
+            omitted); 'manual' restores the values the monitor had before auto,
+            or the ones sent; 'off' clears every threshold. Read back as
+            responseTimeThresholdMode, with per-region details in
+            autoThresholds.
         groupId:
           type: number
           example: 0
@@ -7879,8 +8321,9 @@ components:
           minimum: 0
           maximum: 3
           description: >-
-            Number of retries on application errors (HTTP 4xx/5xx). 0-3.
-            Connection errors always retry 3 times regardless of this setting.
+            Number of retries on application errors (HTTP 4xx/5xx). 0-3. When
+            not set, UptimeRobot applies its default, currently 3. Connection
+            errors always retry 3 times regardless of this setting.
           example: 1
       required:
         - apiAssertions
@@ -7949,6 +8392,21 @@ components:
             Response time threshold in milliseconds. When provided, the value is
             applied to all active regions as regionData.THRESHOLD. Always
             returns 0 — use regionData.THRESHOLD for per-region control.
+        responseTimeThresholdMode:
+          type: string
+          enum:
+            - 'off'
+            - manual
+            - auto
+          example: auto
+          description: >-
+            How the slow-response threshold is set. 'auto' learns a per-region
+            threshold from the last 28 days of response times
+            (responseTimeThreshold and regionData.THRESHOLD must then be
+            omitted); 'manual' restores the values the monitor had before auto,
+            or the ones sent; 'off' clears every threshold. Read back as
+            responseTimeThresholdMode, with per-region details in
+            autoThresholds.
         groupId:
           type: number
           example: 0
@@ -8174,6 +8632,21 @@ components:
             Response time threshold in milliseconds. When provided, the value is
             applied to all active regions as regionData.THRESHOLD. Always
             returns 0 — use regionData.THRESHOLD for per-region control.
+        responseTimeThresholdMode:
+          type: string
+          enum:
+            - 'off'
+            - manual
+            - auto
+          example: auto
+          description: >-
+            How the slow-response threshold is set. 'auto' learns a per-region
+            threshold from the last 28 days of response times
+            (responseTimeThreshold and regionData.THRESHOLD must then be
+            omitted); 'manual' restores the values the monitor had before auto,
+            or the ones sent; 'off' clears every threshold. Read back as
+            responseTimeThresholdMode, with per-region details in
+            autoThresholds.
         groupId:
           type: number
           example: 0
@@ -8351,6 +8824,21 @@ components:
             Response time threshold in milliseconds. When provided, the value is
             applied to all active regions as regionData.THRESHOLD. Always
             returns 0 — use regionData.THRESHOLD for per-region control.
+        responseTimeThresholdMode:
+          type: string
+          enum:
+            - 'off'
+            - manual
+            - auto
+          example: auto
+          description: >-
+            How the slow-response threshold is set. 'auto' learns a per-region
+            threshold from the last 28 days of response times
+            (responseTimeThreshold and regionData.THRESHOLD must then be
+            omitted); 'manual' restores the values the monitor had before auto,
+            or the ones sent; 'off' clears every threshold. Read back as
+            responseTimeThresholdMode, with per-region details in
+            autoThresholds.
         groupId:
           type: number
           example: 0
@@ -8569,9 +9057,10 @@ components:
           minimum: 0
           maximum: 3
           description: >-
-            Number of retries on application errors (HTTP 4xx/5xx). 0-3.
-            Connection errors always retry 3 times regardless of this setting.
-            HTTP, Keyword and API monitors only. Send null to remove.
+            Number of retries on application errors (HTTP 4xx/5xx). 0-3. When
+            not set, UptimeRobot applies its default, currently 3. Connection
+            errors always retry 3 times regardless of this setting. HTTP,
+            Keyword and API monitors only. Send null to remove.
           nullable: true
           example: 1
         visualComparison:
@@ -8785,6 +9274,21 @@ components:
             Response time threshold in milliseconds. When provided, the value is
             applied to all active regions as regionData.THRESHOLD. Always
             returns 0 — use regionData.THRESHOLD for per-region control.
+        responseTimeThresholdMode:
+          type: string
+          enum:
+            - 'off'
+            - manual
+            - auto
+          example: auto
+          description: >-
+            How the slow-response threshold is set. 'auto' learns a per-region
+            threshold from the last 28 days of response times
+            (responseTimeThreshold and regionData.THRESHOLD must then be
+            omitted); 'manual' restores the values the monitor had before auto,
+            or the ones sent; 'off' clears every threshold. Read back as
+            responseTimeThresholdMode, with per-region details in
+            autoThresholds.
         regionalData:
           type: string
           description: >-
@@ -11585,6 +12089,82 @@ components:
       required:
         - data
         - nextCursorId
+    DependencyMaintenancesDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              serviceId:
+                type: integer
+              remoteId:
+                type: string
+                nullable: true
+              url:
+                type: string
+                nullable: true
+              title:
+                type: string
+              description:
+                type: string
+                nullable: true
+              impact:
+                type: string
+                nullable: true
+              window:
+                type: string
+                enum:
+                  - announced
+                  - in_progress
+                  - past
+              scheduledFor:
+                type: string
+              scheduledUntil:
+                type: string
+              affectedComponents:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+                    externalId:
+                      type: string
+                      nullable: true
+                    parentId:
+                      type: integer
+                      nullable: true
+                  required:
+                    - id
+                    - name
+                    - externalId
+                    - parentId
+              monitorId:
+                type: integer
+              friendlyName:
+                type: string
+            required:
+              - id
+              - serviceId
+              - remoteId
+              - url
+              - title
+              - description
+              - impact
+              - window
+              - scheduledFor
+              - scheduledUntil
+              - affectedComponents
+              - monitorId
+              - friendlyName
+      required:
+        - data
     ThirdPartyProviderSearchDto:
       type: object
       properties:
@@ -11668,6 +12248,19 @@ components:
                   - major
                   - maintenance
                   - unknown
+              region:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  name:
+                    type: string
+                required:
+                  - code
+                  - name
+                nullable: true
+              global:
+                type: boolean
               children:
                 type: array
                 items:
@@ -11685,15 +12278,44 @@ components:
                         - major
                         - maintenance
                         - unknown
+                    region:
+                      type: object
+                      properties:
+                        code:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                        - code
+                        - name
+                      nullable: true
+                    global:
+                      type: boolean
                   required:
                     - id
                     - name
                     - status
+                    - region
+                    - global
             required:
               - id
               - name
               - status
+              - region
+              - global
               - children
+        regions:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              name:
+                type: string
+            required:
+              - code
+              - name
       required:
         - id
         - name
@@ -11701,3 +12323,85 @@ components:
         - statusPageUrl
         - state
         - components
+        - regions
+    ThirdPartyProviderComponentsDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              status:
+                type: string
+                enum:
+                  - operational
+                  - minor
+                  - major
+                  - maintenance
+                  - unknown
+              region:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  name:
+                    type: string
+                required:
+                  - code
+                  - name
+                nullable: true
+              global:
+                type: boolean
+              children:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+                    status:
+                      type: string
+                      enum:
+                        - operational
+                        - minor
+                        - major
+                        - maintenance
+                        - unknown
+                    region:
+                      type: object
+                      properties:
+                        code:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                        - code
+                        - name
+                      nullable: true
+                    global:
+                      type: boolean
+                  required:
+                    - id
+                    - name
+                    - status
+                    - region
+                    - global
+            required:
+              - id
+              - name
+              - status
+              - region
+              - global
+              - children
+        regionLike:
+          type: boolean
+      required:
+        - data
+        - regionLike
