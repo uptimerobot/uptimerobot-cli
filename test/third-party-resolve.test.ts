@@ -97,6 +97,7 @@ function candidate(
     ],
     components: [],
     componentsTruncated: false,
+    unmappedServices: [],
     ...overrides,
   };
 }
@@ -624,6 +625,7 @@ describe('resolveCandidates', () => {
       class: 'runtime',
       components,
       componentsTruncated: true,
+      unmappedServices: [],
       evidence: [{ file: 'package.json', line: 3 }],
       regionDefaulted: false,
     });

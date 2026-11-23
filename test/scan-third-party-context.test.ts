@@ -133,6 +133,7 @@ describe('buildThirdPartyContext', () => {
           },
         ],
         componentsTruncated: false,
+        unmappedServices: [],
       },
       {
         provider: 'Stripe',
@@ -143,6 +144,7 @@ describe('buildThirdPartyContext', () => {
         ],
         components: [],
         componentsTruncated: false,
+        unmappedServices: [],
       },
     ]);
     expect(context.skipped).toEqual([]);
@@ -531,6 +533,34 @@ describe('component terms', () => {
       ['AWS', []],
       ['Stripe', []],
     ]);
+  });
+
+  it('names the services the scan saw but has no component term for, never a generic package', () => {
+    const [aws] = buildThirdPartyContext([
+      finding('AWS', { detail: { signal: 'boto3@1.35.80', package: 'boto3' }, kind: 'pip' }),
+      finding('AWS', {
+        line: 4,
+        detail: { signal: '@aws-sdk/client-kinesis@3.0.0', package: '@aws-sdk/client-kinesis' },
+      }),
+      finding('AWS', {
+        kind: 'terraform-provider',
+        file: 'infra/main.tf',
+        line: 1,
+        detail: {
+          signal: 'provider "aws"',
+          service: '',
+          component: '',
+          region: '',
+          regionLine: '',
+        },
+      }),
+      tf('AWS', 'infra/main.tf', 3, 'aws_iam', 'iam', 'eu-central-1', '1'),
+      tf('AWS', 'infra/main.tf', 9, 'aws_s3', 's3', 'eu-central-1', '1'),
+    ]).candidates;
+    expect(aws?.unmappedServices).toEqual(['@aws-sdk/client-kinesis', 'aws_iam']);
+    expect(aws?.components.map(({ term }) => term)).toEqual(['Amazon Simple Storage Service']);
+    const [stripe] = buildThirdPartyContext([finding('Stripe')]).candidates;
+    expect(stripe?.unmappedServices).toEqual([]);
   });
 });
 
