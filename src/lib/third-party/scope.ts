@@ -32,6 +32,7 @@ export type ScopeReason =
   | 'term-missed'
   | 'too-many'
   | 'components-truncated'
+  | 'unmapped-service'
   | 'endpoint-unavailable'
   | 'pinned-whole';
 
@@ -328,8 +329,9 @@ async function scopeRow(
     terms.push(found.outcome);
     for (const leaf of found.kept) if (!kept.has(leaf.id)) kept.set(leaf.id, leaf);
   }
-  // Regions the scan dropped would leave the create short of what the repository uses.
+  // Regions the scan dropped, or a service with no term, would leave the create short of what the repository uses.
   if (row.componentsTruncated) return whole('components-truncated');
+  if (row.unmappedServices.length > 0) return whole('unmapped-service');
   return { scoping: decideScope(terms, [...kept.values()]), kept: [...kept.values()] };
 }
 

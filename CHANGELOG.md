@@ -23,7 +23,8 @@ may change in minor releases.
   - The whole provider is tracked, with a reason, when a term matched nothing
     (`term-missed`), more than 20 distinct leaves were kept (`too-many`), the
     endpoint is missing (`endpoint-unavailable`), the scan dropped regions
-    of a term (`components-truncated`) or the scan found no term
+    of a term (`components-truncated`), the repository uses a service the
+    component table has no term for (`unmapped-service`) or the scan found no term
     (`no-terms`). Any other failed search leaves the row `unresolved` with
     `COMPONENT_SEARCH_FAILED`, exit 1 `CATALOG_UNRESOLVED`.
   - The `--json` row carries `scope`, `scopeReason`, `terms[]`, `totalLeaves`
@@ -107,6 +108,9 @@ may change in minor releases.
   Each candidate also carries `componentsTruncated`: a term seen in more
   than five regions keeps the first five, never loses a term, and the
   Markdown line says more regions than listed.
+  Each candidate also carries `unmappedServices`: the services a scoped
+  provider's signals name that the component table has no term for
+  (`aws_iam`, `@aws-sdk/client-kinesis`).
 - A terraform file whose provider blocks for one provider name two different
   regions reports no region for that provider's resources, not the first one.
 - An API error message is printed on one line; a message the API broke across

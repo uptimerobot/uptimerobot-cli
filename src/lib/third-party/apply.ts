@@ -556,7 +556,10 @@ function catalogCell(row: ResolvedCandidate): string {
 /** Names shown in a cell before the rest folds into `+N more`. */
 const MAX_COMPONENTS_PER_CELL = 5;
 
-const SCOPE_REASONS: Record<ScopeReason, (scoping: Partial<Scoping>) => string> = {
+const SCOPE_REASONS: Record<
+  ScopeReason,
+  (row: Partial<Scoping> & { unmappedServices?: readonly string[] }) => string
+> = {
   'no-terms': () => '',
   'term-missed': ({ terms }) =>
     `no component matched ${(terms ?? [])
@@ -566,6 +569,8 @@ const SCOPE_REASONS: Record<ScopeReason, (scoping: Partial<Scoping>) => string> 
   'too-many': ({ totalLeaves }) =>
     `${totalLeaves ?? 0} components matched, over ${MAX_TRACKED_COMPONENTS}; tracking the whole provider`,
   'components-truncated': () => 'the scan dropped regions of a term; tracking the whole provider',
+  'unmapped-service': ({ unmappedServices }) =>
+    `${(unmappedServices ?? []).join(', ')} has no component in the table; tracking the whole provider`,
   'endpoint-unavailable': () => 'component search unavailable; tracking the whole provider',
   'pinned-whole': () => 'pinned to the whole provider',
 };

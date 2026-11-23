@@ -51,6 +51,7 @@ function createRow(
     evidence: [],
     components: terms.map((term) => ({ term, region: null, evidence: [] })),
     componentsTruncated: false,
+    unmappedServices: [],
   };
   return {
     ...candidate,
@@ -254,6 +255,19 @@ describe('scopeProposal', () => {
     ];
     const aborted = await scopeProposal(rows, { access, tracked, deadline: Date.now() + 60_000 });
     expect(aborted[3]?.status).toBe('already-tracked');
+  });
+
+  it('tracks the whole provider when a service the repository uses has no component term', async () => {
+    const access = answeringApi({ 'AWS Lambda': { data: [{ id: 1, name: 'L', children: [] }] } });
+    const [row] = await scopeProposal(
+      [{ ...createRow('AWS', 248, ['AWS Lambda']), unmappedServices: ['aws_iam'] }],
+      { access, tracked, deadline: Date.now() + 60_000 },
+    );
+    expect(row).toMatchObject({
+      scope: 'whole',
+      scopeReason: 'unmapped-service',
+      trackedComponents: [],
+    });
   });
 
   it('tracks the whole provider when the scan dropped regions of a term', async () => {
