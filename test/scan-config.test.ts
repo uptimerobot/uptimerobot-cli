@@ -317,6 +317,49 @@ describe('terraform', () => {
     ]);
   });
 
+  it('drops the region when the default provider block names none and an alias does', () => {
+    const contents = [
+      'provider "aws" {',
+      '}',
+      'provider "aws" {',
+      '  alias  = "dr"',
+      '  region = "us-west-2"',
+      '}',
+      'resource "aws_s3_bucket" "b" {}',
+      'provider "google" {',
+      '  region = "europe-west1"',
+      '}',
+      'resource "google_storage_bucket" "g" {}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['AWS', ''],
+      ['AWS', ''],
+      ['Google Cloud', 'europe-west1'],
+      ['Google Cloud', 'europe-west1'],
+    ]);
+  });
+
+  it('reads a region only from a complete quoted literal, a trailing comment allowed', () => {
+    const contents = [
+      'provider "aws" {',
+      '  region = "us-east-1" == "us-east-1" ? "eu-west-1" : "us-west-2"',
+      '}',
+      'resource "aws_s3_bucket" "b" {}',
+      'provider "google" {',
+      '  region = "europe-west1" # primary',
+      '}',
+      'resource "google_storage_bucket" "g" {}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['AWS', ''],
+      ['AWS', ''],
+      ['Google Cloud', 'europe-west1'],
+      ['Google Cloud', 'europe-west1'],
+    ]);
+  });
+
   it('drops the region when a block of the provider sets it to something the scan cannot read', () => {
     const contents = [
       'provider "aws" {',
