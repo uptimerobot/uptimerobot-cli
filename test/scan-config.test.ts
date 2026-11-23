@@ -317,6 +317,24 @@ describe('terraform', () => {
     ]);
   });
 
+  it('drops the region when a block of the provider sets it to something the scan cannot read', () => {
+    const contents = [
+      'provider "aws" {',
+      '  region = var.region',
+      '}',
+      'provider "aws" {',
+      '  alias  = "dr"',
+      '  region = "us-west-2"',
+      '}',
+      'resource "aws_s3_bucket" "b" {}',
+    ].join('\n');
+    const findings = matchConfig({ path: 'main.tf', contents });
+    expect(findings.map((finding) => [finding.value, finding.detail.region])).toEqual([
+      ['AWS', ''],
+      ['AWS', ''],
+    ]);
+  });
+
   it('drops the region when two blocks of one provider name disagree, and keeps a repeated one', () => {
     const contents = [
       'provider "aws" {',

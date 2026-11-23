@@ -22,13 +22,15 @@ may change in minor releases.
   one evidence line per scoped component.
   - The whole provider is tracked, with a reason, when a term matched nothing
     (`term-missed`), more than 20 distinct leaves were kept (`too-many`), the
-    endpoint is missing (`endpoint-unavailable`) or the scan found no term
+    endpoint is missing (`endpoint-unavailable`), the scan dropped regions
+    of a term (`components-truncated`) or the scan found no term
     (`no-terms`). Any other failed search leaves the row `unresolved` with
     `COMPONENT_SEARCH_FAILED`, exit 1 `CATALOG_UNRESOLVED`.
   - The `--json` row carries `scope`, `scopeReason`, `terms[]`, `totalLeaves`
     and `trackedComponents[]`; a `created` result repeats
     `trackedComponents`; an already-tracked row carries `monitor` and
-    `untracked[]` and its Components cell says what the monitor covers.
+    `untracked[]` and its Components cell says what the monitor covers, or
+    that coverage is unknown when the monitor list never showed the monitor.
   - The `CATALOG_UNRESOLVED` message reads "The component search failed for
     X" when every unresolved row failed there; it still reads "The catalog
     could not resolve X" otherwise.

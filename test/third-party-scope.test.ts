@@ -38,17 +38,23 @@ function failingApi(status: number | 'network-error'): { access: ApiAccess; call
   return { access: { client, apiUrl: API_URL }, calls };
 }
 
-function createRow(provider: string, id: number, terms: string[]): ResolvedCandidate {
+function createRow(
+  provider: string,
+  id: number,
+  terms: string[],
+  status: 'create' | 'already-tracked' = 'create',
+): ResolvedCandidate {
   const candidate: ThirdPartyCandidate = {
     provider,
     searchTerm: provider.toLowerCase(),
     class: 'runtime',
     evidence: [],
     components: terms.map((term) => ({ term, region: null, evidence: [] })),
+    componentsTruncated: false,
   };
   return {
     ...candidate,
-    status: 'create',
+    status,
     catalog: { id, name: provider, state: 'operational', statusPageUrl: '' },
     regionDefaulted: false,
   };
@@ -188,6 +194,82 @@ describe('scopeProposal', () => {
         { id: 7, term: 'AWS Lambda' },
         { id: 8, term: 'AWS Lambda' },
       ],
+    });
+  });
+
+  it('counts failures per search, so a success between two failures resets the abort', async () => {
+    let calls = 0;
+    const fetchImplementation: typeof fetch = async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const term = new URL(request.url).searchParams.get('search');
+      calls += 1;
+      const fail = term === 'AWS Lambda';
+      return new Response(
+        JSON.stringify(
+          fail ? { code: 'DOWN' } : { data: [{ id: calls, name: 'n', children: [] }] },
+        ),
+        { headers: { 'content-type': 'application/json' }, status: fail ? 503 : 200 },
+      );
+    };
+    const client = createApiClient({
+      apiKey: 'u1-test',
+      apiUrl: API_URL,
+      environment: 'local',
+      fetchImplementation,
+      mode: 'agent',
+      version: '0.0.0-test',
+    });
+    // Each row fails on Lambda after succeeding on CloudFront; the counter never reaches three.
+    const rows = [1, 2, 3, 4].map((id) =>
+      createRow(`P${id}`, id, ['Amazon CloudFront', 'AWS Lambda']),
+    );
+    const scoped = await scopeProposal(rows, {
+      access: { client, apiUrl: API_URL },
+      tracked,
+      deadline: Date.now() + 60_000,
+    });
+    expect(scoped.every((row) => row.status === 'unresolved')).toBe(true);
+    expect(
+      scoped.some(
+        (row) => row.status === 'unresolved' && row.failure.code === 'ABORTED_AFTER_FAILURES',
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps an already-tracked row informational when the budget is gone or the abort fired', async () => {
+    const { access } = failingApi(503);
+    const trackedRow = (id: number): ResolvedCandidate =>
+      createRow(`T${id}`, id, ['AWS Lambda'], 'already-tracked');
+    const outOfTime = await scopeProposal([trackedRow(1)], {
+      access,
+      tracked,
+      deadline: Date.now() - 1,
+    });
+    expect(outOfTime[0]?.status).toBe('already-tracked');
+    const rows = [
+      createRow('A', 1, ['AWS Lambda']),
+      createRow('B', 2, ['AWS Lambda']),
+      createRow('C', 3, ['AWS Lambda']),
+      trackedRow(4),
+    ];
+    const aborted = await scopeProposal(rows, { access, tracked, deadline: Date.now() + 60_000 });
+    expect(aborted[3]?.status).toBe('already-tracked');
+  });
+
+  it('tracks the whole provider when the scan dropped regions of a term', async () => {
+    const access = answeringApi({ 'AWS Lambda': { data: [{ id: 1, name: 'L', children: [] }] } });
+    const [row] = await scopeProposal(
+      [{ ...createRow('AWS', 248, ['AWS Lambda']), componentsTruncated: true }],
+      {
+        access,
+        tracked,
+        deadline: Date.now() + 60_000,
+      },
+    );
+    expect(row).toMatchObject({
+      scope: 'whole',
+      scopeReason: 'components-truncated',
+      trackedComponents: [],
     });
   });
 

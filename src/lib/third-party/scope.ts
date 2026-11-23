@@ -25,7 +25,12 @@ import {
   isTransient,
 } from './resolve.js';
 
-export type ScopeReason = 'no-terms' | 'term-missed' | 'too-many' | 'endpoint-unavailable';
+export type ScopeReason =
+  | 'no-terms'
+  | 'term-missed'
+  | 'too-many'
+  | 'components-truncated'
+  | 'endpoint-unavailable';
 
 export interface TermOutcome {
   term: string;
@@ -222,37 +227,44 @@ async function searchComponents(
 
 class OutOfTime extends Error {}
 
+/** Transient failures in a row across every search of the run; a success resets it. */
+interface FailureCounter {
+  consecutive: number;
+}
+
 async function scopeRow(
   row: ResolvedCandidate,
   providerId: number,
   access: ApiAccess,
   deadline: number,
-): Promise<Scoping> {
+  failures: FailureCounter,
+): Promise<{ scoping: Scoping; kept: TrackedComponent[] }> {
   const terms: TermOutcome[] = [];
   const kept = new Map<number, TrackedComponent>();
   const trees = new Map<string, Leaf[]>();
+  const whole = (scopeReason: ScopeReason): { scoping: Scoping; kept: TrackedComponent[] } => ({
+    scoping: { scope: 'whole', scopeReason, terms, totalLeaves: kept.size, trackedComponents: [] },
+    kept: [...kept.values()],
+  });
   for (const { term, region } of distinctTerms(row.components)) {
     // One term can retry for seconds on a 429, so the budget is checked between terms too.
     if (Date.now() > deadline) throw new OutOfTime();
     let found: Awaited<ReturnType<typeof searchComponents>>;
     try {
       found = await searchComponents(access, providerId, term, region, trees);
+      failures.consecutive = 0;
     } catch (error) {
-      if (error instanceof EndpointUnavailable) {
-        return {
-          scope: 'whole',
-          scopeReason: 'endpoint-unavailable',
-          terms,
-          totalLeaves: kept.size,
-          trackedComponents: [],
-        };
-      }
+      if (error instanceof EndpointUnavailable) return whole('endpoint-unavailable');
+      if (error instanceof ComponentSearchFailed && isTransient(error.cause))
+        failures.consecutive += 1;
       throw error;
     }
     terms.push(found.outcome);
     for (const leaf of found.kept) if (!kept.has(leaf.id)) kept.set(leaf.id, leaf);
   }
-  return decideScope(terms, [...kept.values()]);
+  // Regions the scan dropped would leave the create short of what the repository uses.
+  if (row.componentsTruncated) return whole('components-truncated');
+  return { scoping: decideScope(terms, [...kept.values()]), kept: [...kept.values()] };
 }
 
 /**
@@ -295,7 +307,9 @@ function trackedFields(
 ): { monitor?: TrackedMonitor; untracked?: string[] } {
   if (row.status !== 'already-tracked') return {};
   const fields = monitorField(row, tracked);
-  const list = fields.monitor?.trackedComponentIds ?? null;
+  // No monitor record: the catalog said tracked but the list stopped short, so coverage is unknown.
+  if (fields.monitor === undefined) return {};
+  const list = fields.monitor.trackedComponentIds;
   const untracked =
     list === null ? [] : kept.filter((leaf) => !list.includes(leaf.id)).map((leaf) => leaf.name);
   return { ...fields, untracked };
@@ -312,7 +326,7 @@ export async function scopeProposal(
   options: { access: ApiAccess; tracked: TrackedProviders; deadline: number },
 ): Promise<ResolvedCandidate[]> {
   const scoped: ResolvedCandidate[] = [];
-  let consecutiveFailures = 0;
+  const failures: FailureCounter = { consecutive: 0 };
   for (const row of rows) {
     if (row.status !== 'create' && row.status !== 'already-tracked') {
       scoped.push(row);
@@ -323,7 +337,7 @@ export async function scopeProposal(
       continue;
     }
     const aborted =
-      consecutiveFailures >= MAX_CONSECUTIVE_FAILURES
+      failures.consecutive >= MAX_CONSECUTIVE_FAILURES
         ? {
             code: ABORTED_CODE,
             message: `Not asked: the previous ${MAX_CONSECUTIVE_FAILURES} component searches failed.`,
@@ -331,34 +345,49 @@ export async function scopeProposal(
         : Date.now() > options.deadline
           ? { code: TIME_BUDGET_CODE, message: 'Not asked: the searches ran out of time.' }
           : undefined;
+    // A tracked row is informational: nothing that stops its search may block the creates.
+    const informational = (): ResolvedCandidate => ({
+      ...row,
+      ...monitorField(row, options.tracked),
+    });
     if (aborted !== undefined) {
-      scoped.push({ ...row, status: 'unresolved', failure: aborted });
+      scoped.push(
+        row.status === 'already-tracked'
+          ? informational()
+          : { ...row, status: 'unresolved', failure: aborted },
+      );
       continue;
     }
     try {
-      const scoping = await scopeRow(row, row.catalog.id, options.access, options.deadline);
-      consecutiveFailures = 0;
-      scoped.push({
-        ...row,
-        ...scoping,
-        ...trackedFields(row, options.tracked, scoping.trackedComponents),
-      });
+      const { scoping, kept } = await scopeRow(
+        row,
+        row.catalog.id,
+        options.access,
+        options.deadline,
+        failures,
+      );
+      scoped.push({ ...row, ...scoping, ...trackedFields(row, options.tracked, kept) });
     } catch (error) {
       if (error instanceof OutOfTime) {
-        scoped.push({
-          ...row,
-          status: 'unresolved',
-          failure: { code: TIME_BUDGET_CODE, message: 'Not asked: the searches ran out of time.' },
-        });
+        scoped.push(
+          row.status === 'already-tracked'
+            ? informational()
+            : {
+                ...row,
+                status: 'unresolved',
+                failure: {
+                  code: TIME_BUDGET_CODE,
+                  message: 'Not asked: the searches ran out of time.',
+                },
+              },
+        );
         continue;
       }
       if (!(error instanceof ComponentSearchFailed)) throw error;
       const status = error.cause.cliError.status;
       if (status === 401 || status === 403) throw error.cause;
-      if (isTransient(error.cause)) consecutiveFailures += 1;
-      // A tracked row is informational here: a failed search must not block the creates.
       if (row.status === 'already-tracked') {
-        scoped.push({ ...row, ...monitorField(row, options.tracked) });
+        scoped.push(informational());
         continue;
       }
       scoped.push({

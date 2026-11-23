@@ -133,6 +133,8 @@ const MAX_LINE_LENGTH = 4096;
 const TF_PROVIDER = /^\s*provider\s+"([a-z0-9_-]{1,64})"/;
 const TF_RESOURCE = /^\s*(?:resource|data)\s+"([a-z0-9_]{1,128})"/;
 const TF_REGION = /^\s*region\s*=\s*"([^"\n]{0,64})"/;
+/** Any `region =` line, so a value the scan cannot read still counts against the block. */
+const TF_REGION_LINE = /^\s*region\s*=/;
 const DOCKER_FROM = /^\s*from\s+(?:--platform=\S+\s+)?(\S+)/i;
 const COMPOSE_IMAGE = /^\s*(?:-\s+)?image:\s*["']?([^\s"'#]+)/;
 const GIT_URL = /^\s*url\s*=\s*(\S+)/;
@@ -337,7 +339,14 @@ function terraform(contents: string): Match[] {
       continue;
     }
     const value = TF_REGION.exec(line)?.[1];
-    if (value === undefined || !REGION.test(value)) continue;
+    if (value === undefined || !REGION.test(value)) {
+      // A region the scan cannot read (`var.region`, an interpolation) in a
+      // provider block: no literal from another block of that provider may
+      // stand in for it, so the provider keeps no region in this file.
+      if (TF_REGION_LINE.test(line) && currentProvider !== undefined && depth === providerDepth)
+        disagreed.add(currentProvider);
+      continue;
+    }
     if (currentProvider === undefined) {
       if (!seenProvider && depth === 0 && fileRegion === undefined) {
         fileRegion = { value, line: index + 1 };

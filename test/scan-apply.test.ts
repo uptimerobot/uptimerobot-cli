@@ -593,6 +593,53 @@ describe('uptimerobot scan --apply scopes a provider to its components', () => {
     expect(readableWhole.stdout).toContain('| tracks every component |');
   });
 
+  it('says coverage is unknown for a tracked row the monitor list never showed', async () => {
+    const stub = await startStub({
+      catalog: { ...DEFAULT_CATALOG, aws: [row(248, 'AWS', true)] },
+    });
+    const root = await writeRepository(AWS_REPOSITORY);
+
+    const output = JSON.parse(
+      (await runCli(['scan', root, '--apply', '--json'], env(stub))).stdout,
+    );
+    const readable = await runCli(
+      ['scan', root, '--apply'],
+      env(stub, { UPTIMEROBOT_OUTPUT: 'table' }),
+    );
+
+    expect(output.proposal[0]).toMatchObject({ status: 'already-tracked' });
+    expect(output.proposal[0].monitor).toBeUndefined();
+    expect(output.proposal[0].untracked).toBeUndefined();
+    expect(readable.stdout).toContain('| no monitor record, coverage unknown |');
+  });
+
+  it('names the found components a tracked monitor does not cover even when the row falls back to the whole provider', async () => {
+    const stub = await startStub({
+      monitors: [
+        {
+          id: 100,
+          type: 'THIRD_PARTY_SERVICE',
+          config: { thirdPartyService: { providerId: 248, trackedComponentIds: [9108] } },
+        },
+      ],
+    });
+    const root = await writeRepository({
+      ...AWS_REPOSITORY,
+      'infra/main.tf': `${AWS_TERRAFORM}resource "aws_lambda_function" "fn" {}\n`,
+    });
+
+    const output = JSON.parse(
+      (await runCli(['scan', root, '--apply', '--json'], env(stub))).stdout,
+    );
+
+    expect(output.proposal[0]).toMatchObject({
+      status: 'already-tracked',
+      scope: 'whole',
+      scopeReason: 'term-missed',
+      untracked: ['Amazon Relational Database Service (Frankfurt)'],
+    });
+  });
+
   it('asks the endpoint nothing for a provider without component terms', async () => {
     const stub = await startStub();
     const root = await writeRepository(REPOSITORY);

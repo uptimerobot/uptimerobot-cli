@@ -444,6 +444,7 @@ const SCOPE_REASONS: Record<ScopeReason, (scoping: Partial<Scoping>) => string> 
       .join(', ')}; tracking the whole provider`,
   'too-many': ({ totalLeaves }) =>
     `${totalLeaves ?? 0} components matched, over ${MAX_TRACKED_COMPONENTS}; tracking the whole provider`,
+  'components-truncated': () => 'the scan dropped regions of a term; tracking the whole provider',
   'endpoint-unavailable': () => 'component search unavailable; tracking the whole provider',
 };
 
@@ -456,7 +457,8 @@ function foldNames(names: readonly string[]): string {
 function componentsCell(row: ResolvedCandidate): string {
   if (row.status !== 'create' && row.status !== 'already-tracked') return '';
   if (row.status === 'already-tracked') {
-    const list = row.monitor?.trackedComponentIds ?? null;
+    if (row.monitor === undefined) return 'no monitor record, coverage unknown';
+    const list = row.monitor.trackedComponentIds;
     const covers =
       list === null
         ? 'tracks every component'
