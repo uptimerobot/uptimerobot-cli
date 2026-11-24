@@ -68,5 +68,15 @@ describe('third-party-providers components list', () => {
       '9108  Amazon Simple Storage Service (Frankfurt)  Amazon Simple Storage Service',
     );
     expect(table.stdout).not.toContain('9100 ');
+
+    const all = await runCli([...args, '--all'], { ...env, UPTIMEROBOT_OUTPUT: 'table' });
+    expect(all.exitCode).toBe(0);
+    const rows = all.stdout.split('\n');
+    expect(rows.find((row) => row.startsWith('9100'))).toContain('Amazon Simple Storage Service');
+    const child = rows.find((row) => row.startsWith('9108'));
+    expect(child).toContain('Amazon Simple Storage Service (Frankfurt)');
+    expect(child).toContain('eu-central-1');
+    expect(child).toContain('operational');
+    expect(all.stdout).not.toContain('[object');
   });
 });
