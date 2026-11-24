@@ -18,15 +18,23 @@ const DEFAULT_HEARTBEAT_HOST = 'https://heartbeat.uptimerobot.com';
  * name, a childless top-level component as itself. The search answers only
  * the leaves that matched, and a table has no second level to show them on.
  */
-export function flattenComponentTree(payload: unknown): unknown {
+export function flattenComponentTree(
+  payload: unknown,
+  options: { keepParents?: boolean } = {},
+): unknown {
   if (!isPlainRecord(payload) || !Array.isArray(payload.items)) return payload;
   const items = payload.items.flatMap((item) => {
     if (!isPlainRecord(item) || !Array.isArray(item.children) || item.children.length === 0) {
       return [item];
     }
-    return item.children.map((child) =>
+    const children = item.children.map((child) =>
       isPlainRecord(child) ? { ...child, parent: item.name } : child,
     );
+    if (!options.keepParents) return children;
+    // Every field of the parent stays on its own row; the children array
+    // itself is the rows below it, not a cell.
+    const { children: _, ...parent } = item;
+    return [parent, ...children];
   });
   return { ...payload, items };
 }

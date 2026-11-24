@@ -572,7 +572,7 @@ function healthcheckFinding(
   if (probe === undefined) return undefined;
   // The host rules judge the raw host: a redacted value can read as another
   // host when an `@` in the path pulls the real one into the masked part.
-  const host = probeHost(collapsed, probe);
+  const host = probeHost(collapsed, redacted, probe);
   return {
     detail: detailOf({ ...extra, command: truncate(redacted, MAX_DETAIL_TEXT), host }),
     evidence: { file, line },
@@ -594,17 +594,48 @@ const RAW_AUTHORITY = /^[a-z][a-z0-9+.-]*:\/\/(?:[^\s/?#]*@)?([^\s/?#@]+)/i;
  * that stood before the probe, so the raw URLs are walked until one reads,
  * with its credentials dropped, as the reported probe does.
  */
-function probeHost(command: string, reported: string): string | undefined {
-  // Redaction only replaces a credential prefix with `***`, so the text after
-  // the mask is still present, verbatim, in the raw word the probe came from.
-  const mask = reported.indexOf('***@');
-  const tail = mask === -1 ? reported : reported.slice(mask + 4);
-  const scheme = new RegExp(SCHEME_URL_PATTERN.source, 'gi');
-  for (const match of command.matchAll(scheme)) {
-    const word = command.slice(match.index).split(/\s/, 1)[0] ?? '';
-    const authority = RAW_AUTHORITY.exec(word)?.[1];
-    const host = authority === undefined ? undefined : hostnameOf(authority);
-    if (host !== undefined && word.includes(tail)) return host;
+/**
+ * Words as a shell reads them: a quoted span is one word, so a masked quoted
+ * value keeps the count. Quotes and backslashes stay in the word, since the
+ * redacted command keeps them too and the words are compared as text.
+ */
+function shellWords(text: string): string[] {
+  const words: string[] = [];
+  let current = '';
+  let quote: string | undefined;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index]!;
+    if (quote === undefined && (character === '"' || character === "'")) quote = character;
+    else if (quote === character) quote = undefined;
+    else if (character === '\\' && quote !== "'" && index + 1 < text.length) {
+      current += character + text[index + 1];
+      index += 1;
+      continue;
+    }
+    if (quote === undefined && character === ' ') {
+      if (current !== '') words.push(current);
+      current = '';
+    } else current += character;
+  }
+  if (current !== '') words.push(current);
+  return words;
+}
+
+function probeHost(command: string, redacted: string, reported: string): string | undefined {
+  // Redaction keeps the word count (a masked value is one word, `***`), so
+  // the raw word at the position of the redacted word that yields the probe
+  // is the one the probe came from; a masked flag value at another position
+  // never lends its host, however alike its masked text reads.
+  const rawWords = shellWords(command);
+  const redactedWords = shellWords(redacted);
+  if (rawWords.length === redactedWords.length) {
+    const index = redactedWords.findIndex((word) => probeUrl(word) === reported);
+    const raw = index === -1 ? undefined : rawWords[index];
+    const start = raw === undefined ? undefined : SCHEME_URL_PATTERN.exec(raw)?.index;
+    if (raw !== undefined && start !== undefined) {
+      const authority = RAW_AUTHORITY.exec(raw.slice(start))?.[1];
+      return authority === undefined ? undefined : hostnameOf(authority);
+    }
   }
   return hostnameOf(probeUrl(reported));
 }

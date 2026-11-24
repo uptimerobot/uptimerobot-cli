@@ -297,11 +297,11 @@ Precedence:
       seedBeginPrefix: SEED_BEGIN_PREFIX,
       seedWritable: await canWriteSeed(seedPath, root),
     });
-    // The guide is checked before anything is created on the account, as the
-    // seed file was through the offer decision: a foreign guide found after the
-    // offer would end the run with monitors made and no guide to use them.
+    // The guide is written before anything is created on the account: its
+    // content does not depend on the offer, and a write that fails afterwards
+    // would end the run with monitors made and no guide to use them.
     const setupGuideFile = this.setupGuideFile(root, invocation, flags['max-monitors']);
-    if (decision === 'offer') await this.ownedMarkedFile(setupGuideFile);
+    const setupGuide = await this.writeMarkedFile(setupGuideFile);
     const thirdParty =
       decision === 'offer'
         ? await offerThirdParty({ context, access, mode, invocation, io: this })
@@ -310,11 +310,6 @@ Precedence:
     // file, is the record of what exists.
     const outcomeLines = thirdParty === null ? [] : renderOutcome(thirdParty, invocation);
     const seedContext = await this.writeSeedContext(root, context, invocation, outcomeLines);
-    // Written next to the scan and on the same terms, so the two halves of the
-    // handoff always arrive together. Unconditional, like the scan: a --no-agent
-    // run still leaves the guide for whichever agent the user opens later.
-    const setupGuide = await this.writeMarkedFile(setupGuideFile);
-
     // A resolved target means agent setup was asked for; --no-agent leaves it
     // undefined, and that is the only difference between the two paths.
     const report =
@@ -597,6 +592,19 @@ Precedence:
         {
           code: file.writeCode,
           message: `${file.path} is a symbolic link. Replace it with a regular file or remove it, then run the command again.`,
+          path: file.path,
+        },
+        1,
+      );
+    }
+    // A directory or a device at the path reads as absent and would fail the
+    // exclusive create later; only a regular file or nothing may stand there.
+    const existing = await lstat(file.path).catch(() => undefined);
+    if (existing !== undefined && !existing.isFile()) {
+      return this.fail(
+        {
+          code: file.writeCode,
+          message: `${file.path} exists and is not a regular file. Move or delete it, then run the command again.`,
           path: file.path,
         },
         1,

@@ -122,7 +122,7 @@ may change in minor releases.
 ### Fixed
 
 - The host rules judge a healthcheck probe and a rewrite destination by the host the scanner read before redaction, so a URL with a port and an `@` later in it is no longer read as a credentialed URL whose host is the text after the `@`; the redaction itself stops at `?` and `#`. A heartbeat's `target` in `uptimerobot verify` is null by monitor type, not by the shape of its push token. The interactive agent picker depends on `@inquirer/select` alone instead of the whole `@inquirer/prompts` bundle.
-- `uptimerobot init` refuses an outdated setup guide it cannot write before the third-party offer, so a run never ends with services created and no guide; a clipped quoted credential that ends in a backslash is still masked; a compose `CMD-SHELL` healthcheck script is kept as written, so a quoted credential inside it is masked whole.
+- `uptimerobot init` writes the setup guide before the third-party offer, and refuses a link, a foreign file or a directory at its path first, so a run never ends with services created and no guide; a clipped quoted credential that ends in a backslash is still masked; a compose `CMD-SHELL` healthcheck script is kept as written, so a quoted credential inside it is masked whole.
 - A container health probe's command and URL are redacted like a cron command:
   `user:password@` and a `?token=` style query parameter no longer reach
   `uptimerobot-scan.md`.

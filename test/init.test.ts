@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1333,6 +1334,54 @@ describe('init', () => {
         ).rejects.toMatchObject({ cliError: { code: 'SEED_CONTEXT_EXISTS' } });
         expect(catalogCalls(api.paths)).toEqual([]);
         expect(api.posts).toEqual([]);
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('writes the guide before any service is created, so a write failure costs nothing on the account', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      const api = stubApi();
+      const { requestConfirmation } = await import('../src/lib/invocation.js');
+      vi.mocked(requestConfirmation).mockResolvedValue(true);
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+        const inner = globalThis.fetch;
+        let guideAtPost: boolean | undefined;
+        vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+          if (request.method === 'POST')
+            guideAtPost = existsSync(join(repository, SETUP_GUIDE_FILE));
+          return inner(input, init);
+        });
+        await Init.run(['--no-launch', '--no-agent'], { root: projectRoot });
+        expect(guideAtPost).toBe(true);
+        expect(api.posts).toHaveLength(1);
+        expect(await readFile(join(repository, SETUP_GUIDE_FILE), 'utf8')).toContain(
+          SETUP_BEGIN_PREFIX,
+        );
+      } finally {
+        restoreTerminal();
+      }
+    });
+
+    it('refuses a directory at the guide path before any service is created', async () => {
+      keyring.set(STORED_CREDENTIAL, 'u123-stored');
+      await writeManifest();
+      await mkdir(join(repository, SETUP_GUIDE_FILE));
+      const api = stubApi();
+      const { requestConfirmation } = await import('../src/lib/invocation.js');
+      const restoreTerminal = stubTerminal();
+      try {
+        const { default: Init } = await import('../src/commands/init.js');
+        await expect(
+          Init.run(['--no-launch', '--no-agent'], { root: projectRoot }),
+        ).rejects.toMatchObject({ cliError: { code: 'SETUP_GUIDE_WRITE_FAILED' } });
+        expect(catalogCalls(api.paths)).toEqual([]);
+        expect(api.posts).toEqual([]);
+        expect(vi.mocked(requestConfirmation)).not.toHaveBeenCalled();
       } finally {
         restoreTerminal();
       }

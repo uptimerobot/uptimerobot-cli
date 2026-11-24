@@ -683,12 +683,53 @@ describe('scanContainers — round three', () => {
     const root = await temporaryRepo({
       Dockerfile:
         'FROM x\nHEALTHCHECK CMD TOKEN=https://auth.example.com/session curl http://127.0.0.1:8080/health\n',
+      'a/Dockerfile':
+        'FROM x\nHEALTHCHECK CMD TOKEN=https://auth.example.com/http://127.0.0.1:8080/health curl http://127.0.0.1:8080/health\n',
+    });
+
+    const findings = await scanContainers(root);
+
+    for (const finding of findings) {
+      expect(finding.value).toBe('http://127.0.0.1:8080/health');
+      expect(finding.detail?.host).toBe('127.0.0.1');
+    }
+    expect(findings).toHaveLength(2);
+  });
+
+  it('keeps the raw host of a probe that carries an escaped character', async () => {
+    const root = await temporaryRepo({
+      Dockerfile: 'FROM x\nHEALTHCHECK CMD curl http://127.0.0.1:8080/a@public.example/he\\alth\n',
     });
 
     const [finding] = await scanContainers(root);
 
-    expect(finding?.value).toBe('http://127.0.0.1:8080/health');
+    expect(finding?.value).toBe('http://***@public.example/he');
     expect(finding?.detail?.host).toBe('127.0.0.1');
+  });
+
+  it('keeps the raw host when a masked quoted value removed a space before the probe', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        'FROM x\nHEALTHCHECK CMD curl --password "two words" http://127.0.0.1:8080/a@public.example/health\n',
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.detail?.command).not.toContain('two words');
+    expect(finding?.detail?.host).toBe('127.0.0.1');
+  });
+
+  it('takes the host from the word at the probe position, not from a masked flag value that reads alike', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        'FROM x\nHEALTHCHECK CMD curl --password http://127.0.0.1:8080/a@public.example/?token=x http://user:s3cret@public.example/?token=y\n',
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).toBe('http://***@public.example/?token=***');
+    expect(finding?.detail?.host).toBe('public.example');
+    expect(finding?.detail?.command).not.toContain('s3cret');
   });
 
   it('keeps a CMD-SHELL script as written so a quoted credential inside it is still masked', async () => {
