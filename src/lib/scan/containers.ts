@@ -584,11 +584,11 @@ function healthcheckFinding(
 
 /**
  * The host of the first URL in a raw command, read the way a URL parser does:
- * the authority ends at the first `/`, `?` or `#`, and the host is what
+ * the authority ends at the first `/`, `\`, `?` or `#`, and the host is what
  * follows the last `@` in it, so a comma or an `@` in a password never cuts
  * the host short the way the probe pattern would.
  */
-const RAW_AUTHORITY = /^[a-z][a-z0-9+.-]*:\/\/(?:[^\s/?#]*@)?([^\s/?#@]+)/i;
+const RAW_AUTHORITY = /^[a-z][a-z0-9+.-]*:\/\/(?:[^\s/?#\\]*@)?([^\s/?#@\\]+)/i;
 
 /**
  * The raw host of the probe that was reported: redaction can remove a URL
@@ -627,7 +627,9 @@ function probeHost(command: string, reported: string): string | undefined {
     if (probeUrl(redactClipped(candidate, limit)) !== sentinel) continue;
     // The authority is read from the raw line, not the match: the probe pattern stops at a comma a password may hold.
     const authority = RAW_AUTHORITY.exec(command.slice(at))?.[1];
-    return authority === undefined ? undefined : hostnameOf(authority);
+    if (authority === undefined) return undefined;
+    // A port no parser accepts still leaves the host before it readable.
+    return hostnameOf(authority) ?? hostnameOf(authority.replace(/:[^:\]]*$/, ''));
   }
   return hostnameOf(probeUrl(reported));
 }
