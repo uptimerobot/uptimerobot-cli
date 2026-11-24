@@ -13,6 +13,18 @@ const DEFAULT_HEARTBEAT_HOST = 'https://heartbeat.uptimerobot.com';
  * response without `heartbeatUrl` falls back to composing `<host>/m<id>-<token>`
  * from `id` and the token in `url`, the same way the API builds it.
  */
+export function withDerivedFields(payload: unknown, env = process.env): unknown {
+  if (Array.isArray(payload)) return payload.map((item) => withDerivedFields(item, env));
+  if (!isPlainRecord(payload)) return payload;
+  if (Array.isArray(payload.items)) {
+    return { ...payload, items: payload.items.map((item) => withDerivedFields(item, env)) };
+  }
+  // An API-supplied value wins: the CLI must never shadow a real field.
+  if (typeof payload.pingUrl === 'string') return payload;
+  const pingUrl = heartbeatPingUrl(payload, env);
+  return pingUrl === undefined ? payload : { ...payload, pingUrl };
+}
+
 /**
  * A provider's component tree as rows: a matching child under its parent's
  * name, a childless top-level component as itself. The search answers only
@@ -37,18 +49,6 @@ export function flattenComponentTree(
     return [parent, ...children];
   });
   return { ...payload, items };
-}
-
-export function withDerivedFields(payload: unknown, env = process.env): unknown {
-  if (Array.isArray(payload)) return payload.map((item) => withDerivedFields(item, env));
-  if (!isPlainRecord(payload)) return payload;
-  if (Array.isArray(payload.items)) {
-    return { ...payload, items: payload.items.map((item) => withDerivedFields(item, env)) };
-  }
-  // An API-supplied value wins: the CLI must never shadow a real field.
-  if (typeof payload.pingUrl === 'string') return payload;
-  const pingUrl = heartbeatPingUrl(payload, env);
-  return pingUrl === undefined ? payload : { ...payload, pingUrl };
 }
 
 function heartbeatPingUrl(
