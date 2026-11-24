@@ -696,6 +696,17 @@ describe('scanContainers — round three', () => {
     expect(findings).toHaveLength(2);
   });
 
+  it('keeps the raw host when the clip cut the tail of a long command', async () => {
+    const root = await temporaryRepo({
+      Dockerfile: `FROM x\nHEALTHCHECK CMD curl http://127.0.0.1:8080/a@public.example/health${' --retry 1'.repeat(300)}\n`,
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).toBe('http://***@public.example/health');
+    expect(finding?.detail?.host).toBe('127.0.0.1');
+  });
+
   it('keeps the raw host of a probe that carries an escaped character', async () => {
     const root = await temporaryRepo({
       Dockerfile: 'FROM x\nHEALTHCHECK CMD curl http://127.0.0.1:8080/a@public.example/he\\alth\n',

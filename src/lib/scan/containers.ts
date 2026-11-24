@@ -626,16 +626,15 @@ function probeHost(command: string, redacted: string, reported: string): string 
   // the raw word at the position of the redacted word that yields the probe
   // is the one the probe came from; a masked flag value at another position
   // never lends its host, however alike its masked text reads.
+  // The clip only cuts the tail, so every word before it keeps its position.
   const rawWords = shellWords(command);
   const redactedWords = shellWords(redacted);
-  if (rawWords.length === redactedWords.length) {
-    const index = redactedWords.findIndex((word) => probeUrl(word) === reported);
-    const raw = index === -1 ? undefined : rawWords[index];
-    const start = raw === undefined ? undefined : SCHEME_URL_PATTERN.exec(raw)?.index;
-    if (raw !== undefined && start !== undefined) {
-      const authority = RAW_AUTHORITY.exec(raw.slice(start))?.[1];
-      return authority === undefined ? undefined : hostnameOf(authority);
-    }
+  const index = redactedWords.findIndex((word) => probeUrl(word) === reported);
+  const raw = index === -1 ? undefined : rawWords[index];
+  const start = raw === undefined ? undefined : SCHEME_URL_PATTERN.exec(raw)?.index;
+  if (raw !== undefined && start !== undefined) {
+    const authority = RAW_AUTHORITY.exec(raw.slice(start))?.[1];
+    return authority === undefined ? undefined : hostnameOf(authority);
   }
   return hostnameOf(probeUrl(reported));
 }
