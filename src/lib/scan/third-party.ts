@@ -192,9 +192,11 @@ interface IgnoredDirectories {
  * file budget like any other: a scratch or cache
  * directory the repository does not track is not the project's own, and a
  * manifest inside it must not become a candidate.
- * ponytail: plain names and paths only; a glob, a negation or a nested
- * `.gitignore` is not read, so such a directory is still walked. Full
- * gitignore matching if a field report needs it.
+ * Rules apply in order, so a later negation brings a directory back.
+ * ponytail: plain names and paths only; a glob or a nested `.gitignore` is
+ * not read, so such a directory is still walked, and a negated glob brings
+ * back everything named before it. Full gitignore matching if a field report
+ * needs it.
  */
 async function readIgnoredDirectories(
   repoRoot: string,
@@ -214,12 +216,20 @@ async function readIgnoredDirectories(
     budget.files -= 1;
     for (const raw of (await readFile(file, 'utf8')).split('\n')) {
       const line = raw.trim();
-      if (line === '' || line.startsWith('#') || line.startsWith('!') || /[*?[\\]/.test(line)) {
+      if (line === '' || line.startsWith('#')) continue;
+      const negated = line.startsWith('!');
+      const rule = negated ? line.slice(1) : line;
+      if (/[*?[\\]/.test(rule)) {
+        // A negated pattern may bring back any directory named so far.
+        if (negated) [names, paths].forEach((set) => set.clear());
         continue;
       }
-      const entry = line.replace(/\/+$/, '');
-      if (entry.startsWith('/') || entry.includes('/')) paths.add(entry.replace(/^\/+/, ''));
-      else names.add(entry);
+      const entry = rule.replace(/\/+$/, '');
+      const rooted = entry.startsWith('/') || entry.includes('/');
+      const set = rooted ? paths : names;
+      const key = rooted ? entry.replace(/^\/+/, '') : entry;
+      if (negated) set.delete(key);
+      else set.add(key);
     }
   } catch {
     // No `.gitignore`, or one that cannot be read: nothing is left out.

@@ -494,6 +494,26 @@ describe('scanThirdParty leaves out what the repository ignores', () => {
     expect((await scanThirdParty(root)).map((f) => f.value)).toEqual(['Twilio']);
   });
 
+  it('walks a directory a later negation brings back', async () => {
+    const root = await writeRepository({
+      '.gitignore': ['scratch/', '!scratch/', 'tmp/', '/cache', '!/cache', 'out/', ''].join('\n'),
+      'scratch/package.json': manifest('stripe'),
+      'cache/package.json': manifest('resend'),
+      'tmp/package.json': manifest('twilio'),
+      'out/package.json': manifest('openai'),
+    });
+    expect(vendorsOf(await scanThirdParty(root))).toEqual(['Resend', 'Stripe']);
+  });
+
+  it('keeps nothing left out once a negation it cannot read may bring anything back', async () => {
+    const root = await writeRepository({
+      '.gitignore': ['scratch/', '!scr*', 'tmp/', ''].join('\n'),
+      'scratch/package.json': manifest('stripe'),
+      'tmp/package.json': manifest('twilio'),
+    });
+    expect(vendorsOf(await scanThirdParty(root))).toEqual(['Stripe']);
+  });
+
   it('charges the .gitignore read to the file budget', async () => {
     const root = await writeRepository({
       '.gitignore': 'tmp/\n',
