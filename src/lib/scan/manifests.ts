@@ -483,6 +483,8 @@ function tableDependency(
 }
 
 const INDIRECT_SCOPE = 'indirect';
+/** Go's own rule for the marker: the comment is `indirect` alone, or `indirect;` and then a reason. */
+const GO_INDIRECT = /^\/\/\s*indirect(;\s+\S.*)?\s*$/;
 
 /** `go.mod`: every `require` line, single or block form; the module line is not a dependency. */
 function parseGoMod(contents: string): Declared[] {
@@ -506,7 +508,7 @@ function parseGoMod(contents: string): Declared[] {
       name: match[1],
       version: match[2] ?? '',
       line: index + 1,
-      scope: /\/\/\s*indirect\s*(;|$)/.test(raw) ? INDIRECT_SCOPE : 'require',
+      scope: GO_INDIRECT.test(raw.slice(raw.indexOf('//'))) ? INDIRECT_SCOPE : 'require',
       class: 'runtime',
     });
   });

@@ -805,6 +805,9 @@ describe('matchManifest on go.mod indirect requirements', () => {
     'require github.com/felixge/httpsnoop v1.0.4 // indirect',
     'require github.com/left/prose v1.0.0 // indirect calls are tested here',
     'require github.com/left/explained v1.0.0 // indirect; pinned for a fix',
+    'require github.com/left/later v1.0.0 // see // indirect',
+    'require github.com/left/joined v1.0.0 // indirect;reason',
+    'require github.com/left/bare v1.0.0 // indirect;',
     '',
   ].join('\n');
 
@@ -814,6 +817,9 @@ describe('matchManifest on go.mod indirect requirements', () => {
       ['unmapped', 'github.com/left/direct'],
       ['vendor', 'Stripe'],
       ['unmapped', 'github.com/left/prose'],
+      ['unmapped', 'github.com/left/later'],
+      ['unmapped', 'github.com/left/joined'],
+      ['unmapped', 'github.com/left/bare'],
     ]);
   });
 });
