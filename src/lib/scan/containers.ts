@@ -594,7 +594,11 @@ const RAW_AUTHORITY = /^[a-z][a-z0-9+.-]*:\/\/(?:[^\s/?#]*@)?([^\s/?#@]+)/i;
  * that stood before the probe, so the raw URLs are walked until one reads,
  * with its credentials dropped, as the reported probe does.
  */
-/** Words as a shell reads them: a quoted span is one word, so a masked quoted value keeps the count. */
+/**
+ * Words as a shell reads them: a quoted span is one word, so a masked quoted
+ * value keeps the count. Quotes and backslashes stay in the word, since the
+ * redacted command keeps them too and the words are compared as text.
+ */
 function shellWords(text: string): string[] {
   const words: string[] = [];
   let current = '';
@@ -604,7 +608,7 @@ function shellWords(text: string): string[] {
     if (quote === undefined && (character === '"' || character === "'")) quote = character;
     else if (quote === character) quote = undefined;
     else if (character === '\\' && quote !== "'" && index + 1 < text.length) {
-      current += text[index + 1];
+      current += character + text[index + 1];
       index += 1;
       continue;
     }
