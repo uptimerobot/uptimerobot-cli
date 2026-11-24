@@ -605,7 +605,8 @@ function shellWords(text: string): string[] {
   let quote: string | undefined;
   for (let index = 0; index < text.length; index += 1) {
     const character = text[index]!;
-    if (quote === undefined && (character === '"' || character === "'")) quote = character;
+    if (quote === undefined && (character === '"' || character === "'" || character === '`'))
+      quote = character;
     else if (quote === character) quote = undefined;
     else if (character === '\\' && quote !== "'" && index + 1 < text.length) {
       current += character + text[index + 1];
@@ -632,6 +633,11 @@ function probeHost(command: string, redacted: string, reported: string): string 
   const index = redactedWords.findIndex((word) => probeUrl(word) === reported);
   const raw = index === -1 ? undefined : rawWords[index];
   const start = raw === undefined ? undefined : SCHEME_URL_PATTERN.exec(raw)?.index;
+  // The raw word must itself redact to the reported probe: positions that
+  // drifted for any reason never hand another word's host to this probe.
+  if (raw !== undefined && probeUrl(redactClipped(raw, MAX_REDACTION_TEXT)) !== reported) {
+    return hostnameOf(probeUrl(reported));
+  }
   if (raw !== undefined && start !== undefined) {
     const authority = RAW_AUTHORITY.exec(raw.slice(start))?.[1];
     return authority === undefined ? undefined : hostnameOf(authority);

@@ -696,6 +696,18 @@ describe('scanContainers — round three', () => {
     expect(findings).toHaveLength(2);
   });
 
+  it('treats a backtick span as one word like the redaction does, so positions still line up', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        'FROM x\nHEALTHCHECK CMD TOKEN=`cat http://127.0.0.1/internal` curl http://public.example/health\n',
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).toBe('http://public.example/health');
+    expect(finding?.detail?.host).toBe('public.example');
+  });
+
   it('keeps the raw host when the clip cut the tail of a long command', async () => {
     const root = await temporaryRepo({
       Dockerfile: `FROM x\nHEALTHCHECK CMD curl http://127.0.0.1:8080/a@public.example/health${' --retry 1'.repeat(300)}\n`,
