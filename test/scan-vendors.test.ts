@@ -140,6 +140,18 @@ describe('matchPackage', () => {
       name: 'psycopg',
     });
     expect(classifyPackage('npm', 'left-pad')).toEqual({ outcome: 'unmapped', name: 'left-pad' });
+  });
+
+  it('maps the Go modules and scoped npm packages a field test found unmapped', () => {
+    const provider = (ecosystem: 'go' | 'npm', name: string) => {
+      const result = classifyPackage(ecosystem, name);
+      return result.outcome === 'vendor' ? result.match.entry.catalogName : result.outcome;
+    };
+    expect(provider('go', 'github.com/anthropics/anthropic-sdk-go')).toBe('Anthropic');
+    expect(provider('go', 'github.com/getsentry/sentry-go')).toBe('Sentry');
+    expect(provider('go', 'github.com/resend/resend-go/v2')).toBe('Resend');
+    expect(provider('npm', '@stripe/stripe-js')).toBe('Stripe');
+    expect(provider('npm', '@stripe/react-stripe-js')).toBe('Stripe');
     expect(classifyPackage('gem', 'stripe')).toMatchObject({ outcome: 'vendor', name: 'stripe' });
     expect(classifyPackage('gem', 'twilio-ruby')).toMatchObject({ outcome: 'vendor' });
     expect(classifyPackage('gem', 'sendgrid-ruby')).toMatchObject({ outcome: 'vendor' });

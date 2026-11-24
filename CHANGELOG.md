@@ -70,6 +70,7 @@ may change in minor releases.
 
 ### Fixed
 
+- The provider scan leaves out a directory the root `.gitignore` names plainly, so a manifest in an ignored scratch directory no longer becomes a candidate; a `go.mod` requirement marked `// indirect` is listed only when it names a provider, not among the unmapped names; the vendor map knows the Go modules of Anthropic, Sentry and Resend and the `@stripe/*` npm packages.
 - The host rules judge a healthcheck probe and a rewrite destination by the host the scanner read before redaction, so a URL with a port and an `@` later in it is no longer read as a credentialed URL whose host is the text after the `@`; the redaction itself stops at `?` and `#`. A heartbeat's `target` in `uptimerobot verify` is null by monitor type, not by the shape of its push token. The interactive agent picker depends on `@inquirer/select` alone instead of the whole `@inquirer/prompts` bundle.
 - `uptimerobot init` writes the setup guide before the third-party offer, and refuses a link, a foreign file or a directory at its path first, so a run never ends with services created and no guide; a clipped quoted credential that ends in a backslash is still masked; a compose `CMD-SHELL` healthcheck script is kept as written, so a quoted credential inside it is masked whole.
 - A container health probe's command and URL are redacted like a cron command:

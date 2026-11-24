@@ -791,3 +791,35 @@ describe('matchManifest on Gemfile, composer.json and Cargo.toml', () => {
     expect(matchManifest({ path: 'README.md', contents: 'stripe boto3' })).toEqual([]);
   });
 });
+
+describe('matchManifest on go.mod indirect requirements', () => {
+  const contents = [
+    'module github.com/acme/pet',
+    '',
+    'require (',
+    '\tgithub.com/left/direct v1.0.0',
+    '\tgithub.com/stripe/stripe-go/v81 v81.1.0 // indirect',
+    '\tgolang.org/x/net v0.33.0 // indirect',
+    '\tgithub.com/google/uuid v1.6.0 // indirect',
+    ')',
+    'require github.com/felixge/httpsnoop v1.0.4 // indirect',
+    'require github.com/left/prose v1.0.0 // indirect calls are tested here',
+    'require github.com/left/explained v1.0.0 // indirect; pinned for a fix',
+    'require github.com/left/later v1.0.0 // see // indirect',
+    'require github.com/left/joined v1.0.0 // indirect;reason',
+    'require github.com/left/bare v1.0.0 // indirect;',
+    '',
+  ].join('\n');
+
+  it('keeps a vendor reached indirectly and drops the indirect modules it has no name for', () => {
+    const findings = matchManifest({ path: 'go.mod', contents });
+    expect(findings.map((finding) => [finding.outcome, finding.value])).toEqual([
+      ['unmapped', 'github.com/left/direct'],
+      ['vendor', 'Stripe'],
+      ['unmapped', 'github.com/left/prose'],
+      ['unmapped', 'github.com/left/later'],
+      ['unmapped', 'github.com/left/joined'],
+      ['unmapped', 'github.com/left/bare'],
+    ]);
+  });
+});

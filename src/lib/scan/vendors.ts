@@ -159,6 +159,7 @@ export const VENDORS: readonly VendorEntry[] = [
   // Payments and commerce
   runtime('Stripe', [
     pkg('stripe', ['npm', 'pip', 'gem']),
+    pkg('@stripe/*', ['npm']),
     pkg('stripe/stripe-php', ['composer']),
     pkg('async-stripe', ['cargo']),
     pkg('github.com/stripe/stripe-go*', ['go']),
@@ -196,7 +197,11 @@ export const VENDORS: readonly VendorEntry[] = [
     host('api.mailgun.net'),
   ]),
   runtime('Postmark', [pkg('postmark', ['npm', 'pip', 'gem']), host('api.postmarkapp.com')]),
-  runtime('Resend', [pkg('resend', ['npm', 'pip', 'gem']), host('api.resend.com')]),
+  runtime('Resend', [
+    pkg('resend', ['npm', 'pip', 'gem']),
+    pkg('github.com/resend/resend-go*', ['go']),
+    host('api.resend.com'),
+  ]),
   runtime('Slack', [
     pkg('@slack/*', ['npm']),
     pkg('slack-sdk', ['pip']),
@@ -214,6 +219,7 @@ export const VENDORS: readonly VendorEntry[] = [
   runtime('Anthropic', [
     pkg('@anthropic-ai/sdk', ['npm']),
     pkg('anthropic', ['pip']),
+    pkg('github.com/anthropics/anthropic-sdk-go*', ['go']),
     host('api.anthropic.com'),
   ]),
   // Auth and identity
@@ -225,6 +231,7 @@ export const VENDORS: readonly VendorEntry[] = [
     pkg('@sentry/*', ['npm']),
     pkg('sentry-sdk', ['pip']),
     pkg('sentry-*', ['gem']),
+    pkg('github.com/getsentry/sentry-go*', ['go']),
     host('*.sentry.io'),
   ]),
   runtime('New Relic', [pkg('newrelic', ['npm', 'pip']), host('*.newrelic.com')], 'new relic'),
