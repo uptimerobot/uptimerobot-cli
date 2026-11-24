@@ -181,10 +181,17 @@ async function collectRootGitConfig(
  * nested checkout and is skipped whole. A symlink is neither a file nor a
  * directory to `readdir`, so it is never followed.
  */
-/** Directories the root `.gitignore` names: by name at any depth, or by path from the root. */
-interface IgnoredDirectories {
-  names: ReadonlySet<string>;
-  paths: ReadonlySet<string>;
+/** One plain rule of the root `.gitignore`: a directory by name at any depth, or by path from the root. */
+interface IgnoreRule {
+  key: string;
+  rooted: boolean;
+  negated: boolean;
+}
+
+/** Whether the last rule that names this directory leaves it out, as git decides. */
+function isIgnored(rules: readonly IgnoreRule[], name: string, path: string): boolean {
+  const last = rules.findLast((rule) => rule.key === (rule.rooted ? path : name));
+  return last !== undefined && !last.negated;
 }
 
 /**
@@ -192,7 +199,7 @@ interface IgnoredDirectories {
  * file budget like any other: a scratch or cache
  * directory the repository does not track is not the project's own, and a
  * manifest inside it must not become a candidate.
- * Rules apply in order, so a later negation brings a directory back.
+ * Rules are kept in order, so a later negation brings a directory back.
  * ponytail: plain names and paths only; a glob or a nested `.gitignore` is
  * not read, so such a directory is still walked, and a negated glob brings
  * back everything named before it. Full gitignore matching if a field report
@@ -202,16 +209,15 @@ async function readIgnoredDirectories(
   repoRoot: string,
   maxFileBytes: number,
   budget: WalkBudget,
-): Promise<IgnoredDirectories> {
-  const names = new Set<string>();
-  const paths = new Set<string>();
+): Promise<readonly IgnoreRule[]> {
+  const rules: IgnoreRule[] = [];
   const file = join(repoRoot, '.gitignore');
   try {
     const info = await lstat(file);
-    if (!info.isFile() || info.size > maxFileBytes) return { names, paths };
+    if (!info.isFile() || info.size > maxFileBytes) return rules;
     if (budget.files <= 0) {
       budget.truncated = true;
-      return { names, paths };
+      return rules;
     }
     budget.files -= 1;
     for (const raw of (await readFile(file, 'utf8')).split('\n')) {
@@ -221,20 +227,17 @@ async function readIgnoredDirectories(
       const rule = negated ? line.slice(1) : line;
       if (/[*?[\\]/.test(rule)) {
         // A negated pattern may bring back any directory named so far.
-        if (negated) [names, paths].forEach((set) => set.clear());
+        if (negated) rules.length = 0;
         continue;
       }
       const entry = rule.replace(/\/+$/, '');
       const rooted = entry.startsWith('/') || entry.includes('/');
-      const set = rooted ? paths : names;
-      const key = rooted ? entry.replace(/^\/+/, '') : entry;
-      if (negated) set.delete(key);
-      else set.add(key);
+      rules.push({ key: rooted ? entry.replace(/^\/+/, '') : entry, rooted, negated });
     }
   } catch {
     // No `.gitignore`, or one that cannot be read: nothing is left out.
   }
-  return { names, paths };
+  return rules;
 }
 
 async function collectFiles(
@@ -242,7 +245,7 @@ async function collectFiles(
   directory: string,
   budget: WalkBudget,
   candidates: Candidate[],
-  ignored: IgnoredDirectories,
+  ignored: readonly IgnoreRule[],
 ): Promise<void> {
   if (budget.truncated) return;
 
@@ -269,9 +272,8 @@ async function collectFiles(
       // The listing is not the descent: a directory swapped for a symlink in
       // between would carry the walk out of the root, so it is checked again,
       // without following, right before.
-      const isIgnored =
-        ignored.names.has(entry.name) || ignored.paths.has(repoRelativePath(repoRoot, absolute));
-      if (!isIgnored && shouldWalk(entry.name) && (await isStillDirectory(absolute)))
+      const left = isIgnored(ignored, entry.name, repoRelativePath(repoRoot, absolute));
+      if (!left && shouldWalk(entry.name) && (await isStillDirectory(absolute)))
         await collectFiles(repoRoot, absolute, budget, candidates, ignored);
       continue;
     }

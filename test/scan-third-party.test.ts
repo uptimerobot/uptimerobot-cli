@@ -514,6 +514,19 @@ describe('scanThirdParty leaves out what the repository ignores', () => {
     expect(vendorsOf(await scanThirdParty(root))).toEqual(['Stripe']);
   });
 
+  it.each([
+    ['a name rule and a rooted negation', ['tmp/', '!/tmp'], ['Stripe']],
+    ['a rooted rule and a name negation', ['/tmp', '!tmp/'], ['Resend', 'Stripe']],
+    ['a negation and then the rule again', ['tmp/', '!/tmp', '/tmp'], []],
+  ])('lets the last rule that names a directory decide: %s', async (_, rules, expected) => {
+    const root = await writeRepository({
+      '.gitignore': [...rules, ''].join('\n'),
+      'tmp/package.json': manifest('stripe'),
+      'a/tmp/package.json': manifest('resend'),
+    });
+    expect(vendorsOf(await scanThirdParty(root))).toEqual(expected);
+  });
+
   it('charges the .gitignore read to the file budget', async () => {
     const root = await writeRepository({
       '.gitignore': 'tmp/\n',
