@@ -696,6 +696,19 @@ describe('scanContainers — round three', () => {
     expect(findings).toHaveLength(2);
   });
 
+  it('picks the right URL inside a backtick span and under a clip that cut the probe path', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        'FROM x\nHEALTHCHECK CMD echo `TOKEN=http://127.0.0.1/internal curl http://public.example/health`\n',
+      'a/Dockerfile': `FROM x\nHEALTHCHECK CMD curl --header X-Trace:${'x'.repeat(1900)} http://127.0.0.1:8080/a@public.example/health${'z'.repeat(100)}\n`,
+    });
+
+    const findings = await scanContainers(root);
+
+    expect(findingsIn(findings, 'Dockerfile')[0]?.detail?.host).toBe('public.example');
+    expect(findingsIn(findings, 'a/Dockerfile')[0]?.detail?.host).toBe('127.0.0.1');
+  });
+
   it('treats a backtick span as one word like the redaction does, so positions still line up', async () => {
     const root = await temporaryRepo({
       Dockerfile:
