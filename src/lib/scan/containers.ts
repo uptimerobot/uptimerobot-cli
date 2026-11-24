@@ -594,13 +594,36 @@ const RAW_AUTHORITY = /^[a-z][a-z0-9+.-]*:\/\/(?:[^\s/?#]*@)?([^\s/?#@]+)/i;
  * that stood before the probe, so the raw URLs are walked until one reads,
  * with its credentials dropped, as the reported probe does.
  */
+/** Words as a shell reads them: a quoted span is one word, so a masked quoted value keeps the count. */
+function shellWords(text: string): string[] {
+  const words: string[] = [];
+  let current = '';
+  let quote: string | undefined;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index]!;
+    if (quote === undefined && (character === '"' || character === "'")) quote = character;
+    else if (quote === character) quote = undefined;
+    else if (character === '\\' && quote !== "'" && index + 1 < text.length) {
+      current += text[index + 1];
+      index += 1;
+      continue;
+    }
+    if (quote === undefined && character === ' ') {
+      if (current !== '') words.push(current);
+      current = '';
+    } else current += character;
+  }
+  if (current !== '') words.push(current);
+  return words;
+}
+
 function probeHost(command: string, redacted: string, reported: string): string | undefined {
   // Redaction keeps the word count (a masked value is one word, `***`), so
   // the raw word at the position of the redacted word that yields the probe
   // is the one the probe came from; a masked flag value at another position
   // never lends its host, however alike its masked text reads.
-  const rawWords = command.split(' ');
-  const redactedWords = redacted.split(' ');
+  const rawWords = shellWords(command);
+  const redactedWords = shellWords(redacted);
   if (rawWords.length === redactedWords.length) {
     const index = redactedWords.findIndex((word) => probeUrl(word) === reported);
     const raw = index === -1 ? undefined : rawWords[index];

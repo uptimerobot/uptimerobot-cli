@@ -696,6 +696,18 @@ describe('scanContainers — round three', () => {
     expect(findings).toHaveLength(2);
   });
 
+  it('keeps the raw host when a masked quoted value removed a space before the probe', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        'FROM x\nHEALTHCHECK CMD curl --password "two words" http://127.0.0.1:8080/a@public.example/health\n',
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.detail?.command).not.toContain('two words');
+    expect(finding?.detail?.host).toBe('127.0.0.1');
+  });
+
   it('takes the host from the word at the probe position, not from a masked flag value that reads alike', async () => {
     const root = await temporaryRepo({
       Dockerfile:
