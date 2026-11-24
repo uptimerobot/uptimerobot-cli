@@ -617,12 +617,6 @@ function probeHost(command: string, reported: string): string | undefined {
     const sentinel = `${sentinelBase}${index}`;
     index += 1;
     const end = at + match[0].length;
-    // A URL the clip cuts down to less than a URL (`ht`) is not visible at all.
-    if (
-      end > MAX_REDACTION_TEXT &&
-      SCHEME_URL_PATTERN.exec(command.slice(at, MAX_REDACTION_TEXT))?.index !== 0
-    )
-      continue;
     const candidate = `${command.slice(0, at)}${sentinel}${command.slice(end)}`;
     // A URL the clip cuts stays the last visible thing; any other keeps the
     // same text visible after it as before the swap.

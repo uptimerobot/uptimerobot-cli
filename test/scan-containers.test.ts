@@ -711,15 +711,28 @@ describe('scanContainers — round three', () => {
   });
 
   it('never completes a scheme the clip left invisible, so a bare probe keeps its own host', async () => {
-    const prefix = 'curl public.example:8080 --header X-Trace:';
+    // The scanner's command starts at `CMD`, so the offsets below count from there.
+    const prefix = 'CMD curl public.example:8080 --header X-Trace:';
+    const pad = (offset: number, head: string): string => 'x'.repeat(offset - head.length - 1);
     const root = await temporaryRepo({
-      Dockerfile: `FROM x\nHEALTHCHECK CMD ${prefix}${'x'.repeat(1998 - prefix.length - 1)} http://127.0.0.1/health\n`,
+      Dockerfile: `FROM x\nHEALTHCHECK ${prefix}${pad(1998, prefix)} http://127.0.0.1/health\n`,
     });
 
     const [finding] = await scanContainers(root);
 
     expect(finding?.value).toBe('public.example:8080');
     expect(finding?.detail?.host).toBe('public.example');
+  });
+
+  it('keeps the raw host of an IPv6 probe the clip cut inside its brackets', async () => {
+    const prefix = 'CMD curl --header X-Trace:';
+    const root = await temporaryRepo({
+      Dockerfile: `FROM x\nHEALTHCHECK ${prefix}${'x'.repeat(1987 - prefix.length - 1)} http://[2606:4700:4700::1111]/health\n`,
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.detail?.host).toBe('[2606:4700:4700::1111]');
   });
 
   it('picks the right URL inside a backtick span and under a clip that cut the probe path', async () => {
