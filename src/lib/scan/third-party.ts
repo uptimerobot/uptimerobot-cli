@@ -127,7 +127,7 @@ export async function scanThirdParty(
 
   const candidates: Candidate[] = [];
   await collectRootGitConfig(repoRoot, budget, candidates);
-  const ignored = await readIgnoredDirectories(repoRoot, maxFileBytes);
+  const ignored = await readIgnoredDirectories(repoRoot, maxFileBytes, budget);
   await collectFiles(repoRoot, repoRoot, budget, candidates, ignored);
   if (budget.truncated) options.onTruncated?.();
 
@@ -188,7 +188,8 @@ interface IgnoredDirectories {
 }
 
 /**
- * The plain directory entries of the root `.gitignore`: a scratch or cache
+ * The plain directory entries of the root `.gitignore`, a read charged to the
+ * file budget like any other: a scratch or cache
  * directory the repository does not track is not the project's own, and a
  * manifest inside it must not become a candidate.
  * ponytail: plain names and paths only; a glob, a negation or a nested
@@ -198,6 +199,7 @@ interface IgnoredDirectories {
 async function readIgnoredDirectories(
   repoRoot: string,
   maxFileBytes: number,
+  budget: WalkBudget,
 ): Promise<IgnoredDirectories> {
   const names = new Set<string>();
   const paths = new Set<string>();
@@ -205,6 +207,11 @@ async function readIgnoredDirectories(
   try {
     const info = await lstat(file);
     if (!info.isFile() || info.size > maxFileBytes) return { names, paths };
+    if (budget.files <= 0) {
+      budget.truncated = true;
+      return { names, paths };
+    }
+    budget.files -= 1;
     for (const raw of (await readFile(file, 'utf8')).split('\n')) {
       const line = raw.trim();
       if (line === '' || line.startsWith('#') || line.startsWith('!') || /[*?[\\]/.test(line)) {

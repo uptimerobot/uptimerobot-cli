@@ -489,7 +489,24 @@ describe('scanThirdParty leaves out what the repository ignores', () => {
   it('walks everything when there is no .gitignore, and never follows one that is a link', async () => {
     const root = await writeRepository({ 'tmp/package.json': manifest('twilio') });
     expect((await scanThirdParty(root)).map((f) => f.value)).toEqual(['Twilio']);
-    await symlink(join(root, 'tmp', 'package.json'), join(root, '.gitignore'));
+    await writeFile(join(root, 'ignore-list'), 'tmp/\n');
+    await symlink(join(root, 'ignore-list'), join(root, '.gitignore'));
     expect((await scanThirdParty(root)).map((f) => f.value)).toEqual(['Twilio']);
+  });
+
+  it('charges the .gitignore read to the file budget', async () => {
+    const root = await writeRepository({
+      '.gitignore': 'tmp/\n',
+      'package.json': manifest('stripe'),
+    });
+    const onTruncated = vi.fn();
+    expect(await scanThirdParty(root, { maxFiles: 1, onTruncated })).toEqual([]);
+    expect(onTruncated).toHaveBeenCalledTimes(1);
+
+    openedFiles.length = 0;
+    const unread = vi.fn();
+    expect(await scanThirdParty(root, { maxFiles: 0, onTruncated: unread })).toEqual([]);
+    expect(unread).toHaveBeenCalledTimes(1);
+    expect(openedFiles).not.toContain(join(root, '.gitignore'));
   });
 });

@@ -506,7 +506,7 @@ function parseGoMod(contents: string): Declared[] {
       name: match[1],
       version: match[2] ?? '',
       line: index + 1,
-      scope: /\/\/\s*indirect\b/.test(raw) ? INDIRECT_SCOPE : 'require',
+      scope: /\/\/\s*indirect\s*(;|$)/.test(raw) ? INDIRECT_SCOPE : 'require',
       class: 'runtime',
     });
   });

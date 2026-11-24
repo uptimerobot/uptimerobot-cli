@@ -803,6 +803,8 @@ describe('matchManifest on go.mod indirect requirements', () => {
     '\tgithub.com/google/uuid v1.6.0 // indirect',
     ')',
     'require github.com/felixge/httpsnoop v1.0.4 // indirect',
+    'require github.com/left/prose v1.0.0 // indirect calls are tested here',
+    'require github.com/left/explained v1.0.0 // indirect; pinned for a fix',
     '',
   ].join('\n');
 
@@ -811,6 +813,7 @@ describe('matchManifest on go.mod indirect requirements', () => {
     expect(findings.map((finding) => [finding.outcome, finding.value])).toEqual([
       ['unmapped', 'github.com/left/direct'],
       ['vendor', 'Stripe'],
+      ['unmapped', 'github.com/left/prose'],
     ]);
   });
 });
