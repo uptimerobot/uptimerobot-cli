@@ -127,7 +127,8 @@ export async function scanThirdParty(
 
   const candidates: Candidate[] = [];
   await collectRootGitConfig(repoRoot, budget, candidates);
-  await collectFiles(repoRoot, repoRoot, budget, candidates);
+  const ignored = await readIgnoredDirectories(repoRoot, maxFileBytes);
+  await collectFiles(repoRoot, repoRoot, budget, candidates, ignored);
   if (budget.truncated) options.onTruncated?.();
 
   const appDirectories = new Set(
@@ -180,11 +181,51 @@ async function collectRootGitConfig(
  * nested checkout and is skipped whole. A symlink is neither a file nor a
  * directory to `readdir`, so it is never followed.
  */
+/** Directories the root `.gitignore` names: by name at any depth, or by path from the root. */
+interface IgnoredDirectories {
+  names: ReadonlySet<string>;
+  paths: ReadonlySet<string>;
+}
+
+/**
+ * The plain directory entries of the root `.gitignore`: a scratch or cache
+ * directory the repository does not track is not the project's own, and a
+ * manifest inside it must not become a candidate.
+ * ponytail: plain names and paths only; a glob, a negation or a nested
+ * `.gitignore` is not read, so such a directory is still walked. Full
+ * gitignore matching if a field report needs it.
+ */
+async function readIgnoredDirectories(
+  repoRoot: string,
+  maxFileBytes: number,
+): Promise<IgnoredDirectories> {
+  const names = new Set<string>();
+  const paths = new Set<string>();
+  const file = join(repoRoot, '.gitignore');
+  try {
+    const info = await lstat(file);
+    if (!info.isFile() || info.size > maxFileBytes) return { names, paths };
+    for (const raw of (await readFile(file, 'utf8')).split('\n')) {
+      const line = raw.trim();
+      if (line === '' || line.startsWith('#') || line.startsWith('!') || /[*?[\\]/.test(line)) {
+        continue;
+      }
+      const entry = line.replace(/\/+$/, '');
+      if (entry.startsWith('/') || entry.includes('/')) paths.add(entry.replace(/^\/+/, ''));
+      else names.add(entry);
+    }
+  } catch {
+    // No `.gitignore`, or one that cannot be read: nothing is left out.
+  }
+  return { names, paths };
+}
+
 async function collectFiles(
   repoRoot: string,
   directory: string,
   budget: WalkBudget,
   candidates: Candidate[],
+  ignored: IgnoredDirectories,
 ): Promise<void> {
   if (budget.truncated) return;
 
@@ -211,8 +252,10 @@ async function collectFiles(
       // The listing is not the descent: a directory swapped for a symlink in
       // between would carry the walk out of the root, so it is checked again,
       // without following, right before.
-      if (shouldWalk(entry.name) && (await isStillDirectory(absolute)))
-        await collectFiles(repoRoot, absolute, budget, candidates);
+      const isIgnored =
+        ignored.names.has(entry.name) || ignored.paths.has(repoRelativePath(repoRoot, absolute));
+      if (!isIgnored && shouldWalk(entry.name) && (await isStillDirectory(absolute)))
+        await collectFiles(repoRoot, absolute, budget, candidates, ignored);
       continue;
     }
     if (!entry.isFile() || isSecretFile(entry.name)) continue;

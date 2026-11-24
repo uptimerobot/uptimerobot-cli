@@ -17,7 +17,7 @@
  *   (runtime, plus Poetry's `main` group); `[project.optional-dependencies]`,
  *   `[dependency-groups]`, `[tool.poetry.dev-dependencies]` and every other
  *   Poetry group (build-time). `[table.name]` subtables count, `[[arrays]]` do not.
- * - `go.mod`: `require` lines, `// indirect` included.
+ * - `go.mod`: `require` lines; an `// indirect` one counts only when it names a vendor.
  * - `Gemfile`: `gem` lines; a `group` block or `group:` option is build-time.
  * - `Cargo.toml`: `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`,
  *   their `[target.<cfg>.*]` forms and `[table.name]` subtables.
@@ -124,9 +124,14 @@ export function matchManifest(input: ManifestInput): ManifestFinding[] {
   const ecosystem = ecosystemFor(input.path);
   if (ecosystem === undefined) return [];
   const declared = PARSERS[ecosystem](input.contents, basename(input.path));
-  return declared
-    .filter((dependency) => DEPENDENCY_NAME.test(dependency.name))
-    .map((dependency) => classify(ecosystem, input.path, sanitized(dependency)));
+  return (
+    declared
+      .filter((dependency) => DEPENDENCY_NAME.test(dependency.name))
+      .map((dependency) => classify(ecosystem, input.path, sanitized(dependency)))
+      // A transitive module the project never chose is noise unless it is a
+      // vendor: a real go.mod lists hundreds of them.
+      .filter((finding) => finding.detail.scope !== INDIRECT_SCOPE || finding.outcome === 'vendor')
+  );
 }
 
 function classify(
@@ -477,6 +482,8 @@ function tableDependency(
   };
 }
 
+const INDIRECT_SCOPE = 'indirect';
+
 /** `go.mod`: every `require` line, single or block form; the module line is not a dependency. */
 function parseGoMod(contents: string): Declared[] {
   const declared: Declared[] = [];
@@ -499,7 +506,7 @@ function parseGoMod(contents: string): Declared[] {
       name: match[1],
       version: match[2] ?? '',
       line: index + 1,
-      scope: 'require',
+      scope: /\/\/\s*indirect\b/.test(raw) ? INDIRECT_SCOPE : 'require',
       class: 'runtime',
     });
   });

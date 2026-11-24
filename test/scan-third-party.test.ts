@@ -462,3 +462,34 @@ describe('scanThirdParty', () => {
     expect(await scanThirdParty(join(tmpdir(), 'uptimerobot-cli-does-not-exist'))).toEqual([]);
   });
 });
+
+describe('scanThirdParty leaves out what the repository ignores', () => {
+  const manifest = (name: string): string => JSON.stringify({ dependencies: { [name]: '1.0.0' } });
+
+  it('skips a directory the root .gitignore names, at the root or at any depth', async () => {
+    const root = await writeRepository({
+      '.gitignore': ['# scratch', 'tmp/', '/local-only', 'scratch', '!keep', '*.log', ''].join(
+        '\n',
+      ),
+      'package.json': manifest('stripe'),
+      'tmp/cache/package.json': manifest('twilio'),
+      'local-only/package.json': manifest('resend'),
+      'apps/web/scratch/package.json': manifest('openai'),
+      'apps/local-only/package.json': manifest('@sentry/node'),
+      'keep/package.json': manifest('@anthropic-ai/sdk'),
+    });
+
+    const findings = await scanThirdParty(root);
+
+    expect(
+      [...new Set(findings.filter((f) => f.outcome === 'vendor').map((f) => f.value))].sort(),
+    ).toEqual(['Anthropic', 'Sentry', 'Stripe']);
+  });
+
+  it('walks everything when there is no .gitignore, and never follows one that is a link', async () => {
+    const root = await writeRepository({ 'tmp/package.json': manifest('twilio') });
+    expect((await scanThirdParty(root)).map((f) => f.value)).toEqual(['Twilio']);
+    await symlink(join(root, 'tmp', 'package.json'), join(root, '.gitignore'));
+    expect((await scanThirdParty(root)).map((f) => f.value)).toEqual(['Twilio']);
+  });
+});

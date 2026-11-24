@@ -791,3 +791,26 @@ describe('matchManifest on Gemfile, composer.json and Cargo.toml', () => {
     expect(matchManifest({ path: 'README.md', contents: 'stripe boto3' })).toEqual([]);
   });
 });
+
+describe('matchManifest on go.mod indirect requirements', () => {
+  const contents = [
+    'module github.com/acme/pet',
+    '',
+    'require (',
+    '\tgithub.com/left/direct v1.0.0',
+    '\tgithub.com/stripe/stripe-go/v81 v81.1.0 // indirect',
+    '\tgolang.org/x/net v0.33.0 // indirect',
+    '\tgithub.com/google/uuid v1.6.0 // indirect',
+    ')',
+    'require github.com/felixge/httpsnoop v1.0.4 // indirect',
+    '',
+  ].join('\n');
+
+  it('keeps a vendor reached indirectly and drops the indirect modules it has no name for', () => {
+    const findings = matchManifest({ path: 'go.mod', contents });
+    expect(findings.map((finding) => [finding.outcome, finding.value])).toEqual([
+      ['unmapped', 'github.com/left/direct'],
+      ['vendor', 'Stripe'],
+    ]);
+  });
+});
