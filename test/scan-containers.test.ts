@@ -823,6 +823,20 @@ describe('scanContainers — round three', () => {
     expect(finding?.detail?.command).not.toContain('alpha');
   });
 
+  it('ends the authority at a backslash, as a URL parser does for a web scheme', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        "FROM x\nHEALTHCHECK CMD curl 'http://127.0.0.1:hunter2\\@public.example/health'\n",
+      'a/Dockerfile':
+        'FROM x\nHEALTHCHECK CMD curl http://user:hunter2@public.example:8080/health\n',
+    });
+
+    const findings = await scanContainers(root);
+
+    expect(findingsIn(findings, 'Dockerfile')[0]?.detail?.host).toBe('127.0.0.1');
+    expect(findingsIn(findings, 'a/Dockerfile')[0]?.detail?.host).toBe('public.example');
+  });
+
   it('keeps a credential with a space inside one exec-array argument out of the command', async () => {
     const root = await temporaryRepo({
       'docker-compose.yml': [
