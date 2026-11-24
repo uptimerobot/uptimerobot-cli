@@ -14,6 +14,7 @@
  * is skipped and the scan continues; the caller gets whatever was legible.
  */
 
+import { randomUUID } from 'node:crypto';
 import { readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { basename, join, relative, resolve, sep } from 'node:path';
 import { LineCounter, isMap, isNode, isScalar, isSeq, parseDocument } from 'yaml';
@@ -595,18 +596,33 @@ const RAW_AUTHORITY = /^[a-z][a-z0-9+.-]*:\/\/(?:[^\s/?#]*@)?([^\s/?#@]+)/i;
  * with its credentials dropped, as the reported probe does.
  */
 /**
- * The raw host of the probe that was reported. Each raw URL is swapped for a
- * sentinel in turn and the command is redacted and clipped exactly as the
- * report was: the URL whose sentinel comes out as the probe is the source,
- * whatever masking, quoting or clipping did to the rest of the line.
+ * The raw host of the probe that was reported. Each raw URL the clip can
+ * still show is swapped for a sentinel in turn and the command is redacted
+ * and clipped as the report was: the URL whose sentinel comes out as the
+ * probe is the source, whatever masking, quoting or clipping did to the rest
+ * of the line. The clip is moved by the length the sentinel adds, so the
+ * swap never changes what is visible, and the sentinel host is random, so
+ * no text in the command can pass for it.
  */
 function probeHost(command: string, reported: string): string | undefined {
+  const sentinelBase = `http://probe-${randomUUID()}.invalid/`;
   const scheme = new RegExp(SCHEME_URL_PATTERN.source, 'gi');
-  for (const [index, match] of [...command.matchAll(scheme)].entries()) {
-    const sentinel = `http://probe-source.invalid/${index}`;
+  let index = 0;
+  for (const match of command.matchAll(scheme)) {
     const at = match.index;
-    const candidate = `${command.slice(0, at)}${sentinel}${command.slice(at + match[0].length)}`;
-    if (probeUrl(redactClipped(candidate, MAX_REDACTION_TEXT)) !== sentinel) continue;
+    // Nothing from the clip onwards reaches the report.
+    if (at >= MAX_REDACTION_TEXT) break;
+    const sentinel = `${sentinelBase}${index}`;
+    index += 1;
+    const end = at + match[0].length;
+    const candidate = `${command.slice(0, at)}${sentinel}${command.slice(end)}`;
+    // A URL the clip cuts stays the last visible thing; any other keeps the
+    // same text visible after it as before the swap.
+    const limit =
+      end > MAX_REDACTION_TEXT
+        ? at + sentinel.length
+        : MAX_REDACTION_TEXT + sentinel.length - match[0].length;
+    if (probeUrl(redactClipped(candidate, limit)) !== sentinel) continue;
     // The authority is read from the raw line, not the match: the probe pattern stops at a comma a password may hold.
     const authority = RAW_AUTHORITY.exec(command.slice(at))?.[1];
     return authority === undefined ? undefined : hostnameOf(authority);
