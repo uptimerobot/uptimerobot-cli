@@ -710,6 +710,18 @@ describe('scanContainers — round three', () => {
     expect(Date.now() - started).toBeLessThan(5000);
   });
 
+  it('never completes a scheme the clip left invisible, so a bare probe keeps its own host', async () => {
+    const prefix = 'curl public.example:8080 --header X-Trace:';
+    const root = await temporaryRepo({
+      Dockerfile: `FROM x\nHEALTHCHECK CMD ${prefix}${'x'.repeat(1998 - prefix.length - 1)} http://127.0.0.1/health\n`,
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).toBe('public.example:8080');
+    expect(finding?.detail?.host).toBe('public.example');
+  });
+
   it('picks the right URL inside a backtick span and under a clip that cut the probe path', async () => {
     const root = await temporaryRepo({
       Dockerfile:

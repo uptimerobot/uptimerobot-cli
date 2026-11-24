@@ -605,6 +605,8 @@ const RAW_AUTHORITY = /^[a-z][a-z0-9+.-]*:\/\/(?:[^\s/?#]*@)?([^\s/?#@]+)/i;
  * no text in the command can pass for it.
  */
 function probeHost(command: string, reported: string): string | undefined {
+  // A bare `host:port` probe has no credentials to mask, so it names its own host.
+  if (SCHEME_URL_PATTERN.exec(reported)?.index !== 0) return hostnameOf(reported);
   const sentinelBase = `http://probe-${randomUUID()}.invalid/`;
   const scheme = new RegExp(SCHEME_URL_PATTERN.source, 'gi');
   let index = 0;
@@ -615,6 +617,12 @@ function probeHost(command: string, reported: string): string | undefined {
     const sentinel = `${sentinelBase}${index}`;
     index += 1;
     const end = at + match[0].length;
+    // A URL the clip cuts down to less than a URL (`ht`) is not visible at all.
+    if (
+      end > MAX_REDACTION_TEXT &&
+      SCHEME_URL_PATTERN.exec(command.slice(at, MAX_REDACTION_TEXT))?.index !== 0
+    )
+      continue;
     const candidate = `${command.slice(0, at)}${sentinel}${command.slice(end)}`;
     // A URL the clip cuts stays the last visible thing; any other keeps the
     // same text visible after it as before the swap.
