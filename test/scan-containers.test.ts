@@ -696,6 +696,81 @@ describe('scanContainers — round three', () => {
     expect(findings).toHaveLength(2);
   });
 
+  it('keeps the raw host of a probe near the clip boundary, and stops at the boundary on a huge command', async () => {
+    const root = await temporaryRepo({
+      Dockerfile: `FROM x\nHEALTHCHECK CMD curl --header X-Trace:${'x'.repeat(1948)} http://127.0.0.1:1/@x.io\n`,
+      'a/Dockerfile': `FROM x\nHEALTHCHECK CMD curl public.example:8080 --user "${'http://a '.repeat(50_000)}"\n`,
+    });
+
+    const started = Date.now();
+    const findings = await scanContainers(root);
+
+    expect(findingsIn(findings, 'Dockerfile')[0]?.detail?.host).toBe('127.0.0.1');
+    expect(findingsIn(findings, 'a/Dockerfile')[0]?.detail?.host).toBe('public.example');
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it('never completes a scheme the clip left invisible, so a bare probe keeps its own host', async () => {
+    // The scanner's command starts at `CMD`, so the offsets below count from there.
+    const prefix = 'CMD curl public.example:8080 --header X-Trace:';
+    const pad = (offset: number, head: string): string => 'x'.repeat(offset - head.length - 1);
+    const root = await temporaryRepo({
+      Dockerfile: `FROM x\nHEALTHCHECK ${prefix}${pad(1998, prefix)} http://127.0.0.1/health\n`,
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).toBe('public.example:8080');
+    expect(finding?.detail?.host).toBe('public.example');
+  });
+
+  it('keeps the raw host of an IPv6 probe the clip cut inside its brackets', async () => {
+    const prefix = 'CMD curl --header X-Trace:';
+    const root = await temporaryRepo({
+      Dockerfile: `FROM x\nHEALTHCHECK ${prefix}${'x'.repeat(1987 - prefix.length - 1)} http://[2606:4700:4700::1111]/health\n`,
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.detail?.host).toBe('[2606:4700:4700::1111]');
+  });
+
+  it('picks the right URL inside a backtick span and under a clip that cut the probe path', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        'FROM x\nHEALTHCHECK CMD echo `TOKEN=http://127.0.0.1/internal curl http://public.example/health`\n',
+      'a/Dockerfile': `FROM x\nHEALTHCHECK CMD curl --header X-Trace:${'x'.repeat(1900)} http://127.0.0.1:8080/a@public.example/health${'z'.repeat(100)}\n`,
+    });
+
+    const findings = await scanContainers(root);
+
+    expect(findingsIn(findings, 'Dockerfile')[0]?.detail?.host).toBe('public.example');
+    expect(findingsIn(findings, 'a/Dockerfile')[0]?.detail?.host).toBe('127.0.0.1');
+  });
+
+  it('treats a backtick span as one word like the redaction does, so positions still line up', async () => {
+    const root = await temporaryRepo({
+      Dockerfile:
+        'FROM x\nHEALTHCHECK CMD TOKEN=`cat http://127.0.0.1/internal` curl http://public.example/health\n',
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).toBe('http://public.example/health');
+    expect(finding?.detail?.host).toBe('public.example');
+  });
+
+  it('keeps the raw host when the clip cut the tail of a long command', async () => {
+    const root = await temporaryRepo({
+      Dockerfile: `FROM x\nHEALTHCHECK CMD curl http://127.0.0.1:8080/a@public.example/health${' --retry 1'.repeat(300)}\n`,
+    });
+
+    const [finding] = await scanContainers(root);
+
+    expect(finding?.value).toBe('http://***@public.example/health');
+    expect(finding?.detail?.host).toBe('127.0.0.1');
+  });
+
   it('keeps the raw host of a probe that carries an escaped character', async () => {
     const root = await temporaryRepo({
       Dockerfile: 'FROM x\nHEALTHCHECK CMD curl http://127.0.0.1:8080/a@public.example/he\\alth\n',
