@@ -12,6 +12,7 @@ may change in minor releases.
 
 ### Added
 
+- `uptimerobot scan` is marked as beta in its help text and in the README, with a link for feedback.
 - `uptimerobot third-party-providers components list <id> --search <words> --region <code>`, generated from the published contract, lists the components of one provider that match a search term or a region: one row per matching leaf with its parent's name, `region` and `global` flag. `uptimerobot third-party-services maintenances` is curated with service, impact, title, from and until columns.
 - The command generator leaves header parameters out of the flags: the published contract now lists the attribution headers the client sets itself on `monitors create`, and a contract header never becomes something to type.
 - `uptimerobot monitors third-party-service maintenances list <id>` and

@@ -154,6 +154,8 @@ uptimerobot monitors create http \
   --tag-names production
 ```
 
+> **Beta.** `uptimerobot scan` is new and its output may change between releases. Feedback is welcome: [open a GitHub issue](https://github.com/uptimerobot/uptimerobot-cli/issues).
+
 Two smaller commands do parts of the same job on their own. Without `--apply`, `uptimerobot scan [PATH]` prints the seed context and nothing else, no API key, no network, no writes, so it can be run against any directory as often as you like:
 
 ```sh

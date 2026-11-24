@@ -58,7 +58,9 @@ export default class Scan extends BaseCommand {
     }),
   };
 
-  static override description = `Report what this repository looks like to monitor discovery: the endpoints that could become monitors, the ones that were skipped and why, the scheduled jobs that could become heartbeats, and the third-party providers it depends on.
+  static override description = `Beta: this command is new, its output may change between releases, and feedback is welcome at https://github.com/uptimerobot/uptimerobot-cli/issues.
+
+Report what this repository looks like to monitor discovery: the endpoints that could become monitors, the ones that were skipped and why, the scheduled jobs that could become heartbeats, and the third-party providers it depends on.
 
 Without --apply no authentication is required. The scan reads the working tree and nothing else, never reaches the network, never opens a dotenv file, and writes nothing, so it runs without an API key, which is where it differs from \`uptimerobot init\`.
 
@@ -110,7 +112,7 @@ Skipped candidates are reported alongside the accepted ones, each with its reaso
     json: Flags.boolean({ description: 'Emit structured JSON output' }),
   };
 
-  static override summary = 'Scan a repository for monitor and heartbeat candidates';
+  static override summary = 'Scan a repository for monitor and heartbeat candidates (beta)';
 
   async run(): Promise<SeedContext> {
     const { args, flags } = await this.parse(Scan);

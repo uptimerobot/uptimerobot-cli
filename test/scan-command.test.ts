@@ -289,3 +289,10 @@ describe('uptimerobot scan', () => {
     });
   });
 });
+
+describe('scan help', () => {
+  it('says the command is in beta and where feedback goes', () => {
+    expect(Scan.description).toMatch(/^Beta\b/);
+    expect(Scan.description).toContain('https://github.com/uptimerobot/uptimerobot-cli/issues');
+  });
+});
