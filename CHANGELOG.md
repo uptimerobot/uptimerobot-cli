@@ -10,6 +10,112 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `uptimerobot scan` is marked as beta in its help text and in the README, with a link for feedback.
+- `uptimerobot third-party-providers components list <id> --search <words> --region <code>`, generated from the published contract, lists the components of one provider that match a search term or a region: one row per matching leaf with its parent's name, `region` and `global` flag. `uptimerobot third-party-services maintenances` is curated with service, impact, title, from and until columns.
+- The command generator leaves header parameters out of the flags: the published contract now lists the attribution headers the client sets itself on `monitors create`, and a contract header never becomes something to type.
+- `uptimerobot monitors third-party-service maintenances list <id>` and
+  `uptimerobot third-party-services maintenances`, generated from the
+  published contract, list the upcoming maintenance windows of one
+  third-party service and across all of them.
+- `uptimerobot init` prepares a repository for a coding agent: it scans the
+  working tree, writes `uptimerobot-scan.md` and `uptimerobot-setup.md`,
+  plants a managed block in `AGENTS.md` for the detected or chosen agent
+  (`--target`), and opens the agent on the scan. Flags: `--target`,
+  `--no-agent`, `--no-launch`, `--no-third-party`, `--max-monitors`, `--yes`,
+  `--clean`, `--json`. The block is planted for the targets without a
+  first-party installer (Codex, Cursor, Gemini, OpenCode); for Claude Code
+  `init` prints the installer steps instead. New error codes `TARGET_REQUIRED`
+  (exit 2) and, each exit 1, `SEED_CONTEXT_EXISTS`,
+  `SEED_CONTEXT_WRITE_FAILED`, `SEED_CONTEXT_REMOVE_FAILED`,
+  `SETUP_GUIDE_EXISTS`, `SETUP_GUIDE_WRITE_FAILED`,
+  `SETUP_GUIDE_REMOVE_FAILED`, `AGENTS_BLOCK_DAMAGED`, `AGENTS_WRITE_FAILED`
+  and `PROJECT_PATH_ESCAPE`.
+- `uptimerobot scan [path]` reports the endpoints, scheduled jobs and
+  container health probes a repository declares, as a Markdown seed context
+  or with `--json`. It reads files only: no network, no credential store.
+- `uptimerobot verify [--tags <list>]` lists the monitors carrying a tag
+  (`agent-setup` by default) so an agent's report can be checked against the
+  API.
+- Environment variables `UPTIMEROBOT_CLI_COMMAND` (the command prefix the
+  generated instructions name, e.g. `pnpm --silent uptimerobot`; otherwise
+  `uptimerobot` when on PATH, else `npx @uptimerobot/cli`) and
+  `UPTIMEROBOT_SKILLS_DIR` (a local checkout of the skills, passed to Claude
+  Code as `--plugin-dir`).
+- The scan finds the third-party providers a repository depends on, from
+  dependency manifests, deploy files, terraform, CI files, container registries
+  and the git remote, and reports them in a "Third-party providers" section
+  with `package@version` and `path:line` evidence.
+- `uptimerobot scan --json` carries those providers under `thirdParty`; the
+  seed context schema is 2.
+- `uptimerobot scan --apply` resolves the providers against the catalog and
+  the account, prints a proposal, asks, and creates a third-party service per
+  confirmed row. An agent or a pipe must pass `--confirm`; a missing or
+  declined confirmation exits 2 with `CONFIRMATION_REQUIRED`. New error code
+  `CATALOG_UNRESOLVED` (exit 1) when a selected provider could not be looked
+  up. A create the API never answered is reported as `unknown`, not as failed.
+- `uptimerobot init` offers to create the third-party services at an
+  interactive terminal, records the outcome in `uptimerobot-scan.md`, and its
+  `--json` output gains a `thirdParty` field; `--no-third-party` skips the
+  offer. The setup guide gains a third-party step between discovery and the
+  endpoint proposal.
+
+### Changed
+
+- An API error message is printed on one line; a message the API broke across
+  lines used to print as a second, misleading line.
+- A confirmation prompt whose input ends before an answer (Ctrl-D, a closed
+  stdin) counts as a no instead of leaving the command waiting; Ctrl-C at the
+  prompt exits 130 instead of reading as a no.
+
+### Fixed
+
+- The provider scan leaves out a directory the root `.gitignore` names plainly, so a manifest in an ignored scratch directory no longer becomes a candidate; a `go.mod` requirement marked `// indirect` is listed only when it names a provider, not among the unmapped names; the vendor map knows the Go modules of Anthropic, Sentry and Resend and the `@stripe/*` npm packages.
+- The host rules judge a healthcheck probe and a rewrite destination by the host the scanner read before redaction, so a URL with a port and an `@` later in it is no longer read as a credentialed URL whose host is the text after the `@`; the redaction itself stops at `?` and `#`. A heartbeat's `target` in `uptimerobot verify` is null by monitor type, not by the shape of its push token. The interactive agent picker depends on `@inquirer/select` alone instead of the whole `@inquirer/prompts` bundle.
+- `uptimerobot init` writes the setup guide before the third-party offer, and refuses a link, a foreign file or a directory at its path first, so a run never ends with services created and no guide; a clipped quoted credential that ends in a backslash is still masked; a compose `CMD-SHELL` healthcheck script is kept as written, so a quoted credential inside it is masked whole.
+- A container health probe's command and URL are redacted like a cron command:
+  `user:password@` and a `?token=` style query parameter no longer reach
+  `uptimerobot-scan.md`.
+- Every finding is rendered on one line of `uptimerobot-scan.md`, clipped to
+  200 characters, with backticks quoted: a workflow cron or a route containing
+  a newline could forge headings in the file the agent reads.
+- `init` refuses to write `uptimerobot-scan.md` or `uptimerobot-setup.md`
+  through a symlink (`SEED_CONTEXT_WRITE_FAILED`, `SETUP_GUIDE_WRITE_FAILED`)
+  instead of creating the link's target; a symlinked `AGENTS.md` is written
+  through, so `AGENTS.md -> CLAUDE.md` stays a link.
+- `init` prints the handoff prompt when the agent binary is on PATH but cannot
+  start, instead of exiting 1 with nothing after "Opening Claude Code".
+- `scan --json` reports `truncated: true` when the container walk hit its
+  budget, and no longer reports it for a tree that holds exactly the budget.
+- `verify` maps a malformed `UPTIMEROBOT_DEV_API_URL` to `INVALID_INPUT` (exit 2) like `init` and `scan`, and the by-hand create and re-run hints after
+  `scan --apply` name the invocation that was used (`npx @uptimerobot/cli`
+  when the CLI is not on PATH).
+- The scan maps the `sentry-ruby`, `sentry-rails` and `sentry-sidekiq` gems to
+  Sentry; before, only the npm and pip packages counted and a Rails app without
+  a JavaScript Sentry package reported no Sentry at all.
+- `uptimerobot init` no longer offers to create third-party services when
+  `uptimerobot-scan.md` is a symlink whose target directory is missing. Before,
+  the services were created and the seed write then failed with
+  `SEED_CONTEXT_WRITE_FAILED`, so the outcome was never recorded.
+- `uptimerobot init` refuses a foreign `uptimerobot-setup.md` with
+  `SETUP_GUIDE_EXISTS` before it offers to create third-party services, so a
+  refusal never follows a create.
+- `scan --apply --json` carries `truncated`, and the readable output warns when
+  a scan budget stopped discovery, so "Nothing to create." no longer passes
+  for a complete scan. A directory the depth limit kept closed now counts as
+  truncation for the container and scheduled scans.
+- Scan redaction masks `--user=admin:x` like `--user admin:x`, a whole
+  `NAME='a'"b c"` assignment, a quoted credential the clip cut open, and a
+  compose exec-array argument holding a space; a bracketed IPv6 healthcheck
+  such as `http://[::1]:8080/health` is kept; a healthcheck such as
+  `https://host/$` is rejected as an unresolved variable; a file name with a
+  newline in it cannot forge a heading in `uptimerobot-scan.md`; a `Dockerfile`
+  symlink to a dotenv file is never read.
+- The setup guide asks for a yes on the completed targets of host-less rows,
+  keeps the heartbeat push URL out of a checked-in crontab, and pages the
+  tagged monitor list to the end before writing the report.
+
 ## [1.3.0] - 2026-11-10
 
 ### Added

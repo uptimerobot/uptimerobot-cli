@@ -4795,6 +4795,19 @@ export const operations = {
         "type": "number"
       },
       {
+        "flag": "response-time-threshold-mode",
+        "path": "responseTimeThresholdMode",
+        "required": false,
+        "description": "How the slow-response threshold is set. 'auto' learns a per-region threshold from the last 28 days of response times (responseTimeThreshold and regionData.THRESHOLD must then be omitted); 'manual' restores the values the monitor had before auto, or the ones sent; 'off' clears every threshold. Read back as responseTimeThresholdMode, with per-region details in autoThresholds.",
+        "enum": [
+          "off",
+          "manual",
+          "auto"
+        ],
+        "example": "auto",
+        "type": "string"
+      },
+      {
         "flag": "group-id",
         "path": "groupId",
         "required": false,
@@ -5075,7 +5088,7 @@ export const operations = {
             "type": "string"
           },
           "applicationErrorRetries": {
-            "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. Connection errors always retry 3 times regardless of this setting.",
+            "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. When not set, UptimeRobot applies its default, currently 3. Connection errors always retry 3 times regardless of this setting.",
             "example": 1,
             "maximum": 3,
             "minimum": 0,
@@ -5272,7 +5285,7 @@ export const operations = {
         "flag": "config-application-error-retries",
         "path": "config.applicationErrorRetries",
         "required": false,
-        "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. Connection errors always retry 3 times regardless of this setting.",
+        "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. When not set, UptimeRobot applies its default, currently 3. Connection errors always retry 3 times regardless of this setting.",
         "example": 1,
         "maximum": 3,
         "minimum": 0,
@@ -5593,6 +5606,19 @@ export const operations = {
         "maximum": 60000,
         "minimum": 0,
         "type": "number"
+      },
+      {
+        "flag": "response-time-threshold-mode",
+        "path": "responseTimeThresholdMode",
+        "required": false,
+        "description": "How the slow-response threshold is set. 'auto' learns a per-region threshold from the last 28 days of response times (responseTimeThreshold and regionData.THRESHOLD must then be omitted); 'manual' restores the values the monitor had before auto, or the ones sent; 'off' clears every threshold. Read back as responseTimeThresholdMode, with per-region details in autoThresholds.",
+        "enum": [
+          "off",
+          "manual",
+          "auto"
+        ],
+        "example": "auto",
+        "type": "string"
       },
       {
         "flag": "group-id",
@@ -6282,6 +6308,19 @@ export const operations = {
         "type": "number"
       },
       {
+        "flag": "response-time-threshold-mode",
+        "path": "responseTimeThresholdMode",
+        "required": false,
+        "description": "How the slow-response threshold is set. 'auto' learns a per-region threshold from the last 28 days of response times (responseTimeThreshold and regionData.THRESHOLD must then be omitted); 'manual' restores the values the monitor had before auto, or the ones sent; 'off' clears every threshold. Read back as responseTimeThresholdMode, with per-region details in autoThresholds.",
+        "enum": [
+          "off",
+          "manual",
+          "auto"
+        ],
+        "example": "auto",
+        "type": "string"
+      },
+      {
         "flag": "group-id",
         "path": "groupId",
         "required": false,
@@ -6641,6 +6680,19 @@ export const operations = {
         "type": "number"
       },
       {
+        "flag": "response-time-threshold-mode",
+        "path": "responseTimeThresholdMode",
+        "required": false,
+        "description": "How the slow-response threshold is set. 'auto' learns a per-region threshold from the last 28 days of response times (responseTimeThreshold and regionData.THRESHOLD must then be omitted); 'manual' restores the values the monitor had before auto, or the ones sent; 'off' clears every threshold. Read back as responseTimeThresholdMode, with per-region details in autoThresholds.",
+        "enum": [
+          "off",
+          "manual",
+          "auto"
+        ],
+        "example": "auto",
+        "type": "string"
+      },
+      {
         "flag": "group-id",
         "path": "groupId",
         "required": false,
@@ -6846,7 +6898,7 @@ export const operations = {
             "type": "string"
           },
           "applicationErrorRetries": {
-            "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. Connection errors always retry 3 times regardless of this setting.",
+            "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. When not set, UptimeRobot applies its default, currently 3. Connection errors always retry 3 times regardless of this setting.",
             "example": 1,
             "maximum": 3,
             "minimum": 0,
@@ -6889,7 +6941,7 @@ export const operations = {
         "flag": "config-application-error-retries",
         "path": "config.applicationErrorRetries",
         "required": false,
-        "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. Connection errors always retry 3 times regardless of this setting.",
+        "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. When not set, UptimeRobot applies its default, currently 3. Connection errors always retry 3 times regardless of this setting.",
         "example": 1,
         "maximum": 3,
         "minimum": 0,
@@ -7195,6 +7247,19 @@ export const operations = {
         "type": "number"
       },
       {
+        "flag": "response-time-threshold-mode",
+        "path": "responseTimeThresholdMode",
+        "required": false,
+        "description": "How the slow-response threshold is set. 'auto' learns a per-region threshold from the last 28 days of response times (responseTimeThreshold and regionData.THRESHOLD must then be omitted); 'manual' restores the values the monitor had before auto, or the ones sent; 'off' clears every threshold. Read back as responseTimeThresholdMode, with per-region details in autoThresholds.",
+        "enum": [
+          "off",
+          "manual",
+          "auto"
+        ],
+        "example": "auto",
+        "type": "string"
+      },
+      {
         "flag": "group-id",
         "path": "groupId",
         "required": false,
@@ -7433,7 +7498,7 @@ export const operations = {
             "type": "string"
           },
           "applicationErrorRetries": {
-            "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. Connection errors always retry 3 times regardless of this setting.",
+            "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. When not set, UptimeRobot applies its default, currently 3. Connection errors always retry 3 times regardless of this setting.",
             "example": 1,
             "maximum": 3,
             "minimum": 0,
@@ -7476,7 +7541,7 @@ export const operations = {
         "flag": "config-application-error-retries",
         "path": "config.applicationErrorRetries",
         "required": false,
-        "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. Connection errors always retry 3 times regardless of this setting.",
+        "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. When not set, UptimeRobot applies its default, currently 3. Connection errors always retry 3 times regardless of this setting.",
         "example": 1,
         "maximum": 3,
         "minimum": 0,
@@ -7777,6 +7842,19 @@ export const operations = {
         "maximum": 60000,
         "minimum": 0,
         "type": "number"
+      },
+      {
+        "flag": "response-time-threshold-mode",
+        "path": "responseTimeThresholdMode",
+        "required": false,
+        "description": "How the slow-response threshold is set. 'auto' learns a per-region threshold from the last 28 days of response times (responseTimeThreshold and regionData.THRESHOLD must then be omitted); 'manual' restores the values the monitor had before auto, or the ones sent; 'off' clears every threshold. Read back as responseTimeThresholdMode, with per-region details in autoThresholds.",
+        "enum": [
+          "off",
+          "manual",
+          "auto"
+        ],
+        "example": "auto",
+        "type": "string"
       },
       {
         "flag": "group-id",
@@ -8146,6 +8224,19 @@ export const operations = {
         "maximum": 60000,
         "minimum": 0,
         "type": "number"
+      },
+      {
+        "flag": "response-time-threshold-mode",
+        "path": "responseTimeThresholdMode",
+        "required": false,
+        "description": "How the slow-response threshold is set. 'auto' learns a per-region threshold from the last 28 days of response times (responseTimeThreshold and regionData.THRESHOLD must then be omitted); 'manual' restores the values the monitor had before auto, or the ones sent; 'off' clears every threshold. Read back as responseTimeThresholdMode, with per-region details in autoThresholds.",
+        "enum": [
+          "off",
+          "manual",
+          "auto"
+        ],
+        "example": "auto",
+        "type": "string"
       },
       {
         "flag": "group-id",
@@ -8827,6 +8918,19 @@ export const operations = {
         "type": "number"
       },
       {
+        "flag": "response-time-threshold-mode",
+        "path": "responseTimeThresholdMode",
+        "required": false,
+        "description": "How the slow-response threshold is set. 'auto' learns a per-region threshold from the last 28 days of response times (responseTimeThreshold and regionData.THRESHOLD must then be omitted); 'manual' restores the values the monitor had before auto, or the ones sent; 'off' clears every threshold. Read back as responseTimeThresholdMode, with per-region details in autoThresholds.",
+        "enum": [
+          "off",
+          "manual",
+          "auto"
+        ],
+        "example": "auto",
+        "type": "string"
+      },
+      {
         "flag": "group-id",
         "path": "groupId",
         "required": false,
@@ -9265,6 +9369,19 @@ export const operations = {
         "type": "number"
       },
       {
+        "flag": "response-time-threshold-mode",
+        "path": "responseTimeThresholdMode",
+        "required": false,
+        "description": "How the slow-response threshold is set. 'auto' learns a per-region threshold from the last 28 days of response times (responseTimeThreshold and regionData.THRESHOLD must then be omitted); 'manual' restores the values the monitor had before auto, or the ones sent; 'off' clears every threshold. Read back as responseTimeThresholdMode, with per-region details in autoThresholds.",
+        "enum": [
+          "off",
+          "manual",
+          "auto"
+        ],
+        "example": "auto",
+        "type": "string"
+      },
+      {
         "flag": "group-id",
         "path": "groupId",
         "required": false,
@@ -9587,43 +9704,17 @@ export const operations = {
     "operationId": "MonitorsController_list",
     "parameters": [
       {
-        "description": "Filter monitors by custom field key:value pairs. Format: customField=key:value. Multiple filters use AND logic. Split on first colon only.",
-        "example": "environment:production",
+        "description": "Cursor to paginate through monitors",
         "in": "query",
-        "itemType": "string",
-        "name": "customField",
-        "required": false,
-        "type": "array"
-      },
-      {
-        "description": "Maximum number of monitors to return per page. Default: 50, Min: 1, Max: 200.",
-        "example": 50,
-        "in": "query",
-        "name": "limit",
+        "name": "cursor",
         "required": false,
         "type": "number"
       },
       {
-        "description": "Filter monitors by monitor group ID.",
-        "example": 100,
+        "description": "Comma-separated list of tag names to filter monitors. Uses OR logic (matches any specified tag). Case-sensitive.",
+        "example": "production,staging",
         "in": "query",
-        "name": "groupId",
-        "required": false,
-        "type": "number"
-      },
-      {
-        "description": "Comma-separated list of status values to filter monitors. Uses OR logic (matches any specified status). Case-insensitive. Allowed values: PAUSED, STARTED, UP, LOOKS_DOWN, DOWN.",
-        "example": "UP,DOWN",
-        "in": "query",
-        "name": "status",
-        "required": false,
-        "type": "string"
-      },
-      {
-        "description": "Filter monitors by name. Case-insensitive partial match on the monitor friendly name.",
-        "example": "Production API",
-        "in": "query",
-        "name": "name",
+        "name": "tags",
         "required": false,
         "type": "string"
       },
@@ -9636,19 +9727,45 @@ export const operations = {
         "type": "string"
       },
       {
-        "description": "Comma-separated list of tag names to filter monitors. Uses OR logic (matches any specified tag). Case-sensitive.",
-        "example": "production,staging",
+        "description": "Filter monitors by name. Case-insensitive partial match on the monitor friendly name.",
+        "example": "Production API",
         "in": "query",
-        "name": "tags",
+        "name": "name",
         "required": false,
         "type": "string"
       },
       {
-        "description": "Cursor to paginate through monitors",
+        "description": "Comma-separated list of status values to filter monitors. Uses OR logic (matches any specified status). Case-insensitive. Allowed values: PAUSED, STARTED, UP, LOOKS_DOWN, DOWN.",
+        "example": "UP,DOWN",
         "in": "query",
-        "name": "cursor",
+        "name": "status",
+        "required": false,
+        "type": "string"
+      },
+      {
+        "description": "Filter monitors by monitor group ID.",
+        "example": 100,
+        "in": "query",
+        "name": "groupId",
         "required": false,
         "type": "number"
+      },
+      {
+        "description": "Maximum number of monitors to return per page. Default: 50, Min: 1, Max: 200.",
+        "example": 50,
+        "in": "query",
+        "name": "limit",
+        "required": false,
+        "type": "number"
+      },
+      {
+        "description": "Filter monitors by custom field key:value pairs. Format: customField=key:value. Multiple filters use AND logic. Split on first colon only.",
+        "example": "environment:production",
+        "in": "query",
+        "itemType": "string",
+        "name": "customField",
+        "required": false,
+        "type": "array"
       }
     ],
     "path": "/monitors",
@@ -10068,6 +10185,29 @@ export const operations = {
       "Monitors"
     ]
   },
+  "monitors:third-party-service:maintenances:list": {
+    "commandId": "monitors:third-party-service:maintenances:list",
+    "contentTypes": [],
+    "defaultApiUrl": "https://api.uptimerobot.com/v3",
+    "description": "Returns the maintenance windows the provider a third party service monitor tracks has announced, earliest start first: windows in progress now and windows starting within the next 30 days. Responses are cached for 60 seconds, so a window that ended within the last minute can still appear; `window` is worked out from scheduledFor/scheduledUntil when the response is built (announced or in_progress). Nothing scheduled returns an empty array with a 200, never an error.",
+    "destructive": false,
+    "method": "GET",
+    "operationId": "MonitorsController_getThirdPartyServiceMaintenances",
+    "parameters": [
+      {
+        "in": "path",
+        "name": "id",
+        "required": true,
+        "type": "number"
+      }
+    ],
+    "path": "/monitors/{id}/third-party-service/maintenances",
+    "requestBodyRequired": false,
+    "summary": "Get the upcoming maintenance windows of a third party service",
+    "tags": [
+      "Monitors"
+    ]
+  },
   "monitors:third-party-service:status": {
     "commandId": "monitors:third-party-service:status",
     "contentTypes": [],
@@ -10433,6 +10573,19 @@ export const operations = {
         "maximum": 60000,
         "minimum": 0,
         "type": "number"
+      },
+      {
+        "flag": "response-time-threshold-mode",
+        "path": "responseTimeThresholdMode",
+        "required": false,
+        "description": "How the slow-response threshold is set. 'auto' learns a per-region threshold from the last 28 days of response times (responseTimeThreshold and regionData.THRESHOLD must then be omitted); 'manual' restores the values the monitor had before auto, or the ones sent; 'off' clears every threshold. Read back as responseTimeThresholdMode, with per-region details in autoThresholds.",
+        "enum": [
+          "off",
+          "manual",
+          "auto"
+        ],
+        "example": "auto",
+        "type": "string"
       },
       {
         "deprecated": true,
@@ -10860,7 +11013,7 @@ export const operations = {
             "type": "string"
           },
           "applicationErrorRetries": {
-            "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. Connection errors always retry 3 times regardless of this setting. HTTP, Keyword and API monitors only. Send null to remove.",
+            "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. When not set, UptimeRobot applies its default, currently 3. Connection errors always retry 3 times regardless of this setting. HTTP, Keyword and API monitors only. Send null to remove.",
             "example": 1,
             "maximum": 3,
             "minimum": 0,
@@ -11449,7 +11602,7 @@ export const operations = {
         "flag": "config-application-error-retries",
         "path": "config.applicationErrorRetries",
         "required": false,
-        "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. Connection errors always retry 3 times regardless of this setting. HTTP, Keyword and API monitors only. Send null to remove.",
+        "description": "Number of retries on application errors (HTTP 4xx/5xx). 0-3. When not set, UptimeRobot applies its default, currently 3. Connection errors always retry 3 times regardless of this setting. HTTP, Keyword and API monitors only. Send null to remove.",
         "example": 1,
         "maximum": 3,
         "minimum": 0,
@@ -13514,6 +13667,47 @@ export const operations = {
       "Tags"
     ]
   },
+  "third-party-providers:components:list": {
+    "commandId": "third-party-providers:components:list",
+    "contentTypes": [],
+    "defaultApiUrl": "https://api.uptimerobot.com/v3",
+    "description": "Returns the component tree of one third-party provider reduced to the components that match search and region, each leaf under its parent. regionLike tells whether the search term looks like a region rather than a component name. Results are cached for a minute.",
+    "destructive": false,
+    "method": "GET",
+    "operationId": "ThirdPartyProvidersController_searchComponents",
+    "parameters": [
+      {
+        "description": "The numeric id of the third-party provider.",
+        "example": "7",
+        "in": "path",
+        "name": "id",
+        "required": true,
+        "type": "string"
+      },
+      {
+        "description": "Words matched against component names, parent component names, region names and region codes. Every word must match.",
+        "example": "lambda oregon",
+        "in": "query",
+        "name": "search",
+        "required": false,
+        "type": "string"
+      },
+      {
+        "description": "Keep only the components of this exact region code. Global components are never returned for a region.",
+        "example": "eu-west-1",
+        "in": "query",
+        "name": "region",
+        "required": false,
+        "type": "string"
+      }
+    ],
+    "path": "/third-party-providers/{id}/components",
+    "requestBodyRequired": false,
+    "summary": "Search the components of a third-party provider",
+    "tags": [
+      "Third-party providers"
+    ]
+  },
   "third-party-providers:get": {
     "commandId": "third-party-providers:get",
     "contentTypes": [],
@@ -13562,6 +13756,22 @@ export const operations = {
     "summary": "Search third-party providers",
     "tags": [
       "Third-party providers"
+    ]
+  },
+  "third-party-services:maintenances": {
+    "commandId": "third-party-services:maintenances",
+    "contentTypes": [],
+    "defaultApiUrl": "https://api.uptimerobot.com/v3",
+    "description": "Returns the maintenance windows announced by every provider the caller tracks with a third party service monitor, in one list ordered by start (earliest first): windows in progress now and windows starting within the next 30 days. Ended windows are never returned. Each row names the third party service monitor it belongs to (monitorId, friendlyName). `window` is worked out at request time from scheduledFor/scheduledUntil (announced or in_progress). If one provider cannot be read it is left out; if none can, the request fails. Nothing scheduled returns an empty array with a 200, never an error.",
+    "destructive": false,
+    "method": "GET",
+    "operationId": "ThirdPartyServicesController_getMaintenances",
+    "parameters": [],
+    "path": "/third-party-services/maintenances",
+    "requestBodyRequired": false,
+    "summary": "Get the upcoming maintenance windows across all third party services",
+    "tags": [
+      "Third-party services"
     ]
   },
   "user:alert-contacts": {

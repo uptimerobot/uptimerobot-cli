@@ -8,6 +8,7 @@ import {
   parseColumnsFlag,
 } from '../src/output/columns.js';
 import { formatOutput } from '../src/output/renderer.js';
+import { flattenComponentTree } from '../src/lib/response-curation.js';
 
 const EXPECTED_COLLECTION_COMMAND_IDS = [
   'alert-contacts:list',
@@ -21,10 +22,13 @@ const EXPECTED_COLLECTION_COMMAND_IDS = [
   'monitors:list',
   'monitors:third-party-service:incidents:activity-log',
   'monitors:third-party-service:incidents:list',
+  'monitors:third-party-service:maintenances:list',
   'status-pages:announcements:list',
   'status-pages:list',
   'tags:list',
+  'third-party-providers:components:list',
   'third-party-providers:list',
+  'third-party-services:maintenances',
   'user:alert-contacts',
   'user:all-alert-contacts',
 ] as const;
@@ -255,6 +259,47 @@ describe('column registry', () => {
     expect(formatOutput('table', payload, { columns: columnsFor('status-pages:list') })).toBe(
       'ID  STATUS     NAME           URL KEY  CUSTOM DOMAIN  MONITORS  ACCESS\n' +
         '5   ● ENABLED  Public Status  abc123   —              3         public',
+    );
+  });
+
+  it('renders matching child components as rows under their parent', () => {
+    vi.stubEnv('NO_COLOR', '1');
+    const payload = flattenComponentTree({
+      items: [
+        {
+          id: 9100,
+          name: 'Amazon Simple Storage Service',
+          status: 'operational',
+          region: null,
+          global: false,
+          children: [
+            {
+              id: 9108,
+              name: 'Amazon Simple Storage Service (Frankfurt)',
+              status: 'operational',
+              region: { code: 'eu-central-1', name: 'Frankfurt' },
+              global: false,
+            },
+          ],
+        },
+        {
+          id: 9400,
+          name: 'Amazon CloudFront',
+          status: 'operational',
+          region: null,
+          global: true,
+          children: [],
+        },
+      ],
+    });
+    expect(
+      formatOutput('table', payload, {
+        columns: columnsFor('third-party-providers:components:list'),
+      }),
+    ).toBe(
+      'ID    NAME                                       PARENT                         STATUS       REGION        GLOBAL\n' +
+        '9108  Amazon Simple Storage Service (Frankfurt)  Amazon Simple Storage Service  operational  eu-central-1  false\n' +
+        '9400  Amazon CloudFront                          —                              operational  —             true',
     );
   });
 

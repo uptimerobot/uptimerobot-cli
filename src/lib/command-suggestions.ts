@@ -11,8 +11,11 @@ export const HANDWRITTEN_COMMANDS = [
   'auth status',
   'auth whoami',
   'help',
+  'init',
   'monitors schema',
+  'scan',
   'skills install',
+  'verify',
   'version',
 ] as const;
 const commands = [

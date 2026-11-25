@@ -12,6 +12,12 @@ describe('API errors', () => {
     });
   });
 
+  it('folds line breaks and tabs in an API message into spaces, so it prints as one line', () => {
+    expect(normalizeApiError(422, { message: 'boom\nCreated 3 services\tok' }).message).toBe(
+      'boom Created 3 services ok',
+    );
+  });
+
   // The upstream code is optional per endpoint and documented nowhere, so it
   // cannot decide `code` without making the vocabulary depend on which endpoint
   // answered. Same status in, same code out; the raw value rides along.
