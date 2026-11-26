@@ -109,7 +109,7 @@ export const COMMAND_COLUMNS = {
   ],
   'monitors:list': [
     { key: 'id' },
-    { key: 'status' },
+    { format: monitorStatus, key: 'status' },
     { format: nameOrUrl, header: 'NAME', key: 'friendlyName', maxWidth: 28 },
     { key: 'type' },
     { header: 'TARGET', key: 'url', maxWidth: 40 },
@@ -205,6 +205,22 @@ export function parseColumnsFlag(value: string): ColumnSpec[] {
 
 function nameOrUrl(value: unknown, row: Record<string, unknown>): unknown {
   return value ?? row.url;
+}
+
+// The API reports minor, major and maintenance states of a third-party
+// service all as DOWN; only config.thirdPartyService.currentState tells them apart.
+const THIRD_PARTY_OUTAGE_LABELS: Readonly<Record<string, string>> = {
+  maintenance: 'MAINTENANCE',
+  major: 'MAJOR OUTAGE',
+  minor: 'MINOR OUTAGE',
+};
+
+function monitorStatus(value: unknown, row: Record<string, unknown>): unknown {
+  if (value !== 'DOWN' || row.type !== 'THIRD_PARTY_SERVICE') return value;
+  const config = isRecord(row.config) ? row.config.thirdPartyService : undefined;
+  const state = isRecord(config) ? config.currentState : undefined;
+  if (typeof state !== 'string' || !Object.hasOwn(THIRD_PARTY_OUTAGE_LABELS, state)) return value;
+  return THIRD_PARTY_OUTAGE_LABELS[state];
 }
 
 function rootCause(value: unknown, row: Record<string, unknown>): unknown {

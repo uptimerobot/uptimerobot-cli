@@ -153,6 +153,65 @@ describe('column registry', () => {
     );
   });
 
+  describe('third-party service status', () => {
+    const thirdPartyService = (id: number, status: string, currentState?: string) => ({
+      config:
+        currentState === undefined ? null : { thirdPartyService: { currentState, providerId: 6 } },
+      friendlyName: `provider-${id}`,
+      id,
+      status,
+      type: 'THIRD_PARTY_SERVICE',
+    });
+    const statusCells = (items: Record<string, unknown>[], format: 'plain' | 'table') =>
+      (formatOutput(format, { items }, { columns: columnsFor('monitors:list') }) ?? '')
+        .split('\n')
+        .filter((line) => !line.startsWith('ID'))
+        .map((line) => line.split(format === 'plain' ? '\t' : /\s{2,}/)[1]);
+
+    it('shows the outage level of a DOWN third-party service instead of DOWN', () => {
+      vi.stubEnv('NO_COLOR', '1');
+      const items = [
+        thirdPartyService(1, 'DOWN', 'minor'),
+        thirdPartyService(2, 'DOWN', 'major'),
+        thirdPartyService(3, 'DOWN', 'maintenance'),
+      ];
+
+      expect(statusCells(items, 'table')).toEqual([
+        '▲ MINOR OUTAGE',
+        '✗ MAJOR OUTAGE',
+        '▲ MAINTENANCE',
+      ]);
+      expect(statusCells(items, 'plain')).toEqual(['MINOR OUTAGE', 'MAJOR OUTAGE', 'MAINTENANCE']);
+    });
+
+    it('keeps the API status when it is not DOWN or carries no outage level', () => {
+      vi.stubEnv('NO_COLOR', '1');
+      const items = [
+        thirdPartyService(1, 'UP', 'operational'),
+        thirdPartyService(2, 'PAUSED', 'minor'),
+        thirdPartyService(3, 'DOWN', 'operational'),
+        thirdPartyService(4, 'DOWN'),
+        { ...thirdPartyService(5, 'DOWN', 'minor'), type: 'HTTP' },
+      ];
+
+      expect(statusCells(items, 'table')).toEqual([
+        '● UP',
+        '◌ PAUSED',
+        '✗ DOWN',
+        '✗ DOWN',
+        '✗ DOWN',
+      ]);
+    });
+
+    it('leaves the status field untouched in JSON output', () => {
+      const payload = { items: [thirdPartyService(1, 'DOWN', 'minor')] };
+
+      expect(formatOutput('json', payload, { columns: columnsFor('monitors:list') })).toBe(
+        JSON.stringify(payload),
+      );
+    });
+  });
+
   it('renders incidents with one root cause and actionable summary fields', () => {
     vi.stubEnv('NO_COLOR', '1');
     const payload = {
