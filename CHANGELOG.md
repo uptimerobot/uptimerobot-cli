@@ -10,6 +10,8 @@ may change in minor releases.
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-26
+
 ### Fixed
 
 - `uptimerobot monitors list` shows a third-party service in a minor outage, a
@@ -391,7 +393,8 @@ freeze; each entry is a change that would otherwise have needed a 2.0.
 - Redirects are followed manually and the origin is re-checked at every hop
   before credentials are attached; cross-origin redirects are refused.
 
-[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/uptimerobot/uptimerobot-cli/compare/v1.1.0...v1.2.0
