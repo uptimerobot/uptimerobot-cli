@@ -10,6 +10,14 @@ may change in minor releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- `uptimerobot monitors list` shows a third-party service in a minor outage, a
+  major outage or maintenance as `MINOR OUTAGE`, `MAJOR OUTAGE` or
+  `MAINTENANCE` in table and plain output instead of `DOWN`. The API reports
+  all three as `DOWN` and keeps the level in `config.thirdPartyService.currentState`.
+  JSON output is unchanged, and `--status down` still matches all three.
+
 ## [1.4.0] - 2026-11-25
 
 ### Added
